@@ -114,20 +114,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Added custom colors for block-based programming interface */
-  --color-header: oklch(0.1 0 0);
-  --color-toolbox: oklch(0.15 0 0);
-  --color-workspace: oklch(0.18 0 0);
-  --color-output: oklch(0.13 0 0);
-
-  /* Block category colors - vibrant and distinct */
-  --color-motion: oklch(0.65 0.19 240);
-  --color-control: oklch(0.75 0.15 80);
-  --color-sensing: oklch(0.65 0.15 150);
-  --color-operator: oklch(0.65 0.2 280);
-  --color-event: oklch(0.65 0.22 20);
-
-  /* Updated colors for VEXcode VR style interface */
+  /* VEXcode VR style colors */
   --color-vex-blue: oklch(0.55 0.15 240);
   --color-vex-blue-light: oklch(0.85 0.08 240);
   --color-vex-orange: oklch(0.65 0.18 40);
@@ -140,10 +127,18 @@
   body {
     @apply bg-background text-foreground;
   }
+}
 
-  /* Make Blockly blocks 15% taller */
-  .blocklyBlockCanvas .blocklyDraggable {
-    transform: scaleY(1.15);
-    transform-origin: top;
-  }
+/* Removed scaleY transform that was causing blocks to stack - using Blockly's scale option instead */
+
+/* Ensure custom pickers appear above Blockly's field editors */
+.blocklyWidgetDiv,
+.blocklyDropDownDiv {
+  z-index: 50 !important;
+}
+
+/* Style for "when started" block text to be bold like the reference image */
+.when-started-text {
+  font-weight: bold !important;
+  font-size: 14px !important;
 }
