@@ -1,4 +1,5 @@
-# Ocean Cleanup - AI-Assisted Block-Based Programming Environment
+# INVITE VEXcode VR Prototyping Sandbox
+For an AI-Assisted Block-Based Programming Environment
 
 A visual block-based programming environment designed for learning robotics and programming concepts. Built with Next.js and Google Blockly, this application provides an interactive way to program a virtual submarine robot to clean up ocean trash.
 
