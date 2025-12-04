@@ -1,6 +1,6 @@
-# Ocean Cleanup - AI-Assisted Block-Based Programming Environment
+# INVITE VEXcode VR Prototyping Sandbox
 
-A visual block-based programming environment designed for learning robotics and programming concepts. Built with Next.js and Google Blockly, this application provides an interactive way to program a virtual submarine robot to clean up ocean trash.
+An AI-Assisted visual block-based programming environment designed for learning robotics and programming concepts. Built with Next.js and Google Blockly, this application provides an interactive way to program a virtual submarine robot to clean up ocean trash.
 
 [![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com)
 [![Built with Next.js](https://img.shields.io/badge/Built%20with-Next.js-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
@@ -8,7 +8,7 @@ A visual block-based programming environment designed for learning robotics and 
 
 ## Overview
 
-Ocean Cleanup is an educational programming environment where users drag and drop code blocks to control a submarine robot navigating an underwater scene. The robot collects floating trash while avoiding coral reef borders. An integrated AI Assistant helps learners develop problem-solving strategies and debug their code.
+INVITE VEXcode VR Prototyping Sandbox is an educational programming environment where users drag and drop code blocks to control a submarine robot navigating an underwater scene. The robot collects floating trash while avoiding coral reef borders. An integrated AI Assistant helps learners develop problem-solving strategies and debug their code.
 
 ## Features
 
