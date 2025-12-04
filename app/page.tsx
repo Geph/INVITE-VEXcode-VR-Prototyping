@@ -39,6 +39,8 @@ import {
   Sparkles,
   PartyPopper,
   Share2,
+  ArrowLeft,
+  Settings,
 } from "lucide-react"
 
 declare global {
@@ -570,6 +572,7 @@ function BlocklyEditor() {
   const animationRef = useRef<number | null>(null) // Added animationRef
   const [deletedBlocks, setDeletedBlocks] = useState<string | null>(null)
   const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
+  const [aiStep, setAiStep] = useState<AIAssistantState["surveyStep"]>("main") // Added aiStep state
 
   interface CoralPiece {
     x: number
@@ -914,6 +917,133 @@ function BlocklyEditor() {
     }, 100)
   }, [blocklyLoaded, workspace])
 
+  const handleFieldClick = (e: MouseEvent) => {
+    const target = e.target as Element
+
+    // Check if clicked on a field text element
+    const fieldGroup = target.closest(".blocklyEditableText")
+    if (!fieldGroup) return
+
+    // Get the text content of the clicked field to determine if it's a number
+    const textElement = fieldGroup.querySelector("text")
+    const fieldValue = textElement?.textContent || ""
+
+    // Check if this is a number field (contains only digits and optional decimal)
+    const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+    // Also check if it's a dropdown by looking for dropdown indicator
+    const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+    // If it's a dropdown field or not a number, don't show custom picker
+    if (hasDropdown || !isNumberField) return
+
+    // Find the block that contains this field
+    const blockSvg = target.closest(".blocklyDraggable")
+    if (!blockSvg) return
+
+    const blockId = blockSvg.getAttribute("data-id")
+    if (!blockId) return
+
+    const block = workspace.getBlockById(blockId)
+    if (!block) return
+
+    const blockType = block.type
+
+    // Check which field was clicked based on the block type and field value
+    if (blockType === "turn_degrees") {
+      const currentDegrees = block.getFieldValue("DEGREES")
+      // Only open if clicked value matches the DEGREES field
+      if (fieldValue.trim() === currentDegrees.toString()) {
+        setAnglePickerState({
+          isOpen: true,
+          angle: Number(currentDegrees) || 90,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), "DEGREES")
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    } else if (blockType === "turn_to_rotation") {
+      const currentRotation = block.getFieldValue("ROTATION")
+      if (fieldValue.trim() === currentRotation.toString()) {
+        setAnglePickerState({
+          isOpen: true,
+          angle: Number(currentRotation) || 90,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), "ROTATION")
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+      const currentHeading = block.getFieldValue("HEADING")
+      if (fieldValue.trim() === currentHeading.toString()) {
+        setCompassPickerState({
+          isOpen: true,
+          heading: Number(currentHeading) || 0,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), "HEADING")
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    } else if (blockType === "set_drive_rotation") {
+      const currentRotation = block.getFieldValue("ROTATION")
+      if (fieldValue.trim() === currentRotation.toString()) {
+        setAnglePickerState({
+          isOpen: true,
+          angle: Number(currentRotation) || 0,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), "ROTATION")
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    } else if (blockType === "drive_distance") {
+      const currentDistance = block.getFieldValue("DISTANCE")
+      // Only open slider if clicked on the distance number, not the dropdown
+      if (fieldValue.trim() === currentDistance.toString()) {
+        setDistancePickerState({
+          isOpen: true,
+          distance: Number(currentDistance) || 200,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), "DISTANCE")
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+  }
+
+  // Get the workspace's SVG element
+  const workspaceSvg = workspace?.getParentSvg() // Use optional chaining here
+  useEffect(() => {
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [workspaceSvg]) // Dependency on workspaceSvg
+
   useEffect(() => {
     if (!workspace || !blocklyLoaded) return // Use ref
 
@@ -927,6 +1057,19 @@ function BlocklyEditor() {
       const fieldGroup = target.closest(".blocklyEditableText")
       if (!fieldGroup) return
 
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
       // Find the block that contains this field
       const blockSvg = target.closest(".blocklyDraggable")
       if (!blockSvg) return
@@ -939,64 +1082,84 @@ function BlocklyEditor() {
 
       const blockType = block.type
 
-      // Check which field was clicked based on the block type
-      if (blockType === "turn_degrees" || blockType === "turn_to_rotation") {
-        const fieldName = blockType === "turn_degrees" ? "DEGREES" : "ROTATION"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 90
-        setAnglePickerState({
-          isOpen: true,
-          angle: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const fieldName = "HEADING"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 0
-        setCompassPickerState({
-          isOpen: true,
-          heading: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "set_drive_rotation") {
-        const fieldName = "ROTATION"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 0
-        setAnglePickerState({
-          isOpen: true,
-          angle: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "drive_distance") {
-        const fieldName = "DISTANCE"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 200
-        const direction = block.getFieldValue("DIRECTION") || "forward"
-        setDistancePickerState({
-          isOpen: true,
-          distance: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       }
     }
 
@@ -1026,6 +1189,19 @@ function BlocklyEditor() {
       const fieldGroup = target.closest(".blocklyEditableText")
       if (!fieldGroup) return
 
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
       // Find the block that contains this field
       const blockSvg = target.closest(".blocklyDraggable")
       if (!blockSvg) return
@@ -1038,64 +1214,84 @@ function BlocklyEditor() {
 
       const blockType = block.type
 
-      // Check which field was clicked based on the block type
-      if (blockType === "turn_degrees" || blockType === "turn_to_rotation") {
-        const fieldName = blockType === "turn_degrees" ? "DEGREES" : "ROTATION"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 90
-        setAnglePickerState({
-          isOpen: true,
-          angle: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const fieldName = "HEADING"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 0
-        setCompassPickerState({
-          isOpen: true,
-          heading: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "set_drive_rotation") {
-        const fieldName = "ROTATION"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 0
-        setAnglePickerState({
-          isOpen: true,
-          angle: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "drive_distance") {
-        const fieldName = "DISTANCE"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 200
-        const direction = block.getFieldValue("DIRECTION") || "forward"
-        setDistancePickerState({
-          isOpen: true,
-          distance: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       }
     }
 
@@ -1125,6 +1321,19 @@ function BlocklyEditor() {
       const fieldGroup = target.closest(".blocklyEditableText")
       if (!fieldGroup) return
 
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
       // Find the block that contains this field
       const blockSvg = target.closest(".blocklyDraggable")
       if (!blockSvg) return
@@ -1137,64 +1346,216 @@ function BlocklyEditor() {
 
       const blockType = block.type
 
-      // Check which field was clicked based on the block type
-      if (blockType === "turn_degrees" || blockType === "turn_to_rotation") {
-        const fieldName = blockType === "turn_degrees" ? "DEGREES" : "ROTATION"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 90
-        setAnglePickerState({
-          isOpen: true,
-          angle: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const fieldName = "HEADING"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 0
-        setCompassPickerState({
-          isOpen: true,
-          heading: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "set_drive_rotation") {
-        const fieldName = "ROTATION"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 0
-        setAnglePickerState({
-          isOpen: true,
-          angle: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       } else if (blockType === "drive_distance") {
-        const fieldName = "DISTANCE"
-        const currentValue = Number(block.getFieldValue(fieldName)) || 200
-        const direction = block.getFieldValue("DIRECTION") || "forward"
-        setDistancePickerState({
-          isOpen: true,
-          distance: currentValue,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), fieldName)
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "set_drive_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "drive_distance") {
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
       }
     }
 
@@ -2014,10 +2375,12 @@ function BlocklyEditor() {
 
   const handleOpenAIAssistant = () => {
     setAiAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
+    setAiStep("main") // Reset AI assistant step when opened
   }
 
   const handleCloseAIAssistant = () => {
     setAiAssistantState((prev) => ({ ...prev, isVisible: false }))
+    setAiStep("main") // Reset AI assistant step when closed
   }
 
   const handleMinimizeAIAssistant = () => {
@@ -2268,22 +2631,22 @@ function BlocklyEditor() {
     if (aiAssistantState.surveyStep === "main") {
       switch (key) {
         case "1":
-          setAiAssistantState((prev) => ({ ...prev, surveyStep: "strategy" }))
+          setAiStep("strategy")
           break
         case "2":
-          setAiAssistantState((prev) => ({ ...prev, surveyStep: "predict" }))
+          setAiStep("predict")
           break
         case "3":
-          setAiAssistantState((prev) => ({ ...prev, surveyStep: "fix" }))
+          setAiStep("fix")
           break
         case "4":
-          setAiAssistantState((prev) => ({ ...prev, surveyStep: "compare" }))
+          setAiStep("compare")
           break
         case "5":
-          setAiAssistantState((prev) => ({ ...prev, surveyStep: "feel" }))
+          setAiStep("feel")
           break
         case "6":
-          setAiAssistantState((prev) => ({ ...prev, surveyStep: "partner" }))
+          setAiStep("partner")
           break
       }
     }
@@ -2297,7 +2660,17 @@ function BlocklyEditor() {
     }
 
     return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiAssistantState.surveyStep])
+  }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiStep]) // Depend on aiStep as well
+
+  useEffect(() => {
+    if (aiAssistantState.isVisible && !aiAssistantState.isMinimized && aiStep === "predict") {
+      // Small delay to ensure canvas is rendered
+      const timer = setTimeout(() => {
+        drawPrediction()
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiStep, drawPrediction])
 
   const handleRestoreBlocks = () => {
     if (workspace && deletedBlocks) {
@@ -2650,13 +3023,13 @@ function BlocklyEditor() {
           </div>
           {!aiAssistantState.isMinimized && (
             <div className="p-4">
-              {aiAssistantState.surveyStep === "main" ? (
+              {aiStep === "main" ? (
                 <div className="text-gray-700">
                   <p className="mb-4 font-medium text-base">What sort of help do you want?</p>
                   <div className="flex flex-col gap-2">
                     <Button
                       className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0"
-                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "strategy" }))}
+                      onClick={() => setAiStep("strategy")}
                     >
                       <Lightbulb className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">1.</span>
@@ -2666,7 +3039,7 @@ function BlocklyEditor() {
                       className="justify-start text-left h-auto py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white border-0"
                       onClick={() => {
                         console.log("[v0] Navigate to predict")
-                        setAiAssistantState((prev) => ({ ...prev, surveyStep: "predict" }))
+                        setAiStep("predict")
                       }}
                     >
                       <Target className="mr-3 h-5 w-5" />
@@ -2674,7 +3047,7 @@ function BlocklyEditor() {
                     </Button>
                     <Button
                       className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0"
-                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "fix" }))}
+                      onClick={() => setAiStep("fix")}
                     >
                       <Wrench className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">3.</span>
@@ -2682,7 +3055,7 @@ function BlocklyEditor() {
                     </Button>
                     <Button
                       className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0"
-                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "compare" }))}
+                      onClick={() => setAiStep("compare")}
                     >
                       <GitCompare className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">4.</span>
@@ -2690,7 +3063,7 @@ function BlocklyEditor() {
                     </Button>
                     <Button
                       className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0"
-                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "feel" }))}
+                      onClick={() => setAiStep("feel")}
                     >
                       <Heart className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">5.</span>
@@ -2698,7 +3071,7 @@ function BlocklyEditor() {
                     </Button>
                     <Button
                       className="justify-start text-left h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0"
-                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "partner" }))}
+                      onClick={() => setAiStep("partner")}
                     >
                       <Users className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">6.</span>
@@ -2706,13 +3079,13 @@ function BlocklyEditor() {
                     </Button>
                   </div>
                 </div>
-              ) : aiAssistantState.surveyStep === "strategy" ? (
+              ) : aiStep === "strategy" ? (
                 <div className="text-gray-700">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
-                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    onClick={() => setAiStep("main")}
                   >
                     ← Back
                   </Button>
@@ -2735,44 +3108,34 @@ function BlocklyEditor() {
                     </Button>
                   </div>
                 </div>
-              ) : aiAssistantState.surveyStep === "predict" ? (
-                <div className="space-y-3">
-                  <Button
-                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
-                    variant="outline"
-                    className="mb-2"
-                  >
-                    ← Back
+              ) : aiStep === "predict" ? (
+                <div className="space-y-4">
+                  <Button variant="outline" onClick={() => setAiStep("main")} className="mb-2">
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Back
                   </Button>
-                  <div className="text-sm font-semibold mb-2 text-purple-700">
-                    Predict and Plan - Preview your robot's path:
-                  </div>
-                  <div className="border-2 border-purple-300 rounded-lg p-4 bg-white">
-                    <canvas
-                      ref={predictCanvasRef}
-                      width={300}
-                      height={300}
-                      className="w-full border border-gray-300 rounded"
-                    />
+                  <p className="text-purple-600 font-semibold">Predict and Plan - Preview your robot's path:</p>
+                  <div className="border-4 border-purple-300 rounded-lg overflow-hidden">
+                    <canvas ref={predictCanvasRef} width={300} height={300} className="w-full" />
                   </div>
                   <Button
                     onClick={() => {
-                      // Generate prediction based on current blocks
+                      console.log("[v0] Show Prediction clicked")
                       drawPrediction()
                     }}
                     className="w-full bg-purple-500 hover:bg-purple-600 text-white"
                   >
-                    <Target className="mr-2 h-4 w-4" />
+                    <Settings className="w-4 h-4 mr-2" />
                     Show Prediction
                   </Button>
                 </div>
-              ) : aiAssistantState.surveyStep === "fix" ? (
+              ) : aiStep === "fix" ? (
                 <div className="text-gray-700">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mb-3 text-red-600 hover:text-red-800 -ml-2"
-                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    onClick={() => setAiStep("main")}
                   >
                     ← Back
                   </Button>
@@ -2800,13 +3163,13 @@ function BlocklyEditor() {
                     </Button>
                   </div>
                 </div>
-              ) : aiAssistantState.surveyStep === "compare" ? (
+              ) : aiStep === "compare" ? (
                 <div className="text-gray-700">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mb-3 text-green-600 hover:text-green-800 -ml-2"
-                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    onClick={() => setAiStep("main")}
                   >
                     ← Back
                   </Button>
@@ -2829,13 +3192,13 @@ function BlocklyEditor() {
                     </Button>
                   </div>
                 </div>
-              ) : aiAssistantState.surveyStep === "feel" ? (
+              ) : aiStep === "feel" ? (
                 <div className="text-gray-700">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mb-3 text-orange-600 hover:text-orange-800 -ml-2"
-                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    onClick={() => setAiStep("main")}
                   >
                     ← Back
                   </Button>
@@ -2863,13 +3226,13 @@ function BlocklyEditor() {
                     </Button>
                   </div>
                 </div>
-              ) : aiAssistantState.surveyStep === "partner" ? (
+              ) : aiStep === "partner" ? (
                 <div className="text-gray-700">
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
-                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    onClick={() => setAiStep("main")}
                   >
                     ← Back
                   </Button>
