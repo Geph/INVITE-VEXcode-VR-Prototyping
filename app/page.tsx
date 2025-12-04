@@ -22,6 +22,23 @@ import {
   RotateCcw,
   Trash2,
   HelpCircle,
+  Lightbulb,
+  Wrench,
+  GitCompare,
+  Heart,
+  Users,
+  Zap,
+  Search,
+  StopCircle,
+  ArrowLeftRight,
+  RefreshCw,
+  Gauge,
+  Target,
+  FileDiff,
+  Frown,
+  Sparkles,
+  PartyPopper,
+  Share2,
 } from "lucide-react"
 
 declare global {
@@ -62,11 +79,29 @@ interface AIAssistantState {
   isVisible: boolean
   isMinimized: boolean
   isMaximized: boolean
-  surveyStep: "main" | "strategy" | "fix" | "compare" | "feel" | "partner"
+  surveyStep: "main" | "strategy" | "predict" | "fix" | "compare" | "feel" | "partner"
 }
 
 interface CategoryState {
   selectedCategory: string | null
+}
+
+interface TrashItem {
+  id: number
+  x: number
+  y: number
+  type: "bottle" | "can" | "wrapper" | "bag"
+  scale: number
+  floatOffset: number
+  isCollected: boolean
+}
+
+interface GameState {
+  trashCollected: number
+  trashItems: TrashItem[]
+  isGameOver: boolean
+  isSpawningTrash: boolean
+  gameLost: boolean
 }
 
 // AngleWheelPicker component for rotation/degrees input
@@ -522,14 +557,29 @@ function DistanceSliderPicker({ value, onChange, onClose, robotState, direction 
   )
 }
 
-export default function BlocklyEditor() {
+function BlocklyEditor() {
   const blocklyDivRef = useRef<HTMLDivElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
   const aiAssistantRef = useRef<HTMLDivElement>(null)
+  const predictCanvasRef = useRef<HTMLCanvasElement>(null) // Added for prediction canvas
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const workspaceRef = useRef<any>(null) // Changed to ref
   const [workspace, setWorkspace] = useState<any>(null)
   const [blocklyLoaded, setBlocklyLoaded] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
+  const [isRunning, setIsRunning] = useState<boolean>(false) // Added isRunning state
+  const animationRef = useRef<number | null>(null) // Added animationRef
+  const [deletedBlocks, setDeletedBlocks] = useState<string | null>(null)
+  const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
+
+  interface CoralPiece {
+    x: number
+    y: number
+    radius: number
+    color: string
+  }
+
+  const [coralPieces, setCoralPieces] = useState<CoralPiece[]>([])
+
   const [robotState, setRobotState] = useState<RobotState>({
     x: 200,
     y: 200,
@@ -540,7 +590,7 @@ export default function BlocklyEditor() {
   })
 
   const [playgroundState, setPlaygroundState] = useState<PlaygroundState>({
-    x: 100,
+    x: window.innerWidth - 520,
     y: 100,
     isDragging: false,
     dragStartX: 0,
@@ -550,56 +600,214 @@ export default function BlocklyEditor() {
     isMaximized: false,
   })
 
-  const [aiAssistantState, setAIAssistantState] = useState<AIAssistantState>({
-    x: 900,
-    y: 150,
+  const [aiAssistantState, setAiAssistantState] = useState<AIAssistantState>({
+    x: typeof window !== "undefined" ? window.innerWidth - 420 : 400,
+    y: 200,
     isDragging: false,
     dragStartX: 0,
     dragStartY: 0,
     isVisible: false,
     isMinimized: false,
-    isMaximized: false,
+    isMaximized: true,
     surveyStep: "main",
   })
 
-  const [categoryState, setCategoryState] = useState<CategoryState>({
-    selectedCategory: "drivetrain",
-  })
-
-  const [isRunning, setIsRunning] = useState(false)
-  const animationRef = useRef<number | null>(null)
-
-  // State for angle pickers
   const [anglePickerState, setAnglePickerState] = useState<{
     isOpen: boolean
-    type: "wheel" | "compass"
-    value: number
-    callback: ((value: number) => void) | null
+    angle: number
+    x: number
+    y: number
+    callback?: (angle: number) => void
   }>({
     isOpen: false,
-    type: "wheel",
-    value: 0,
-    callback: null,
+    angle: 90,
+    x: 0,
+    y: 0,
+  })
+
+  const [compassPickerState, setCompassPickerState] = useState<{
+    isOpen: boolean
+    heading: number
+    x: number
+    y: number
+    callback?: (heading: number) => void
+  }>({
+    isOpen: false,
+    heading: 0,
+    x: 0,
+    y: 0,
   })
 
   const [distancePickerState, setDistancePickerState] = useState<{
     isOpen: boolean
-    value: number
-    direction: string
-    callback: ((value: number) => void) | null
+    distance: number
+    x: number
+    y: number
+    callback?: (distance: number) => void
   }>({
     isOpen: false,
-    value: 200,
-    direction: "forward",
-    callback: null,
+    distance: 200,
+    x: 0,
+    y: 0,
   })
 
-  const [activeFieldInfo, setActiveFieldInfo] = useState<{
-    block: any
-    fieldName: string
-  } | null>(null)
+  const [trashItems, setTrashItems] = useState<TrashItem[]>([])
+  const [gameState, setGameState] = useState<GameState>({
+    trashCollected: 0,
+    gameLost: false,
+  })
+  const trashSpawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const floatAnimationRef = useRef<number | null>(null)
 
-  // ... existing code for handlers ...
+  const initializeCoralBorders = useCallback(() => {
+    const width = playgroundState.isMaximized ? 600 : 400
+    const height = playgroundState.isMaximized ? 600 : 400
+    const coralColors = ["#FF6B6B", "#FF8E8E", "#FFB6B6", "#E67E22", "#FF5252", "#F39C12"]
+    const pieces: CoralPiece[] = []
+
+    // Top coral border
+    for (let x = 0; x < width; x += 30) {
+      pieces.push({
+        x: x + 15,
+        y: 15,
+        radius: 12 + Math.random() * 8,
+        color: coralColors[Math.floor(Math.random() * coralColors.length)],
+      })
+    }
+
+    // Bottom coral border
+    for (let x = 0; x < width; x += 30) {
+      pieces.push({
+        x: x + 15,
+        y: height - 15,
+        radius: 12 + Math.random() * 8,
+        color: coralColors[Math.floor(Math.random() * coralColors.length)],
+      })
+    }
+
+    // Left coral border
+    for (let y = 30; y < height - 30; y += 30) {
+      pieces.push({
+        x: 15,
+        y: y + 15,
+        radius: 12 + Math.random() * 8,
+        color: coralColors[Math.floor(Math.random() * coralColors.length)],
+      })
+    }
+
+    // Right coral border
+    for (let y = 30; y < height - 30; y += 30) {
+      pieces.push({
+        x: width - 15,
+        y: y + 15,
+        radius: 12 + Math.random() * 8,
+        color: coralColors[Math.floor(Math.random() * coralColors.length)],
+      })
+    }
+
+    setCoralPieces(pieces)
+  }, [playgroundState.isMaximized])
+
+  // Initialize coral on mount
+  useEffect(() => {
+    initializeCoralBorders()
+  }, [initializeCoralBorders])
+
+  const drawRobot = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !playgroundState.isVisible || playgroundState.isMinimized) return
+
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    const scale = playgroundState.isMaximized ? 1.5 : 1
+    const robotX = robotState.x * scale
+    const robotY = robotState.y * scale
+
+    ctx.save()
+    ctx.translate(robotX, robotY)
+    ctx.rotate((robotState.rotation * Math.PI) / 180)
+
+    // Main submarine body - yellow oval
+    ctx.fillStyle = "#FFD700"
+    ctx.strokeStyle = "#E6B800"
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.ellipse(0, 0, 25 * scale, 18 * scale, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+
+    // Red triangular periscope/antenna on top
+    ctx.fillStyle = "#E74C3C"
+    ctx.strokeStyle = "#C0392B"
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(0, -25 * scale)
+    ctx.lineTo(-6 * scale, -12 * scale)
+    ctx.lineTo(6 * scale, -12 * scale)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+
+    // Googly eyes - white circles with black pupils
+    // Left eye
+    ctx.fillStyle = "#FFFFFF"
+    ctx.strokeStyle = "#333"
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.arc(-8 * scale, -4 * scale, 7 * scale, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    // Left pupil
+    ctx.fillStyle = "#000"
+    ctx.beginPath()
+    ctx.arc(-6 * scale, -4 * scale, 3 * scale, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Right eye
+    ctx.fillStyle = "#FFFFFF"
+    ctx.strokeStyle = "#333"
+    ctx.beginPath()
+    ctx.arc(8 * scale, -4 * scale, 7 * scale, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    // Right pupil
+    ctx.fillStyle = "#000"
+    ctx.beginPath()
+    ctx.arc(10 * scale, -4 * scale, 3 * scale, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Whiskers/antennae
+    ctx.strokeStyle = "#333"
+    ctx.lineWidth = 1.5
+    // Left whiskers
+    ctx.beginPath()
+    ctx.moveTo(-20 * scale, -2 * scale)
+    ctx.lineTo(-30 * scale, -8 * scale)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(-20 * scale, 2 * scale)
+    ctx.lineTo(-30 * scale, 6 * scale)
+    ctx.stroke()
+    // Right whiskers
+    ctx.beginPath()
+    ctx.moveTo(20 * scale, -2 * scale)
+    ctx.lineTo(30 * scale, -8 * scale)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(20 * scale, 2 * scale)
+    ctx.lineTo(30 * scale, 6 * scale)
+    ctx.stroke()
+
+    // Small smile
+    ctx.strokeStyle = "#333"
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(0, 4 * scale, 6 * scale, 0.2, Math.PI - 0.2)
+    ctx.stroke()
+
+    ctx.restore()
+  }, [playgroundState.isVisible, playgroundState.isMinimized, playgroundState.isMaximized, robotState])
 
   const handlePlaygroundMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return
@@ -675,7 +883,7 @@ export default function BlocklyEditor() {
   }, [])
 
   useEffect(() => {
-    if (!blocklyLoaded || !blocklyDivRef.current || workspaceRef.current) return // Use ref
+    if (!blocklyLoaded || !blocklyDivRef.current || workspace) return // Use ref
 
     const Blockly = window.Blockly
 
@@ -694,7 +902,6 @@ export default function BlocklyEditor() {
       },
       trashcan: false,
     })
-    workspaceRef.current = ws // Store in ref
     setWorkspace(ws)
 
     setTimeout(() => {
@@ -708,9 +915,9 @@ export default function BlocklyEditor() {
   }, [blocklyLoaded, workspace])
 
   useEffect(() => {
-    if (!workspaceRef.current || !blocklyLoaded) return // Use ref
+    if (!workspace || !blocklyLoaded) return // Use ref
 
-    const workspace = workspaceRef.current
+    const Blockly = window.Blockly
 
     // Listen for field clicks by adding a handler to the workspace's SVG
     const handleFieldClick = (e: MouseEvent) => {
@@ -738,8 +945,9 @@ export default function BlocklyEditor() {
         const currentValue = Number(block.getFieldValue(fieldName)) || 90
         setAnglePickerState({
           isOpen: true,
-          type: "wheel",
-          value: currentValue,
+          angle: currentValue,
+          x: e.clientX,
+          y: e.clientY,
           callback: (val: number) => {
             block.setFieldValue(val.toString(), fieldName)
           },
@@ -749,10 +957,11 @@ export default function BlocklyEditor() {
       } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
         const fieldName = "HEADING"
         const currentValue = Number(block.getFieldValue(fieldName)) || 0
-        setAnglePickerState({
+        setCompassPickerState({
           isOpen: true,
-          type: "compass",
-          value: currentValue,
+          heading: currentValue,
+          x: e.clientX,
+          y: e.clientY,
           callback: (val: number) => {
             block.setFieldValue(val.toString(), fieldName)
           },
@@ -764,8 +973,9 @@ export default function BlocklyEditor() {
         const currentValue = Number(block.getFieldValue(fieldName)) || 0
         setAnglePickerState({
           isOpen: true,
-          type: "wheel",
-          value: currentValue,
+          angle: currentValue,
+          x: e.clientX,
+          y: e.clientY,
           callback: (val: number) => {
             block.setFieldValue(val.toString(), fieldName)
           },
@@ -778,8 +988,9 @@ export default function BlocklyEditor() {
         const direction = block.getFieldValue("DIRECTION") || "forward"
         setDistancePickerState({
           isOpen: true,
-          value: currentValue,
-          direction: direction,
+          distance: currentValue,
+          x: e.clientX,
+          y: e.clientY,
           callback: (val: number) => {
             block.setFieldValue(val.toString(), fieldName)
           },
@@ -800,16 +1011,214 @@ export default function BlocklyEditor() {
         workspaceSvg.removeEventListener("click", handleFieldClick)
       }
     }
-  }, [blocklyLoaded]) // Dependency on blocklyLoaded
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
 
   useEffect(() => {
-    if (!workspace || !window.Blockly) return
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type
+      if (blockType === "turn_degrees" || blockType === "turn_to_rotation") {
+        const fieldName = blockType === "turn_degrees" ? "DEGREES" : "ROTATION"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 90
+        setAnglePickerState({
+          isOpen: true,
+          angle: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const fieldName = "HEADING"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 0
+        setCompassPickerState({
+          isOpen: true,
+          heading: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      } else if (blockType === "set_drive_rotation") {
+        const fieldName = "ROTATION"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 0
+        setAnglePickerState({
+          isOpen: true,
+          angle: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      } else if (blockType === "drive_distance") {
+        const fieldName = "DISTANCE"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 200
+        const direction = block.getFieldValue("DIRECTION") || "forward"
+        setDistancePickerState({
+          isOpen: true,
+          distance: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type
+      if (blockType === "turn_degrees" || blockType === "turn_to_rotation") {
+        const fieldName = blockType === "turn_degrees" ? "DEGREES" : "ROTATION"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 90
+        setAnglePickerState({
+          isOpen: true,
+          angle: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const fieldName = "HEADING"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 0
+        setCompassPickerState({
+          isOpen: true,
+          heading: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      } else if (blockType === "set_drive_rotation") {
+        const fieldName = "ROTATION"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 0
+        setAnglePickerState({
+          isOpen: true,
+          angle: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      } else if (blockType === "drive_distance") {
+        const fieldName = "DISTANCE"
+        const currentValue = Number(block.getFieldValue(fieldName)) || 200
+        const direction = block.getFieldValue("DIRECTION") || "forward"
+        setDistancePickerState({
+          isOpen: true,
+          distance: currentValue,
+          x: e.clientX,
+          y: e.clientY,
+          callback: (val: number) => {
+            block.setFieldValue(val.toString(), fieldName)
+          },
+        })
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
 
     const Blockly = window.Blockly
 
     let blocks: any[] = []
 
-    switch (categoryState.selectedCategory) {
+    switch (selectedCategory) {
       case "drivetrain":
         blocks = [
           { kind: "block", type: "drive_simple" },
@@ -890,109 +1299,255 @@ export default function BlocklyEditor() {
     }
 
     workspace.updateToolbox({ kind: "flyoutToolbox", contents: blocks })
-  }, [categoryState.selectedCategory, workspace])
+  }, [selectedCategory, workspace, blocklyLoaded])
 
-  const drawRobot = useCallback(() => {
+  // Redraw playground when state changes
+  const drawPlayground = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    const canvasSize = playgroundState.isMaximized ? 600 : 400
+    const width = playgroundState.isMaximized ? 600 : 400
+    const height = playgroundState.isMaximized ? 600 : 400
 
-    ctx.clearRect(0, 0, canvasSize, canvasSize)
+    // Draw sandy ocean floor background
+    const gradient = ctx.createLinearGradient(0, 0, 0, height)
+    gradient.addColorStop(0, "#f4d6a2") // Light sandy color
+    gradient.addColorStop(0.5, "#e8c18e")
+    gradient.addColorStop(1, "#d4a76a") // Darker sand
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, width, height)
 
-    // Ocean background
-    ctx.fillStyle = "#E8F4F8"
-    ctx.fillRect(0, 0, canvasSize, canvasSize)
-
-    // Grid
-    ctx.strokeStyle = "#B0D4E3"
-    ctx.lineWidth = 1
-    const gridSize = 40
-
-    for (let x = 0; x <= canvasSize; x += gridSize) {
+    // Add sand texture with dots
+    ctx.fillStyle = "rgba(180, 140, 90, 0.15)"
+    for (let i = 0; i < 200; i++) {
       ctx.beginPath()
-      ctx.moveTo(x, 0)
-      ctx.lineTo(x, canvasSize)
-      ctx.stroke()
+      ctx.arc(Math.random() * width, Math.random() * height, Math.random() * 2, 0, Math.PI * 2)
+      ctx.fill()
     }
 
-    for (let y = 0; y <= canvasSize; y += gridSize) {
+    // Draw coral borders along all edges
+    // Using the pre-calculated coralPieces state
+    coralPieces.forEach((piece) => {
+      ctx.fillStyle = piece.color
       ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(canvasSize, y)
-      ctx.stroke()
-    }
+      ctx.arc(piece.x, piece.y, piece.radius, 0, Math.PI * 2) // Apply scale here
+      ctx.fill()
+    })
 
+    // Draw floating trash items
+    trashItems.forEach((trash) => {
+      if (trash.isCollected) return
+
+      const trashX = trash.x * (playgroundState.isMaximized ? 1.5 : 1)
+      const trashY = (trash.y + Math.sin(trash.floatOffset) * 3) * (playgroundState.isMaximized ? 1.5 : 1)
+      const trashScale = trash.scale * (playgroundState.isMaximized ? 1.5 : 1)
+
+      ctx.save()
+      ctx.translate(trashX, trashY)
+      ctx.scale(trashScale, trashScale)
+
+      switch (trash.type) {
+        case "bottle":
+          ctx.fillStyle = "#87CEEB"
+          ctx.strokeStyle = "#5BA3C6"
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.ellipse(0, 0, 8, 12, 0, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+          ctx.fillStyle = "#4A90E2"
+          ctx.fillRect(-3, -18, 6, 6)
+          break
+        case "can":
+          ctx.fillStyle = "#C0C0C0"
+          ctx.strokeStyle = "#808080"
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.roundRect(-6, -10, 12, 20, 3)
+          ctx.fill()
+          ctx.stroke()
+          ctx.fillStyle = "#E74C3C"
+          ctx.fillRect(-5, -5, 10, 10)
+          break
+        case "wrapper":
+          ctx.fillStyle = "#FFD700"
+          ctx.strokeStyle = "#DAA520"
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(-10, -5)
+          ctx.lineTo(10, -8)
+          ctx.lineTo(12, 5)
+          ctx.lineTo(-8, 8)
+          ctx.closePath()
+          ctx.fill()
+          ctx.stroke()
+          break
+        case "bag":
+          ctx.fillStyle = "rgba(255, 255, 255, 0.7)"
+          ctx.strokeStyle = "#DDD"
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(0, -15)
+          ctx.quadraticCurveTo(15, -5, 10, 10)
+          ctx.quadraticCurveTo(0, 15, -10, 10)
+          ctx.quadraticCurveTo(-15, -5, 0, -15)
+          ctx.fill()
+          ctx.stroke()
+          break
+      }
+      ctx.restore()
+    })
+
+    // Draw robot
+    drawRobot()
+  }, [drawRobot, robotState, playgroundState.isMaximized, trashItems, coralPieces]) // Added coralPieces dependency
+
+  const checkCoralCollision = useCallback(
+    (x: number, y: number): boolean => {
+      const canvasSize = playgroundState.isMaximized ? 600 : 400
+      const scale = playgroundState.isMaximized ? 1.5 : 1
+      const robotSize = 30 * scale // Use the updated robot size for collision
+
+      // Check against pre-calculated coral pieces
+      for (const piece of coralPieces) {
+        const distance = Math.sqrt(Math.pow(x * scale - piece.x * scale, 2) + Math.pow(y * scale - piece.y * scale, 2))
+        if (distance < robotSize / 2 + piece.radius * scale) {
+          return true
+        }
+      }
+      return false
+    },
+    [playgroundState.isMaximized, coralPieces], // Added coralPieces dependency
+  )
+
+  const checkTrashCollision = useCallback(() => {
     const scale = playgroundState.isMaximized ? 1.5 : 1
-    const robotX = robotState.x * scale
-    const robotY = robotState.y * scale
+    const robotSize = 30 * scale // Use the updated robot size for collision
 
-    // Robot shadow
-    ctx.save()
-    ctx.translate(robotX + 3, robotY + 3)
-    ctx.rotate((robotState.rotation * Math.PI) / 180)
-    ctx.fillStyle = "rgba(0, 0, 0, 0.2)"
-    ctx.fillRect(-20, -25, 40, 50)
-    ctx.restore()
+    setGameState((prev) => {
+      let collected = 0
+      const updatedTrash = trashItems.map((trash) => {
+        if (trash.isCollected) return trash
 
-    // Robot body
-    ctx.save()
-    ctx.translate(robotX, robotY)
-    ctx.rotate((robotState.rotation * Math.PI) / 180)
+        const dx = robotState.x - trash.x
+        const dy = robotState.y - trash.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
 
-    ctx.fillStyle = "#2196F3"
-    ctx.strokeStyle = "#1565C0"
-    ctx.lineWidth = 3
-    ctx.fillRect(-20, -25, 40, 50)
-    ctx.strokeRect(-20, -25, 40, 50)
+        // Collision detection: robot radius + trash radius (approximated)
+        if (distance < robotSize * 0.5 + 15 * scale * trash.scale) {
+          collected++
+          return { ...trash, isCollected: true }
+        }
+        return trash
+      })
 
-    // Wheels
-    ctx.fillStyle = "#333"
-    ctx.fillRect(-24, -20, 6, 15)
-    ctx.fillRect(-24, 5, 6, 15)
-    ctx.fillRect(18, -20, 6, 15)
-    ctx.fillRect(18, 5, 6, 15)
+      if (collected > 0) {
+        return {
+          ...prev,
+          trashItems: updatedTrash,
+          trashCollected: prev.trashCollected + collected,
+        }
+      }
+      return prev
+    })
+  }, [robotState.x, robotState.y, playgroundState.isMaximized, trashItems])
 
-    // Eyes
-    ctx.fillStyle = "#FFF"
-    ctx.beginPath()
-    ctx.arc(-8, -10, 6, 0, Math.PI * 2)
-    ctx.arc(8, -10, 6, 0, Math.PI * 2)
-    ctx.fill()
+  // Around line 1315, replace spawnTrash function
+  const startSpawningTrash = useCallback(() => {
+    if (trashSpawnIntervalRef.current) {
+      clearInterval(trashSpawnIntervalRef.current)
+    }
 
-    ctx.fillStyle = "#333"
-    ctx.beginPath()
-    ctx.arc(-8, -10, 3, 0, Math.PI * 2)
-    ctx.arc(8, -10, 3, 0, Math.PI * 2)
-    ctx.fill()
+    setGameState((prev) => ({ ...prev, isSpawningTrash: true }))
 
-    // Direction indicator
-    ctx.fillStyle = "#FFC107"
-    ctx.beginPath()
-    ctx.moveTo(0, -25)
-    ctx.lineTo(-8, -32)
-    ctx.lineTo(8, -32)
-    ctx.closePath()
-    ctx.fill()
+    const spawnTrash = () => {
+      const canvasWidth = playgroundState.isMaximized ? 600 : 400
+      const canvasHeight = playgroundState.isMaximized ? 600 : 400
+      const margin = 60
 
-    ctx.restore()
-  }, [robotState, playgroundState.isMaximized])
+      setTrashItems((prev) => {
+        if (prev.length >= 20) return prev
 
+        const types: ("bottle" | "can" | "wrapper" | "bag")[] = ["bottle", "can", "wrapper", "bag"]
+        const newTrash: TrashItem = {
+          id: Date.now() + Math.random(),
+          x: margin + Math.random() * (canvasWidth - margin * 2),
+          y: margin + Math.random() * (canvasHeight - margin * 2), // Random position instead of top
+          type: types[Math.floor(Math.random() * types.length)],
+          scale: 0, // Start at 0 scale for expand animation
+          floatOffset: Math.random() * Math.PI * 2,
+          isCollected: false,
+        }
+
+        return [...prev, newTrash]
+      })
+    }
+
+    spawnTrash()
+    trashSpawnIntervalRef.current = setInterval(spawnTrash, 2000)
+  }, [playgroundState.isMaximized])
+
+  useEffect(() => {
+    if (!gameState.isSpawningTrash) return
+
+    const animateTrash = () => {
+      setTrashItems((prev) =>
+        prev.map((trash) => ({
+          ...trash,
+          scale: trash.scale < 0.8 + (trash.id % 4) * 0.1 ? trash.scale + 0.05 : trash.scale,
+          floatOffset: trash.floatOffset + 0.03,
+        })),
+      )
+      floatAnimationRef.current = requestAnimationFrame(animateTrash)
+    }
+
+    floatAnimationRef.current = requestAnimationFrame(animateTrash)
+
+    return () => {
+      if (floatAnimationRef.current) {
+        cancelAnimationFrame(floatAnimationRef.current)
+      }
+    }
+  }, [gameState.isSpawningTrash])
+
+  // Check collisions on robot move
+  useEffect(() => {
+    checkTrashCollision()
+
+    if (checkCoralCollision(robotState.x, robotState.y) && isRunning) {
+      setIsRunning(false)
+      setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: true }))
+      if (trashSpawnIntervalRef.current) {
+        clearInterval(trashSpawnIntervalRef.current)
+        trashSpawnIntervalRef.current = null
+      }
+      if (floatAnimationRef.current) {
+        cancelAnimationFrame(floatAnimationRef.current)
+      }
+    }
+  }, [robotState.x, robotState.y, checkTrashCollision, checkCoralCollision, isRunning])
+
+  // Redraw playground when state changes
+  useEffect(() => {
+    drawPlayground()
+  }, [drawPlayground])
+
+  // Redraw robot (no change needed here, but good to have)
   useEffect(() => {
     drawRobot()
   }, [drawRobot, playgroundState.isMaximized, playgroundState.isVisible, playgroundState.isMinimized])
 
   useEffect(() => {
-    if (canvasRef.current && playgroundState.isVisible && !playgroundState.isMinimized) {
-      const timer = setTimeout(() => {
-        drawRobot()
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [])
+    if (!canvasRef.current || !playgroundState.isVisible || playgroundState.isMinimized) return
+
+    const timer = setTimeout(() => {
+      drawRobot()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [playgroundState.isVisible, playgroundState.isMinimized])
 
   const animateRobotFluid = (targetState: Partial<RobotState>, duration = 500) => {
     return new Promise<void>((resolve) => {
@@ -1002,7 +1557,7 @@ export default function BlocklyEditor() {
       const animate = (currentTime: number) => {
         const elapsed = currentTime - startTime
         const progress = Math.min(elapsed / duration, 1)
-        const easeProgress = 1 - Math.pow(1 - progress, 3)
+        const easeProgress = 1 - Math.pow(1 - progress, 3) // Ease-out cubic
 
         setRobotState((prev) => {
           const newState = { ...prev }
@@ -1021,6 +1576,14 @@ export default function BlocklyEditor() {
         if (progress < 1) {
           animationRef.current = requestAnimationFrame(animate)
         } else {
+          // Ensure final state is exact
+          setRobotState((prev) => {
+            const finalState = { ...prev }
+            if (targetState.x !== undefined) finalState.x = targetState.x
+            if (targetState.y !== undefined) finalState.y = targetState.y
+            if (targetState.rotation !== undefined) finalState.rotation = targetState.rotation
+            return finalState
+          })
           resolve()
         }
       }
@@ -1033,6 +1596,9 @@ export default function BlocklyEditor() {
     if (!workspace || !window.Blockly || isRunning) return
 
     setIsRunning(true)
+    setGameState((prev) => ({ ...prev, isGameOver: false, gameLost: false })) // Reset game over state
+    startSpawningTrash()
+
     const Blockly = window.Blockly
     const code = Blockly.JavaScript.workspaceToCode(workspace)
 
@@ -1054,20 +1620,24 @@ export default function BlocklyEditor() {
       drive: async (direction: string, distance?: number, unit?: string) => {
         const multiplier = direction === "forward" ? -1 : 1
         if (distance === undefined) {
-          const pixels = 200
-          const targetX = robotState.x + pixels * multiplier * Math.sin((robotState.rotation * Math.PI) / 180)
-          const targetY = robotState.y + pixels * multiplier * Math.cos((robotState.rotation * Math.PI) / 180)
+          const pixels = 200 // Default distance in pixels
+          const angleRad = (robotState.rotation * Math.PI) / 180
+          const targetX = robotState.x + pixels * multiplier * Math.sin(angleRad)
+          const targetY = robotState.y + pixels * multiplier * Math.cos(angleRad)
           await animateRobotFluid({ x: targetX, y: targetY }, 1000)
         } else {
-          const pixels = unit === "mm" ? distance / 5 : distance
-          const targetX = robotState.x + pixels * multiplier * Math.sin((robotState.rotation * Math.PI) / 180)
-          const targetY = robotState.y + pixels * multiplier * Math.cos((robotState.rotation * Math.PI) / 180)
+          // Convert distance to pixels based on unit
+          const pixels = unit === "mm" ? distance * 0.133333 : distance // Approximately 100mm = 13.33 pixels
+          const angleRad = (robotState.rotation * Math.PI) / 180
+          const targetX = robotState.x + pixels * multiplier * Math.sin(angleRad)
+          const targetY = robotState.y + pixels * multiplier * Math.cos(angleRad)
           await animateRobotFluid({ x: targetX, y: targetY }, 500)
         }
       },
       turn: async (direction: string, degrees?: number) => {
         const multiplier = direction === "right" ? 1 : -1
         if (degrees === undefined) {
+          // Default turn of 90 degrees
           const targetRotation = robotState.rotation + 90 * multiplier
           await animateRobotFluid({ rotation: targetRotation }, 500)
         } else {
@@ -1084,6 +1654,7 @@ export default function BlocklyEditor() {
       stopDriving: () => {
         if (animationRef.current) {
           cancelAnimationFrame(animationRef.current)
+          animationRef.current = null
         }
       },
       setDriveVelocity: (velocity: number) => {
@@ -1153,31 +1724,33 @@ export default function BlocklyEditor() {
       },
       bumperPressed: (bumper: string) => {
         console.log(`Checking if ${bumper} bumper is pressed`)
-        return false
+        return false // Placeholder
       },
       distanceFoundObject: (sensor: string) => {
         console.log(`Checking if ${sensor} found object`)
-        return false
+        return false // Placeholder
       },
       getDistance: (sensor: string, unit: string) => {
         console.log(`Getting distance from ${sensor} in ${unit}`)
-        return 0
+        return 0 // Placeholder
       },
       eyeIsNear: (sensor: string) => {
         console.log(`Checking if ${sensor} is near object`)
-        return false
+        return false // Placeholder
       },
       eyeDetectsColor: (sensor: string, color: string) => {
         console.log(`Checking if ${sensor} detects ${color}`)
-        return false
+        return false // Placeholder
       },
       eyeBrightness: (sensor: string) => {
         console.log(`Getting brightness from ${sensor}`)
-        return 50
+        return 50 // Placeholder
       },
       getPosition: (axis: string, unit: string) => {
         console.log(`Getting position ${axis} in ${unit}`)
-        return axis === "x" ? robotState.x : robotState.y
+        if (axis === "x") return robotState.x
+        if (axis === "y") return robotState.y
+        return 0 // Default
       },
       getPositionAngle: () => {
         console.log("Getting position angle")
@@ -1187,32 +1760,66 @@ export default function BlocklyEditor() {
         // Added stop function for stop_project block
         if (animationRef.current) {
           cancelAnimationFrame(animationRef.current)
+          animationRef.current = null
+        }
+        if (trashSpawnIntervalRef.current) {
+          clearInterval(trashSpawnIntervalRef.current)
+          trashSpawnIntervalRef.current = null
         }
         setIsRunning(false)
       },
     }
 
     try {
-      const transformedCode = code.replace(/\/\/ comment/g, "/* comment */")
+      const transformedCode = code.replace(/\/\/ comment/g, "/* comment */") // Handle comments
       const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
       const execFunc = new AsyncFunction("robot", transformedCode)
       await execFunc(robotAPI)
     } catch (error: any) {
       console.error("Execution error:", error)
       setIsRunning(false) // Ensure isRunning is reset on error
-    }
-
-    // If the execution finished without calling stop, reset isRunning
-    if (isRunning) {
-      setIsRunning(false)
+      setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: true })) // Set game over on error
+    } finally {
+      // This block executes regardless of whether an error occurred or not
+      // However, we need to be careful not to reset isRunning if stop() was called within the executed code.
+      // A more robust solution might involve a flag set by the stop() function.
+      // For now, we assume if the try block completes without an explicit stop, we should reset.
+      if (isRunning) {
+        setIsRunning(false)
+      }
     }
   }
 
   const handleReset = () => {
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current)
+      animationRef.current = null
+    }
+    if (trashSpawnIntervalRef.current) {
+      clearInterval(trashSpawnIntervalRef.current)
+      trashSpawnIntervalRef.current = null
     }
     setIsRunning(false)
+    setRobotState({
+      x: 200,
+      y: 200,
+      rotation: 0,
+      driveVelocity: 50,
+      turnVelocity: 50,
+      heading: 0,
+    })
+    setGameState({
+      trashCollected: 0,
+      gameLost: false,
+      isGameOver: false,
+    })
+    setTrashItems([]) // Clear trash items
+  }
+
+  const handleClear = () => {
+    if (workspace) {
+      workspace.clear()
+    }
     const canvasWidth = playgroundState.isMaximized ? 600 : 400
     const canvasHeight = playgroundState.isMaximized ? 600 : 400
     setRobotState({
@@ -1223,28 +1830,47 @@ export default function BlocklyEditor() {
       turnVelocity: 50,
       heading: 0,
     })
-  }
-
-  const handleClear = () => {
-    if (workspace) {
-      workspace.clear()
-      const canvasWidth = playgroundState.isMaximized ? 600 : 400
-      const canvasHeight = playgroundState.isMaximized ? 600 : 400
-      setRobotState({
-        x: canvasWidth / 2,
-        y: canvasHeight / 2,
-        rotation: 0,
-        driveVelocity: 50,
-        turnVelocity: 50,
-        heading: 0,
-      })
+    // Clear game state on clear as well
+    setGameState({
+      trashCollected: 0,
+      gameLost: false,
+      isGameOver: false,
+    })
+    setTrashItems([]) // Clear trash items
+    if (trashSpawnIntervalRef.current) {
+      clearInterval(trashSpawnIntervalRef.current)
+      trashSpawnIntervalRef.current = null
     }
+    if (floatAnimationRef.current) {
+      cancelAnimationFrame(floatAnimationRef.current)
+      floatAnimationRef.current = null
+    }
+    setIsRunning(false)
   }
 
   const handleTrash = () => {
     if (workspace) {
+      // Save current workspace state before clearing
+      const xml = (window as any).Blockly.Xml.workspaceToDom(workspace)
+      const xmlText = (window as any).Blockly.Xml.domToText(xml)
+      setDeletedBlocks(xmlText)
       workspace.clear()
     }
+    setGameState({
+      trashCollected: 0,
+      gameLost: false,
+      isGameOver: false,
+    })
+    setTrashItems([])
+    if (trashSpawnIntervalRef.current) {
+      clearInterval(trashSpawnIntervalRef.current)
+      trashSpawnIntervalRef.current = null
+    }
+    if (floatAnimationRef.current) {
+      cancelAnimationFrame(floatAnimationRef.current)
+      floatAnimationRef.current = null
+    }
+    setIsRunning(false)
   }
 
   const handleSave = () => {
@@ -1287,9 +1913,9 @@ export default function BlocklyEditor() {
   }
 
   const handleSelectCategory = (category: string) => {
-    if (!workspace || !window.Blockly) return
+    setSelectedCategory(category) // Update selected category state
 
-    setCategoryState({ selectedCategory: category })
+    if (!workspace || !window.Blockly) return
 
     const Blockly = window.Blockly
 
@@ -1387,26 +2013,26 @@ export default function BlocklyEditor() {
   }
 
   const handleOpenAIAssistant = () => {
-    setAIAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
+    setAiAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
   }
 
   const handleCloseAIAssistant = () => {
-    setAIAssistantState((prev) => ({ ...prev, isVisible: false }))
+    setAiAssistantState((prev) => ({ ...prev, isVisible: false }))
   }
 
   const handleMinimizeAIAssistant = () => {
-    setAIAssistantState((prev) => ({ ...prev, isMinimized: !prev.isMinimized }))
+    setAiAssistantState((prev) => ({ ...prev, isMinimized: !prev.isMinimized }))
   }
 
   const handleMaximizeAIAssistant = () => {
-    setAIAssistantState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
+    setAiAssistantState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
   }
 
   const handleAIAssistantMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return
     if (!(e.target as HTMLElement).closest(".ai-assistant-header")) return
 
-    setAIAssistantState((prev) => ({
+    setAiAssistantState((prev) => ({
       ...prev,
       isDragging: true,
       dragStartX: e.clientX - prev.x,
@@ -1417,7 +2043,7 @@ export default function BlocklyEditor() {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (aiAssistantState.isDragging) {
-        setAIAssistantState((prev) => ({
+        setAiAssistantState((prev) => ({
           ...prev,
           x: e.clientX - prev.dragStartX,
           y: e.clientY - prev.dragStartY,
@@ -1426,7 +2052,7 @@ export default function BlocklyEditor() {
     }
 
     const handleMouseUp = () => {
-      setAIAssistantState((prev) => ({ ...prev, isDragging: false }))
+      setAiAssistantState((prev) => ({ ...prev, isDragging: false }))
     }
 
     if (aiAssistantState.isDragging) {
@@ -1440,8 +2066,249 @@ export default function BlocklyEditor() {
     }
   }, [aiAssistantState.isDragging])
 
+  // Function to draw the prediction on the predict canvas
+  const drawPrediction = useCallback(() => {
+    const canvas = predictCanvasRef.current
+    if (!canvas || !workspace || !window.Blockly) return
+
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    const width = 300
+    const height = 300
+    const scale = 0.5 // Scale down for preview
+
+    // Draw ocean floor background (same as playground)
+    const gradient = ctx.createLinearGradient(0, 0, 0, height)
+    gradient.addColorStop(0, "#f4d6a2")
+    gradient.addColorStop(0.5, "#e8c18e")
+    gradient.addColorStop(1, "#d4a76a")
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, width, height)
+
+    // Draw coral border
+    const coralColors = ["#FF6B6B", "#FF8E8E", "#FFB6B6", "#E67E22", "#FF5252"]
+    for (let x = 0; x < width; x += 20) {
+      ctx.fillStyle = coralColors[x % coralColors.length]
+      ctx.beginPath()
+      ctx.arc(x + 10, 10, 8, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(x + 10, height - 10, 8, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    for (let y = 20; y < height - 20; y += 20) {
+      ctx.fillStyle = coralColors[y % coralColors.length]
+      ctx.beginPath()
+      ctx.arc(10, y + 10, 8, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(width - 10, y + 10, 8, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Draw "Trash: 0" counter
+    ctx.fillStyle = "#F5A623"
+    ctx.beginPath()
+    ctx.roundRect(10, 25, 60, 22, 5)
+    ctx.fill()
+    ctx.fillStyle = "#FFF"
+    ctx.font = "bold 12px Arial"
+    ctx.fillText("Trash: 0", 15, 41)
+
+    // Start position (center) - robot's current position
+    let currentX = width / 2
+    let currentY = height / 2
+    let currentRotation = 0 // 0 = facing up
+
+    // Draw starting submarine
+    const drawMiniSub = (x: number, y: number, rotation: number) => {
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate((rotation * Math.PI) / 180)
+
+      // Body
+      ctx.fillStyle = "#FFD700"
+      ctx.strokeStyle = "#E6B800"
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.ellipse(0, 0, 15, 10, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+
+      // Periscope
+      ctx.fillStyle = "#E74C3C"
+      ctx.beginPath()
+      ctx.moveTo(0, -15)
+      ctx.lineTo(-4, -8)
+      ctx.lineTo(4, -8)
+      ctx.closePath()
+      ctx.fill()
+
+      // Eyes
+      ctx.fillStyle = "#FFF"
+      ctx.beginPath()
+      ctx.arc(-4, -2, 4, 0, Math.PI * 2)
+      ctx.arc(4, -2, 4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = "#000"
+      ctx.beginPath()
+      ctx.arc(-3, -2, 2, 0, Math.PI * 2)
+      ctx.arc(5, -2, 2, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Whiskers
+      ctx.strokeStyle = "#333"
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(-12, 0)
+      ctx.lineTo(-18, -4)
+      ctx.moveTo(-12, 2)
+      ctx.lineTo(-18, 5)
+      ctx.moveTo(12, 0)
+      ctx.lineTo(18, -4)
+      ctx.moveTo(12, 2)
+      ctx.lineTo(18, 5)
+      ctx.stroke()
+
+      ctx.restore()
+    }
+
+    // Parse blocks and calculate path
+    const Blockly = window.Blockly
+    const pathPoints: { x: number; y: number }[] = [{ x: currentX, y: currentY }]
+
+    // Find when_started block and trace connected blocks
+    const allBlocks = workspace.getAllBlocks()
+    const startBlock = allBlocks.find((b: any) => b.type === "when_started")
+
+    if (startBlock) {
+      let currentBlock = startBlock.getNextBlock()
+
+      while (currentBlock) {
+        const blockType = currentBlock.type
+
+        if (blockType === "turn_degrees") {
+          const direction = currentBlock.getFieldValue("DIRECTION")
+          const degrees = Number.parseFloat(currentBlock.getFieldValue("DEGREES")) || 90
+          currentRotation += direction === "right" ? degrees : -degrees
+        } else if (blockType === "turn_to_heading") {
+          const heading = Number.parseFloat(currentBlock.getFieldValue("HEADING")) || 0
+          currentRotation = heading
+        } else if (blockType === "turn_to_rotation") {
+          const rotation = Number.parseFloat(currentBlock.getFieldValue("ROTATION")) || 0
+          currentRotation = rotation
+        } else if (blockType === "drive_distance") {
+          const direction = currentBlock.getFieldValue("DIRECTION")
+          const distance = Number.parseFloat(currentBlock.getFieldValue("DISTANCE")) || 200
+          const unit = currentBlock.getFieldValue("UNIT") || "mm"
+
+          // Convert to pixels (scaled for preview)
+          const pixels = (unit === "mm" ? distance * 0.5 : distance * 12.7) * scale
+          const multiplier = direction === "forward" ? -1 : 1
+          const angleRad = (currentRotation * Math.PI) / 180
+
+          currentX += pixels * multiplier * Math.sin(angleRad)
+          currentY += pixels * multiplier * Math.cos(angleRad)
+          pathPoints.push({ x: currentX, y: currentY })
+        } else if (blockType === "drive") {
+          const direction = currentBlock.getFieldValue("DIRECTION")
+          const pixels = 50 * scale // Default distance
+          const multiplier = direction === "forward" ? -1 : 1
+          const angleRad = (currentRotation * Math.PI) / 180
+
+          currentX += pixels * multiplier * Math.sin(angleRad)
+          currentY += pixels * multiplier * Math.cos(angleRad)
+          pathPoints.push({ x: currentX, y: currentY })
+        }
+
+        currentBlock = currentBlock.getNextBlock()
+      }
+    }
+
+    if (pathPoints.length > 1) {
+      ctx.strokeStyle = "#22C55E" // Green color
+      ctx.lineWidth = 3
+      ctx.setLineDash([8, 4]) // Dotted line pattern
+      ctx.lineCap = "round"
+      ctx.lineJoin = "round"
+
+      ctx.beginPath()
+      ctx.moveTo(pathPoints[0].x, pathPoints[0].y)
+      for (let i = 1; i < pathPoints.length; i++) {
+        ctx.lineTo(pathPoints[i].x, pathPoints[i].y)
+      }
+      ctx.stroke()
+      ctx.setLineDash([]) // Reset to solid
+    }
+
+    // Draw submarine at start position with correct rotation
+    let subRotation = 0
+    if (startBlock) {
+      let block = startBlock.getNextBlock()
+      while (block) {
+        if (block.type === "turn_degrees") {
+          const dir = block.getFieldValue("DIRECTION")
+          const deg = Number.parseFloat(block.getFieldValue("DEGREES")) || 90
+          subRotation += dir === "right" ? deg : -deg
+        } else if (block.type === "turn_to_heading" || block.type === "turn_to_rotation") {
+          subRotation = Number.parseFloat(block.getFieldValue("HEADING") || block.getFieldValue("ROTATION")) || 0
+          break
+        }
+        if (block.type === "drive_distance" || block.type === "drive") break
+        block = block.getNextBlock()
+      }
+    }
+    drawMiniSub(width / 2, height / 2, subRotation)
+  }, [workspace])
+
+  const handleKeyPress = (e: KeyboardEvent) => {
+    const key = e.key
+
+    if (aiAssistantState.surveyStep === "main") {
+      switch (key) {
+        case "1":
+          setAiAssistantState((prev) => ({ ...prev, surveyStep: "strategy" }))
+          break
+        case "2":
+          setAiAssistantState((prev) => ({ ...prev, surveyStep: "predict" }))
+          break
+        case "3":
+          setAiAssistantState((prev) => ({ ...prev, surveyStep: "fix" }))
+          break
+        case "4":
+          setAiAssistantState((prev) => ({ ...prev, surveyStep: "compare" }))
+          break
+        case "5":
+          setAiAssistantState((prev) => ({ ...prev, surveyStep: "feel" }))
+          break
+        case "6":
+          setAiAssistantState((prev) => ({ ...prev, surveyStep: "partner" }))
+          break
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (aiAssistantState.isVisible && !aiAssistantState.isMinimized) {
+      window.addEventListener("keydown", handleKeyPress)
+    } else {
+      window.removeEventListener("keydown", handleKeyPress)
+    }
+
+    return () => window.removeEventListener("keydown", handleKeyPress)
+  }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiAssistantState.surveyStep])
+
+  const handleRestoreBlocks = () => {
+    if (workspace && deletedBlocks) {
+      const xml = (window as any).Blockly.Xml.textToDom(deletedBlocks)
+      ;(window as any).Blockly.Xml.domToWorkspace(xml, workspace)
+      setShowDeletedBlocks(false)
+    }
+  }
+
   return (
-    <div className="h-screen flex flex-col bg-[#E8EEF7]">
+    <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Header */}
       <div className="h-14 bg-gradient-to-r from-[#1976D2] to-[#2196F3] flex items-center justify-between px-4 text-white shadow-md">
         <div className="flex items-center gap-4">
@@ -1510,7 +2377,7 @@ export default function BlocklyEditor() {
           <Button
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              categoryState.selectedCategory === "drivetrain"
+              selectedCategory === "drivetrain"
                 ? "bg-[#4A90E2] text-white"
                 : "bg-[#4A90E2]/20 text-[#4A90E2] hover:bg-[#4A90E2]/30"
             }`}
@@ -1522,55 +2389,7 @@ export default function BlocklyEditor() {
           <Button
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              categoryState.selectedCategory === "magnet"
-                ? "bg-[#9B59B6] text-white"
-                : "bg-[#9B59B6]/20 text-[#9B59B6] hover:bg-[#9B59B6]/30"
-            }`}
-            onClick={() => handleSelectCategory("magnet")}
-          >
-            <Magnet className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Magnet</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              categoryState.selectedCategory === "drawing"
-                ? "bg-[#E67E22] text-white"
-                : "bg-[#E67E22]/20 text-[#E67E22] hover:bg-[#E67E22]/30"
-            }`}
-            onClick={() => handleSelectCategory("drawing")}
-          >
-            <Pencil className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Drawing</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              categoryState.selectedCategory === "sensing"
-                ? "bg-[#27AE60] text-white"
-                : "bg-[#27AE60]/20 text-[#27AE60] hover:bg-[#27AE60]/30"
-            }`}
-            onClick={() => handleSelectCategory("sensing")}
-          >
-            <Eye className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Sensing</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              categoryState.selectedCategory === "console"
-                ? "bg-[#7F8C8D] text-white"
-                : "bg-[#7F8C8D]/20 text-[#7F8C8D] hover:bg-[#7F8C8D]/30"
-            }`}
-            onClick={() => handleSelectCategory("console")}
-          >
-            <Terminal className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Console</span>
-          </Button>
-          <Button
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              categoryState.selectedCategory === "logic"
+              selectedCategory === "logic"
                 ? "bg-[#F5A623] text-white"
                 : "bg-[#F5A623]/20 text-[#F5A623] hover:bg-[#F5A623]/30"
             }`}
@@ -1582,7 +2401,55 @@ export default function BlocklyEditor() {
           <Button
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              categoryState.selectedCategory === "loops"
+              selectedCategory === "magnet"
+                ? "bg-[#9B59B6] text-white"
+                : "bg-[#9B59B6]/20 text-[#9B59B6] hover:bg-[#9B59B6]/30"
+            }`}
+            onClick={() => handleSelectCategory("magnet")}
+          >
+            <Magnet className="h-6 w-6" />
+            <span className="text-[10px] font-medium">Magnet</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+              selectedCategory === "drawing"
+                ? "bg-[#E67E22] text-white"
+                : "bg-[#E67E22]/20 text-[#E67E22] hover:bg-[#E67E22]/30"
+            }`}
+            onClick={() => handleSelectCategory("drawing")}
+          >
+            <Pencil className="h-6 w-6" />
+            <span className="text-[10px] font-medium">Drawing</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+              selectedCategory === "sensing"
+                ? "bg-[#14B8A6] text-white"
+                : "bg-[#14B8A6]/20 text-[#14B8A6] hover:bg-[#14B8A6]/30"
+            }`}
+            onClick={() => handleSelectCategory("sensing")}
+          >
+            <Eye className="h-6 w-6" />
+            <span className="text-[10px] font-medium">Sensing</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+              selectedCategory === "console"
+                ? "bg-[#7F8C8D] text-white"
+                : "bg-[#7F8C8D]/20 text-[#7F8C8D] hover:bg-[#7F8C8D]/30"
+            }`}
+            onClick={() => handleSelectCategory("console")}
+          >
+            <Terminal className="h-6 w-6" />
+            <span className="text-[10px] font-medium">Console</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+              selectedCategory === "loops"
                 ? "bg-[#2ECC71] text-white"
                 : "bg-[#2ECC71]/20 text-[#2ECC71] hover:bg-[#2ECC71]/30"
             }`}
@@ -1595,11 +2462,15 @@ export default function BlocklyEditor() {
           <div className="flex-1" />
           <Button
             variant="ghost"
-            className="w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors bg-red-500/20 text-red-500 hover:bg-red-500/30"
-            onClick={handleTrash}
+            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+              deletedBlocks
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-red-500/20 text-red-500 hover:bg-red-500/30"
+            }`}
+            onClick={() => (deletedBlocks ? setShowDeletedBlocks(true) : handleTrash())}
           >
             <Trash2 className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Trash</span>
+            <span className="text-[10px] font-medium">{deletedBlocks ? "View" : "Trash"}</span>
           </Button>
         </div>
 
@@ -1624,8 +2495,8 @@ export default function BlocklyEditor() {
             left: `${playgroundState.x}px`,
             top: `${playgroundState.y}px`,
             cursor: playgroundState.isDragging ? "grabbing" : "auto",
-            width: playgroundState.isMaximized ? "600px" : "400px",
-            height: playgroundState.isMaximized ? "600px" : "auto",
+            width: playgroundState.isMaximized ? "640px" : "440px",
+            height: playgroundState.isMaximized ? "680px" : "auto", // Adjusted height for maximized state
           }}
         >
           <div className="playground-header bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing">
@@ -1670,7 +2541,11 @@ export default function BlocklyEditor() {
             </div>
           </div>
           {!playgroundState.isMinimized && (
-            <div className="flex flex-col">
+            <div className="flex flex-col relative">
+              <div className="absolute top-2 left-2 z-10 bg-gradient-to-r from-[#FF8C00] to-[#FFA500] text-white px-3 py-1 rounded-full text-sm font-bold shadow-md">
+                Trash: {gameState.trashCollected}
+              </div>
+
               {/* Fixed layout with canvas, right ruler, and bottom ruler */}
               <div className="flex">
                 <canvas
@@ -1690,15 +2565,30 @@ export default function BlocklyEditor() {
                   ))}
                 </div>
               </div>
-              {/* Bottom ruler */}
+              {/* Bottom ruler - width includes canvas + right ruler */}
               <div
                 className="h-8 bg-gray-100 border-t border-gray-300 flex items-center justify-between px-4 text-[9px] text-gray-600"
-                style={{ width: playgroundState.isMaximized ? 600 : 400 }}
+                style={{ width: playgroundState.isMaximized ? 632 : 432 }}
               >
                 {[0, 1, 2, 3, 4].map((i) => (
                   <span key={i}>{playgroundState.isMaximized ? i * 150 : i * 100}</span>
                 ))}
               </div>
+
+              {gameState.isGameOver && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-b-lg">
+                  <div className="bg-white rounded-xl p-6 shadow-2xl text-center">
+                    <h3 className="text-2xl font-bold text-red-600 mb-2">You Lose!</h3>
+                    <p className="text-gray-600 mb-4">You hit the coral reef!</p>
+                    <p className="text-lg font-semibold text-orange-500 mb-4">
+                      Trash Collected: {gameState.trashCollected}
+                    </p>
+                    <Button onClick={handleReset} className="bg-purple-500 hover:bg-purple-600 text-white">
+                      Try Again
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1714,8 +2604,7 @@ export default function BlocklyEditor() {
             left: `${aiAssistantState.x}px`,
             top: `${aiAssistantState.y}px`,
             cursor: aiAssistantState.isDragging ? "grabbing" : "auto",
-            width: aiAssistantState.isMaximized ? "600px" : "400px",
-            height: aiAssistantState.isMinimized ? "auto" : aiAssistantState.isMaximized ? "600px" : "auto",
+            width: aiAssistantState.isMaximized ? "420px" : "320px",
           }}
         >
           <div className="ai-assistant-header bg-gradient-to-r from-[#9B59B6] to-[#8E44AD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing">
@@ -1760,50 +2649,60 @@ export default function BlocklyEditor() {
             </div>
           </div>
           {!aiAssistantState.isMinimized && (
-            <div className="p-4 overflow-auto">
+            <div className="p-4">
               {aiAssistantState.surveyStep === "main" ? (
                 <div className="text-gray-700">
                   <p className="mb-4 font-medium text-base">What sort of help do you want?</p>
                   <div className="flex flex-col gap-2">
                     <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                      onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "strategy" }))}
+                      className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0"
+                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "strategy" }))}
                     >
-                      <span className="mr-2 text-purple-600 font-semibold">1.</span>
-                      Come up with a strategy
+                      <Lightbulb className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">1.</span>
+                      <span>Come up with a strategy</span>
                     </Button>
                     <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                      onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "fix" }))}
+                      className="justify-start text-left h-auto py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white border-0"
+                      onClick={() => {
+                        console.log("[v0] Navigate to predict")
+                        setAiAssistantState((prev) => ({ ...prev, surveyStep: "predict" }))
+                      }}
                     >
-                      <span className="mr-2 text-purple-600 font-semibold">2.</span>
-                      Fix something that's not working
+                      <Target className="mr-3 h-5 w-5" />
+                      <span className="mr-2">2.</span> Predict and Plan
                     </Button>
                     <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                      onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "compare" }))}
+                      className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0"
+                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "fix" }))}
                     >
-                      <span className="mr-2 text-purple-600 font-semibold">3.</span>
-                      Compare to a previous attempt
+                      <Wrench className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">3.</span>
+                      <span>Fix something that's not working</span>
                     </Button>
                     <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                      onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "feel" }))}
+                      className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0"
+                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "compare" }))}
                     >
-                      <span className="mr-2 text-purple-600 font-semibold">4.</span>
-                      Tell me how you feel
+                      <GitCompare className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">4.</span>
+                      <span>Compare to a previous attempt</span>
                     </Button>
                     <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                      onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "partner" }))}
+                      className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0"
+                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "feel" }))}
                     >
-                      <span className="mr-2 text-purple-600 font-semibold">5.</span>
-                      Work with a partner
+                      <Heart className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">5.</span>
+                      <span>Tell me how you feel</span>
+                    </Button>
+                    <Button
+                      className="justify-start text-left h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0"
+                      onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "partner" }))}
+                    >
+                      <Users className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">6.</span>
+                      <span>Work with a partner</span>
                     </Button>
                   </div>
                 </div>
@@ -1812,68 +2711,92 @@ export default function BlocklyEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="mb-3 text-purple-600 hover:text-purple-800 -ml-2"
-                    onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
+                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
                   >
                     ← Back
                   </Button>
                   <p className="mb-4 font-medium text-base">What strategy would you like help with?</p>
                   <div className="flex flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">1.</span>Move faster (efficiently)
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                      <Zap className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">1.</span>
+                      <span>Move faster (efficiently)</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">2.</span>Turn around at the edge
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                      <RotateCcw className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">2.</span>
+                      <span>Turn around at the edge</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">3.</span>Find more blocks that could help you
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                      <Search className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">3.</span>
+                      <span>Find more blocks that could help you</span>
                     </Button>
                   </div>
+                </div>
+              ) : aiAssistantState.surveyStep === "predict" ? (
+                <div className="space-y-3">
+                  <Button
+                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    variant="outline"
+                    className="mb-2"
+                  >
+                    ← Back
+                  </Button>
+                  <div className="text-sm font-semibold mb-2 text-purple-700">
+                    Predict and Plan - Preview your robot's path:
+                  </div>
+                  <div className="border-2 border-purple-300 rounded-lg p-4 bg-white">
+                    <canvas
+                      ref={predictCanvasRef}
+                      width={300}
+                      height={300}
+                      className="w-full border border-gray-300 rounded"
+                    />
+                  </div>
+                  <Button
+                    onClick={() => {
+                      // Generate prediction based on current blocks
+                      drawPrediction()
+                    }}
+                    className="w-full bg-purple-500 hover:bg-purple-600 text-white"
+                  >
+                    <Target className="mr-2 h-4 w-4" />
+                    Show Prediction
+                  </Button>
                 </div>
               ) : aiAssistantState.surveyStep === "fix" ? (
                 <div className="text-gray-700">
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="mb-3 text-purple-600 hover:text-purple-800 -ml-2"
-                    onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    className="mb-3 text-red-600 hover:text-red-800 -ml-2"
+                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
                   >
                     ← Back
                   </Button>
                   <p className="mb-4 font-medium text-base">What's not working?</p>
                   <div className="flex flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">1.</span>Robot isn't moving
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
+                      <StopCircle className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">1.</span>
+                      <span>Robot isn't moving</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">2.</span>Robot moves the wrong direction
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
+                      <ArrowLeftRight className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">2.</span>
+                      <span>Robot moves the wrong direction</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">3.</span>Sensors aren't detecting anything
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
+                      <Eye className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">3.</span>
+                      <span>Sensors aren't detecting anything</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">4.</span>Loop doesn't stop
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
+                      <RefreshCw className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">4.</span>
+                      <span>Loop doesn't stop</span>
                     </Button>
                   </div>
                 </div>
@@ -1882,30 +2805,27 @@ export default function BlocklyEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="mb-3 text-purple-600 hover:text-purple-800 -ml-2"
-                    onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    className="mb-3 text-green-600 hover:text-green-800 -ml-2"
+                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
                   >
                     ← Back
                   </Button>
                   <p className="mb-4 font-medium text-base">What would you like to compare?</p>
                   <div className="flex flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">1.</span>Compare speed of different attempts
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0">
+                      <Gauge className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">1.</span>
+                      <span>Compare speed of different attempts</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">2.</span>Compare accuracy of movements
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0">
+                      <Target className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">2.</span>
+                      <span>Compare accuracy of movements</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">3.</span>See what changed between versions
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0">
+                      <FileDiff className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">3.</span>
+                      <span>See what changed between versions</span>
                     </Button>
                   </div>
                 </div>
@@ -1914,36 +2834,32 @@ export default function BlocklyEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="mb-3 text-purple-600 hover:text-purple-800 -ml-2"
-                    onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    className="mb-3 text-orange-600 hover:text-orange-800 -ml-2"
+                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
                   >
                     ← Back
                   </Button>
                   <p className="mb-4 font-medium text-base">How are you feeling?</p>
                   <div className="flex flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">1.</span>Frustrated - nothing is working
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
+                      <Frown className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">1.</span>
+                      <span>Frustrated - nothing is working</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">2.</span>Stuck - not sure what to try next
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
+                      <HelpCircle className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">2.</span>
+                      <span>Stuck - not sure what to try next</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">3.</span>Curious - want to learn more
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
+                      <Sparkles className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">3.</span>
+                      <span>Curious - want to learn more</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">4.</span>Excited - making progress!
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
+                      <PartyPopper className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">4.</span>
+                      <span>Excited - making progress!</span>
                     </Button>
                   </div>
                 </div>
@@ -1952,36 +2868,27 @@ export default function BlocklyEditor() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="mb-3 text-purple-600 hover:text-purple-800 -ml-2"
-                    onClick={() => setAIAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
+                    className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
+                    onClick={() => setAiAssistantState((prev) => ({ ...prev, surveyStep: "main" }))}
                   >
                     ← Back
                   </Button>
                   <p className="mb-4 font-medium text-base">How would you like to collaborate?</p>
                   <div className="flex flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">1.</span>Share my code with a partner
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                      <Share2 className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">1.</span>
+                      <span>Share my code with a partner</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">2.</span>Compare our solutions
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                      <GitCompare className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">2.</span>
+                      <span>Compare our solutions</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">3.</span>Work on different parts together
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start text-left h-auto py-3 px-4 hover:bg-purple-50 hover:border-purple-300 bg-transparent"
-                    >
-                      <span className="mr-2 text-purple-600 font-semibold">4.</span>Explain my approach to someone
+                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                      <Users className="w-5 h-5 mr-3 text-white" />
+                      <span className="mr-2 font-semibold">3.</span>
+                      <span>Work together on one robot</span>
                     </Button>
                   </div>
                 </div>
@@ -1991,10 +2898,57 @@ export default function BlocklyEditor() {
         </div>
       )}
 
+      {showDeletedBlocks && deletedBlocks && (
+        <div
+          className="fixed bg-white rounded-lg shadow-2xl border border-gray-300 overflow-hidden"
+          style={{
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 400,
+            zIndex: 200,
+          }}
+        >
+          <div className="bg-gradient-to-r from-red-600 to-red-500 text-white px-4 py-2 flex items-center justify-between">
+            <span className="font-semibold text-sm">Deleted Blocks</span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-white hover:bg-white/20"
+                onClick={() => setShowDeletedBlocks(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="p-4">
+            <p className="text-sm text-gray-600 mb-4">
+              Your previously deleted blocks are stored here. You can restore them to the workspace.
+            </p>
+            <div className="flex gap-2">
+              <Button className="flex-1 bg-green-500 hover:bg-green-600 text-white" onClick={handleRestoreBlocks}>
+                Restore Blocks
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 bg-transparent"
+                onClick={() => {
+                  setDeletedBlocks(null)
+                  setShowDeletedBlocks(false)
+                }}
+              >
+                Clear Trash
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Angle Picker Modals */}
-      {anglePickerState.isOpen && anglePickerState.type === "wheel" && (
+      {anglePickerState.isOpen && (
         <AngleWheelPicker
-          value={anglePickerState.value}
+          value={anglePickerState.angle}
           onChange={(newValue) => {
             if (anglePickerState.callback) {
               anglePickerState.callback(newValue)
@@ -2004,22 +2958,22 @@ export default function BlocklyEditor() {
         />
       )}
 
-      {anglePickerState.isOpen && anglePickerState.type === "compass" && (
+      {compassPickerState.isOpen && (
         <CompassPicker
-          value={anglePickerState.value}
+          value={compassPickerState.heading}
           onChange={(newValue) => {
-            if (anglePickerState.callback) {
-              anglePickerState.callback(newValue)
+            if (compassPickerState.callback) {
+              compassPickerState.callback(newValue)
             }
           }}
-          onClose={() => setAnglePickerState((prev) => ({ ...prev, isOpen: false }))}
+          onClose={() => setCompassPickerState((prev) => ({ ...prev, isOpen: false }))}
         />
       )}
 
       {distancePickerState.isOpen && (
         <DistanceSliderPicker
-          value={distancePickerState.value}
-          direction={distancePickerState.direction}
+          value={distancePickerState.distance}
+          direction={playgroundState.isMaximized ? "forward" : "forward"} // Placeholder, needs to be dynamically set
           robotState={robotState}
           onChange={(newValue) => {
             if (distancePickerState.callback) {
@@ -2074,16 +3028,8 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
         // Changed to use the DistanceSliderPicker
         .appendField(
           new Blockly.FieldTextInput("200", (val) => {
-            // setDistancePickerState({
-            //   isOpen: true,
-            //   value: Number(val),
-            //   direction: this.getFieldValue("DIRECTION"),
-            //   callback: (newVal) => {
-            //     this.setFieldValue(newVal.toString(), "DISTANCE")
-            //     Blockly.Events.fire(new Blockly.Events.Change(this, "field", "DISTANCE", val, newVal.toString()))
-            //   },
-            // })
-            return val // Keep the old value until updated by the picker
+            // Removed direct call to setDistancePickerState, handled by click listener
+            return val
           }),
           "DISTANCE",
         )
@@ -2168,7 +3114,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
       this.appendDummyInput()
         .appendField("turn to heading")
         .appendField(
-          new Blockly.FieldNumber(90, 0, 359, null, (newValue: number) => {
+          new Blockly.FieldNumber(90, 0, 359, 1, (newValue: string) => {
             // Removed direct call to setAnglePickerState, will be handled by click listener
           }),
           "HEADING",
@@ -2447,7 +3393,7 @@ function defineSensingBlocks(Blockly: any) {
         )
         .appendField("pressed?")
       this.setOutput(true, "Boolean")
-      this.setColour("#5DADE2")
+      this.setColour("#14B8A6")
       this.setTooltip("Check if bumper is pressed")
     },
   }
@@ -2497,7 +3443,7 @@ function defineSensingBlocks(Blockly: any) {
         )
         .appendField("found an object?")
       this.setOutput(true, "Boolean")
-      this.setColour("#5DADE2")
+      this.setColour("#14B8A6")
       this.setTooltip("Check if distance sensor found an object")
     },
   }
@@ -2525,7 +3471,7 @@ function defineSensingBlocks(Blockly: any) {
           "UNIT",
         )
       this.setOutput(true, "Number")
-      this.setColour("#5DADE2")
+      this.setColour("#14B8A6")
       this.setTooltip("Get distance sensor reading")
     },
   }
@@ -2547,7 +3493,7 @@ function defineSensingBlocks(Blockly: any) {
         )
         .appendField("is near object?")
       this.setOutput(true, "Boolean")
-      this.setColour("#5DADE2")
+      this.setColour("#14B8A6")
       this.setTooltip("Check if eye sensor is near an object")
     },
   }
@@ -2580,7 +3526,7 @@ function defineSensingBlocks(Blockly: any) {
         )
         .appendField("?")
       this.setOutput(true, "Boolean")
-      this.setColour("#5DADE2")
+      this.setColour("#14B8A6")
       this.setTooltip("Check if eye sensor detects a color")
     },
   }
@@ -2602,7 +3548,7 @@ function defineSensingBlocks(Blockly: any) {
         )
         .appendField("brightness in %")
       this.setOutput(true, "Number")
-      this.setColour("#5DADE2")
+      this.setColour("#14B8A6")
       this.setTooltip("Get eye sensor brightness percentage")
     },
   }
@@ -2611,57 +3557,27 @@ function defineSensingBlocks(Blockly: any) {
     return [`robot.eyeBrightness('${sensor}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["when_eye_detects"] = {
-    init: function () {
-      this.appendDummyInput()
-        .appendField("when")
-        .appendField(
-          new Blockly.FieldDropdown([
-            ["FrontEye", "front"],
-            ["DownEye", "down"],
-          ]),
-          "SENSOR",
-        )
-        .appendField(
-          new Blockly.FieldDropdown([
-            ["detects", "detects"],
-            ["loses", "loses"],
-          ]),
-          "STATE",
-        )
-        .appendField("an object")
-      this.setNextStatement(true, null)
-      this.setColour("#F4D03F")
-      this.setTooltip("When eye detects or loses an object")
-    },
-  }
-  Blockly.JavaScript.forBlock["when_eye_detects"] = (block: any) => {
-    const sensor = block.getFieldValue("SENSOR")
-    const state = block.getFieldValue("STATE")
-    return `// Event: when ${sensor} eye ${state} an object\n`
-  }
-
   Blockly.Blocks["position_value"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("position")
         .appendField(
           new Blockly.FieldDropdown([
-            ["X", "x"],
-            ["Y", "y"],
+            ["X", "X"],
+            ["Y", "Y"],
           ]),
           "AXIS",
         )
         .appendField("in")
         .appendField(
           new Blockly.FieldDropdown([
-            ["mm", "mm"],
-            ["inches", "inches"],
+            ["mm", "MM"],
+            ["inches", "INCHES"],
           ]),
           "UNIT",
         )
       this.setOutput(true, "Number")
-      this.setColour("#5DADE2")
+      this.setColour("#14B8A6")
       this.setTooltip("Get robot position")
     },
   }
@@ -2675,8 +3591,8 @@ function defineSensingBlocks(Blockly: any) {
     init: function () {
       this.appendDummyInput().appendField("position angle in degrees")
       this.setOutput(true, "Number")
-      this.setColour("#5DADE2")
-      this.setTooltip("Get robot rotation angle")
+      this.setColour("#14B8A6")
+      this.setTooltip("Get robot angle")
     },
   }
   Blockly.JavaScript.forBlock["position_angle"] = () => {
@@ -2684,19 +3600,20 @@ function defineSensingBlocks(Blockly: any) {
   }
 }
 
+// Console Blocks
 function defineConsoleBlocks(Blockly: any) {
   Blockly.Blocks["print_text"] = {
     init: function () {
-      this.appendDummyInput().appendField("print").appendField(new Blockly.FieldTextInput("VEXcode"), "TEXT")
+      this.appendValueInput("TEXT").appendField("print")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#9B59B6")
-      this.setTooltip("Print text to the console")
+      this.setTooltip("Print text to console")
     },
   }
   Blockly.JavaScript.forBlock["print_text"] = (block: any) => {
-    const text = block.getFieldValue("TEXT")
-    return `robot.print('${text}');\n`
+    const text = Blockly.JavaScript.valueToCode(block, "TEXT", Blockly.JavaScript.ORDER_NONE) || "''"
+    return `robot.print(${text});\n`
   }
 
   Blockly.Blocks["set_cursor_next_row"] = {
@@ -2705,7 +3622,6 @@ function defineConsoleBlocks(Blockly: any) {
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#9B59B6")
-      this.setTooltip("Move cursor to next row")
     },
   }
   Blockly.JavaScript.forBlock["set_cursor_next_row"] = () => `robot.setCursorNextRow();\n`
@@ -2716,7 +3632,6 @@ function defineConsoleBlocks(Blockly: any) {
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#9B59B6")
-      this.setTooltip("Clear all console rows")
     },
   }
   Blockly.JavaScript.forBlock["clear_all_rows"] = () => `robot.clearAllRows();\n`
@@ -2729,7 +3644,6 @@ function defineConsoleBlocks(Blockly: any) {
           new Blockly.FieldDropdown([
             ["0.1", "0.1"],
             ["0.01", "0.01"],
-            ["0.001", "0.001"],
             ["1", "1"],
           ]),
           "PRECISION",
@@ -2737,7 +3651,6 @@ function defineConsoleBlocks(Blockly: any) {
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#9B59B6")
-      this.setTooltip("Set print precision for numbers")
     },
   }
   Blockly.JavaScript.forBlock["set_print_precision"] = (block: any) => {
@@ -2751,18 +3664,16 @@ function defineConsoleBlocks(Blockly: any) {
         .appendField("set print color")
         .appendField(
           new Blockly.FieldDropdown([
-            ["black", "black"],
-            ["red", "red"],
-            ["green", "green"],
-            ["blue", "blue"],
-            ["white", "white"],
+            ["black", "BLACK"],
+            ["red", "RED"],
+            ["green", "GREEN"],
+            ["blue", "BLUE"],
           ]),
           "COLOR",
         )
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#9B59B6")
-      this.setTooltip("Set print text color")
     },
   }
   Blockly.JavaScript.forBlock["set_print_color"] = (block: any) => {
@@ -2771,6 +3682,7 @@ function defineConsoleBlocks(Blockly: any) {
   }
 }
 
+// Logic Blocks
 function defineLogicBlocks(Blockly: any) {
   Blockly.Blocks["wait_seconds"] = {
     init: function () {
@@ -2781,7 +3693,6 @@ function defineLogicBlocks(Blockly: any) {
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Wait for specified seconds")
     },
   }
   Blockly.JavaScript.forBlock["wait_seconds"] = (block: any) => {
@@ -2791,140 +3702,132 @@ function defineLogicBlocks(Blockly: any) {
 
   Blockly.Blocks["wait_until"] = {
     init: function () {
-      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("wait until")
+      this.appendValueInput("CONDITION").appendField("wait until")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Wait until condition is true")
     },
   }
   Blockly.JavaScript.forBlock["wait_until"] = (block: any) => {
-    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "false"
-    return `while (!(${condition})) { await robot.wait(0.1); }\n`
+    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "true"
+    return `while(!(${condition})) { await robot.wait(0.1); }\n`
   }
 
   Blockly.Blocks["repeat_times"] = {
     init: function () {
       this.appendDummyInput().appendField("repeat").appendField(new Blockly.FieldNumber(10, 1), "TIMES")
-      this.appendStatementInput("DO").appendField("")
+      this.appendStatementInput("DO")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Repeat blocks a number of times")
     },
   }
   Blockly.JavaScript.forBlock["repeat_times"] = (block: any) => {
     const times = block.getFieldValue("TIMES")
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `for (let i = 0; i < ${times}; i++) {\n${statements}}\n`
+    return `for(let i = 0; i < ${times}; i++) {\n${statements}}\n`
   }
 
   Blockly.Blocks["forever_loop"] = {
     init: function () {
       this.appendDummyInput().appendField("forever")
-      this.appendStatementInput("DO").appendField("")
+      this.appendStatementInput("DO")
       this.setPreviousStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Repeat blocks forever")
     },
   }
   Blockly.JavaScript.forBlock["forever_loop"] = (block: any) => {
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while (true) {\n${statements}await robot.wait(0.01);\n}\n`
+    return `while(true) {\n${statements}await robot.wait(0.01);\n}\n`
   }
 
   Blockly.Blocks["repeat_until"] = {
     init: function () {
-      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("repeat until")
-      this.appendStatementInput("DO").appendField("")
+      this.appendValueInput("CONDITION").appendField("repeat until")
+      this.appendStatementInput("DO")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Repeat blocks until condition is true")
     },
   }
   Blockly.JavaScript.forBlock["repeat_until"] = (block: any) => {
     const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "false"
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while (!(${condition})) {\n${statements}}\n`
+    return `while(!(${condition})) {\n${statements}}\n`
   }
 
   Blockly.Blocks["while_loop"] = {
     init: function () {
-      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("while")
-      this.appendStatementInput("DO").appendField("")
+      this.appendValueInput("CONDITION").appendField("while")
+      this.appendStatementInput("DO")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Repeat blocks while condition is true")
     },
   }
   Blockly.JavaScript.forBlock["while_loop"] = (block: any) => {
-    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "false"
+    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "true"
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while (${condition}) {\n${statements}}\n`
+    return `while(${condition}) {\n${statements}}\n`
   }
 
   Blockly.Blocks["if_then"] = {
     init: function () {
-      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("if")
+      this.appendValueInput("CONDITION").appendField("if")
       this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO").appendField("")
+      this.appendStatementInput("DO")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("If condition is true, do something")
     },
   }
   Blockly.JavaScript.forBlock["if_then"] = (block: any) => {
-    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "false"
+    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "true"
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `if (${condition}) {\n${statements}}\n`
+    return `if(${condition}) {\n${statements}}\n`
   }
 
   Blockly.Blocks["if_then_else"] = {
     init: function () {
-      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("if")
+      this.appendValueInput("CONDITION").appendField("if")
       this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO").appendField("")
+      this.appendStatementInput("DO")
       this.appendDummyInput().appendField("else")
-      this.appendStatementInput("ELSE").appendField("")
+      this.appendStatementInput("ELSE")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("If condition is true, do something, otherwise do something else")
     },
   }
   Blockly.JavaScript.forBlock["if_then_else"] = (block: any) => {
-    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "false"
+    const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "true"
     const doStatements = Blockly.JavaScript.statementToCode(block, "DO")
     const elseStatements = Blockly.JavaScript.statementToCode(block, "ELSE")
-    return `if (${condition}) {\n${doStatements}} else {\n${elseStatements}}\n`
+    return `if(${condition}) {\n${doStatements}} else {\n${elseStatements}}\n`
   }
 
   Blockly.Blocks["if_elseif_else"] = {
     init: function () {
-      this.appendValueInput("CONDITION1").setCheck("Boolean").appendField("if")
+      this.appendValueInput("CONDITION1").appendField("if")
       this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO1").appendField("")
-      this.appendValueInput("CONDITION2").setCheck("Boolean").appendField("else if")
+      this.appendStatementInput("DO1")
+      this.appendValueInput("CONDITION2").appendField("else if")
       this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO2").appendField("")
+      this.appendStatementInput("DO2")
       this.appendDummyInput().appendField("else")
-      this.appendStatementInput("ELSE").appendField("")
+      this.appendStatementInput("ELSE")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("If/else if/else chain")
     },
   }
   Blockly.JavaScript.forBlock["if_elseif_else"] = (block: any) => {
-    const condition1 = Blockly.JavaScript.valueToCode(block, "CONDITION1", Blockly.JavaScript.ORDER_NONE) || "false"
-    const do1 = Blockly.JavaScript.statementToCode(block, "DO1")
-    const condition2 = Blockly.JavaScript.valueToCode(block, "CONDITION2", Blockly.JavaScript.ORDER_NONE) || "false"
-    const do2 = Blockly.JavaScript.statementToCode(block, "DO2")
+    const condition1 = Blockly.JavaScript.valueToCode(block, "CONDITION1", Blockly.JavaScript.ORDER_NONE) || "true"
+    const do1Statements = Blockly.JavaScript.statementToCode(block, "DO1")
+    const condition2 = Blockly.JavaScript.valueToCode(block, "CONDITION2", Blockly.JavaScript.ORDER_NONE) || "true"
+    const do2Statements = Blockly.JavaScript.statementToCode(block, "DO2")
     const elseStatements = Blockly.JavaScript.statementToCode(block, "ELSE")
-    return `if (${condition1}) {\n${do1}} else if (${condition2}) {\n${do2}} else {\n${elseStatements}}\n`
+    return `if (${condition1}) {\n${do1Statements}} else if (${condition2}) {\n${do2Statements}} else {\n${elseStatements}}\n`
   }
 
   Blockly.Blocks["break_block"] = {
@@ -2932,32 +3835,25 @@ function defineLogicBlocks(Blockly: any) {
       this.appendDummyInput().appendField("break")
       this.setPreviousStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Break out of loop")
     },
   }
-  Blockly.JavaScript.forBlock["break_block"] = () => {
-    return "break;\n"
-  }
+  Blockly.JavaScript.forBlock["break_block"] = () => `break;\n`
 
   Blockly.Blocks["stop_project"] = {
     init: function () {
       this.appendDummyInput().appendField("stop project")
       this.setPreviousStatement(true, null)
       this.setColour("#F5A623")
-      this.setTooltip("Stop the entire project")
     },
   }
-  Blockly.JavaScript.forBlock["stop_project"] = () => {
-    return "robot.stop(); return;\n"
-  }
+  Blockly.JavaScript.forBlock["stop_project"] = () => `robot.stop();\n`
 
   Blockly.Blocks["comment_block"] = {
     init: function () {
       this.appendDummyInput().appendField("comment").appendField(new Blockly.FieldTextInput(""), "TEXT")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
-      this.setColour("#888888")
-      this.setTooltip("Add a comment")
+      this.setColour("#AAAAAA")
     },
   }
   Blockly.JavaScript.forBlock["comment_block"] = (block: any) => {
@@ -2966,19 +3862,47 @@ function defineLogicBlocks(Blockly: any) {
   }
 }
 
+// Switch Blocks
 function defineSwitchBlocks(Blockly: any) {
+  Blockly.Blocks["when_started"] = {
+    init: function () {
+      this.appendDummyInput().appendField("when started")
+      this.appendStatementInput("DO")
+      this.setColour("#F5A623")
+      this.setDeletable(false)
+      this.setTooltip("Program starts here")
+    },
+  }
+  Blockly.JavaScript.forBlock["when_started"] = (block: any) => {
+    return Blockly.JavaScript.statementToCode(block, "DO")
+  }
+
   Blockly.Blocks["function_definition"] = {
     init: function () {
-      this.appendDummyInput().appendField("define").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
-      this.appendStatementInput("STACK").appendField("")
-      this.setColour("#4CAF9C")
-      this.setTooltip("Define a function")
+      this.appendDummyInput().appendField("function").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
+      this.appendStatementInput("DO")
+      this.setColour("#4CAF50")
     },
   }
   Blockly.JavaScript.forBlock["function_definition"] = (block: any) => {
     const name = block.getFieldValue("NAME")
-    const statements = Blockly.JavaScript.statementToCode(block, "STACK")
+    const statements = Blockly.JavaScript.statementToCode(block, "DO")
     return `async function ${name}() {\n${statements}}\n`
+  }
+
+  Blockly.Blocks["function_with_input"] = {
+    init: function () {
+      this.appendDummyInput().appendField("function").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
+      this.appendDummyInput().appendField("with input").appendField(new Blockly.FieldTextInput("input"), "INPUT_NAME")
+      this.appendStatementInput("DO")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["function_with_input"] = (block: any) => {
+    const name = block.getFieldValue("NAME")
+    const inputName = block.getFieldValue("INPUT_NAME")
+    const statements = Blockly.JavaScript.statementToCode(block, "DO")
+    return `async function ${name}(${inputName}) {\n${statements}}\n`
   }
 
   Blockly.Blocks["function_call"] = {
@@ -2986,8 +3910,7 @@ function defineSwitchBlocks(Blockly: any) {
       this.appendDummyInput().appendField("call").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
-      this.setColour("#4CAF9C")
-      this.setTooltip("Call a function")
+      this.setColour("#4CAF50")
     },
   }
   Blockly.JavaScript.forBlock["function_call"] = (block: any) => {
@@ -2995,30 +3918,28 @@ function defineSwitchBlocks(Blockly: any) {
     return `await ${name}();\n`
   }
 
-  Blockly.Blocks["function_with_input"] = {
+  Blockly.Blocks["function_call_with_input"] = {
     init: function () {
-      this.appendDummyInput().appendField("define").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
-      this.appendValueInput("INPUT1").appendField("input")
-      this.appendStatementInput("STACK").appendField("")
-      this.setColour("#4CAF9C")
-      this.setTooltip("Define a function with input")
+      this.appendDummyInput().appendField("call").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
+      this.appendValueInput("INPUT")
+      this.setPreviousStatement(true, null)
+      this.setNextStatement(true, null)
+      this.setColour("#4CAF50")
     },
   }
-  Blockly.JavaScript.forBlock["function_with_input"] = (block: any) => {
+  Blockly.JavaScript.forBlock["function_call_with_input"] = (block: any) => {
     const name = block.getFieldValue("NAME")
-    const statements = Blockly.JavaScript.statementToCode(block, "STACK")
-    return `async function ${name}(input) {\n${statements}}\n`
+    const input = Blockly.JavaScript.valueToCode(block, "INPUT", Blockly.JavaScript.ORDER_NONE) || "null"
+    return `await ${name}(${input});\n`
   }
 
   Blockly.Blocks["boolean_and"] = {
     init: function () {
-      this.appendValueInput("A").setCheck("Boolean")
-      this.appendDummyInput().appendField("and")
-      this.appendValueInput("B").setCheck("Boolean")
+      this.appendValueInput("A")
+      this.appendValueInput("B").appendField("and")
       this.setOutput(true, "Boolean")
-      this.setColour("#4CAF9C")
+      this.setColour("#4CAF50")
       this.setInputsInline(true)
-      this.setTooltip("Returns true if both inputs are true")
     },
   }
   Blockly.JavaScript.forBlock["boolean_and"] = (block: any) => {
@@ -3029,13 +3950,11 @@ function defineSwitchBlocks(Blockly: any) {
 
   Blockly.Blocks["boolean_or"] = {
     init: function () {
-      this.appendValueInput("A").setCheck("Boolean")
-      this.appendDummyInput().appendField("or")
-      this.appendValueInput("B").setCheck("Boolean")
+      this.appendValueInput("A")
+      this.appendValueInput("B").appendField("or")
       this.setOutput(true, "Boolean")
-      this.setColour("#4CAF9C")
+      this.setColour("#4CAF50")
       this.setInputsInline(true)
-      this.setTooltip("Returns true if either input is true")
     },
   }
   Blockly.JavaScript.forBlock["boolean_or"] = (block: any) => {
@@ -3046,26 +3965,23 @@ function defineSwitchBlocks(Blockly: any) {
 
   Blockly.Blocks["boolean_not"] = {
     init: function () {
-      this.appendValueInput("A").setCheck("Boolean").appendField("not")
+      this.appendValueInput("A").appendField("not")
       this.setOutput(true, "Boolean")
-      this.setColour("#4CAF9C")
-      this.setTooltip("Returns the opposite")
+      this.setColour("#4CAF50")
     },
   }
   Blockly.JavaScript.forBlock["boolean_not"] = (block: any) => {
     const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_LOGICAL_NOT) || "true"
-    return [`!${a}`, Blockly.JavaScript.ORDER_LOGICAL_NOT]
+    return [`!(${a})`, Blockly.JavaScript.ORDER_LOGICAL_NOT]
   }
 
   Blockly.Blocks["compare_equal"] = {
     init: function () {
       this.appendValueInput("A")
-      this.appendDummyInput().appendField("=")
-      this.appendValueInput("B")
+      this.appendValueInput("B").appendField("=")
       this.setOutput(true, "Boolean")
-      this.setColour("#4CAF9C")
+      this.setColour("#4CAF50")
       this.setInputsInline(true)
-      this.setTooltip("Check if values are equal")
     },
   }
   Blockly.JavaScript.forBlock["compare_equal"] = (block: any) => {
@@ -3074,23 +3990,104 @@ function defineSwitchBlocks(Blockly: any) {
     return [`(${a} === ${b})`, Blockly.JavaScript.ORDER_EQUALITY]
   }
 
-  Blockly.Blocks["when_started"] = {
+  Blockly.Blocks["compare_not_equal"] = {
     init: function () {
-      this.appendDummyInput().appendField(new Blockly.FieldLabel("when started", "when-started-text"))
-      this.appendStatementInput("STACK")
-      this.setColour("#F5C631") // Yellow/gold color matching the image
-      this.setTooltip("Run when program starts")
-      this.setDeletable(false)
-      this.setMovable(true)
-      // Hat shape - no previous connection, only next statement connection
-      this.setPreviousStatement(false)
-      this.setNextStatement(false)
-      // This makes it a "hat" block shape in Blockly
-      this.hat = "cap"
+      this.appendValueInput("A")
+      this.appendValueInput("B").appendField("≠")
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
+      this.setInputsInline(true)
     },
   }
-  Blockly.JavaScript.forBlock["when_started"] = (block: any) => {
-    const statements = Blockly.JavaScript.statementToCode(block, "STACK")
-    return `// When started\n${statements}`
+  Blockly.JavaScript.forBlock["compare_not_equal"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_EQUALITY) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_EQUALITY) || "0"
+    return [`(${a} !== ${b})`, Blockly.JavaScript.ORDER_EQUALITY]
+  }
+
+  Blockly.Blocks["compare_less"] = {
+    init: function () {
+      this.appendValueInput("A")
+      this.appendValueInput("B").appendField("<")
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
+      this.setInputsInline(true)
+    },
+  }
+  Blockly.JavaScript.forBlock["compare_less"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    return [`(${a} < ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
+  }
+
+  Blockly.Blocks["compare_greater"] = {
+    init: function () {
+      this.appendValueInput("A")
+      this.appendValueInput("B").appendField(">")
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
+      this.setInputsInline(true)
+    },
+  }
+  Blockly.JavaScript.forBlock["compare_greater"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    return [`(${a} > ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
+  }
+
+  Blockly.Blocks["compare_less_equal"] = {
+    init: function () {
+      this.appendValueInput("A")
+      this.appendValueInput("B").appendField("≤")
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
+      this.setInputsInline(true)
+    },
+  }
+  Blockly.JavaScript.forBlock["compare_less_equal"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    return [`(${a} <= ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
+  }
+
+  Blockly.Blocks["compare_greater_equal"] = {
+    init: function () {
+      this.appendValueInput("A")
+      this.appendValueInput("B").appendField("≥")
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
+      this.setInputsInline(true)
+    },
+  }
+  Blockly.JavaScript.forBlock["compare_greater_equal"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    return [`(${a} >= ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
+  }
+
+  Blockly.Blocks["number_value"] = {
+    init: function () {
+      this.appendDummyInput().appendField(new Blockly.FieldNumber(0), "NUM")
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["number_value"] = (block: any) => {
+    const num = block.getFieldValue("NUM")
+    return [String(num), Blockly.JavaScript.ORDER_ATOMIC]
+  }
+
+  Blockly.Blocks["text_value"] = {
+    init: function () {
+      this.appendDummyInput().appendField('"').appendField(new Blockly.FieldTextInput(""), "TEXT").appendField('"')
+      this.setOutput(true, "String")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["text_value"] = (block: any) => {
+    const text = block.getFieldValue("TEXT")
+    return [`"${text}"`, Blockly.JavaScript.ORDER_ATOMIC]
   }
 }
+
+export default BlocklyEditor
