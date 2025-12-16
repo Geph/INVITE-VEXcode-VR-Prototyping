@@ -94,7 +94,7 @@ An integrated help system with multiple support options:
 
 ### Installation
 
-\`\`\`bash
+```bash
 # Clone the repository
 git clone https://github.com/your-username/ocean-cleanup-blocks.git
 
@@ -106,16 +106,16 @@ npm install
 
 # Start development server
 npm run dev
-\`\`\`
+```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Building for Production
 
-\`\`\`bash
+```bash
 npm run build
 npm start
-\`\`\`
+```
 
 ## Usage Guide
 
@@ -150,7 +150,7 @@ npm start
 
 ## Project Structure
 
-\`\`\`
+```
 ├── app/
 │   ├── page.tsx          # Main application component
 │   ├── layout.tsx        # Root layout
@@ -160,7 +160,7 @@ npm start
 ├── lib/
 │   └── utils.ts          # Utility functions
 └── public/               # Static assets
-\`\`\`
+```
 
 ## Contributing
 
