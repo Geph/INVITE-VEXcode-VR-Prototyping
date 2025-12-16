@@ -904,6 +904,11 @@ function BlocklyEditor() {
         minScale: 0.3,
         scaleSpeed: 1.2,
       },
+      move: {
+        scrollbars: true,
+        drag: true,
+        wheel: true,
+      },
       trashcan: false,
     })
     setWorkspace(ws)
@@ -1046,7 +1051,667 @@ function BlocklyEditor() {
   }, [workspaceSvg]) // Dependency on workspaceSvg
 
   useEffect(() => {
-    if (!workspace || !blocklyLoaded) return // Use ref
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "set_drive_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "drive_distance") {
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "set_drive_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "drive_distance") {
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "set_drive_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "drive_distance") {
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "set_drive_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "drive_distance") {
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
+
+    const Blockly = window.Blockly
+
+    // Listen for field clicks by adding a handler to the workspace's SVG
+    const handleFieldClick = (e: MouseEvent) => {
+      const target = e.target as Element
+
+      // Check if clicked on a field text element
+      const fieldGroup = target.closest(".blocklyEditableText")
+      if (!fieldGroup) return
+
+      // Get the text content of the clicked field to determine if it's a number
+      const textElement = fieldGroup.querySelector("text")
+      const fieldValue = textElement?.textContent || ""
+
+      // Check if this is a number field (contains only digits and optional decimal)
+      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
+
+      // Also check if it's a dropdown by looking for dropdown indicator
+      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
+
+      // If it's a dropdown field or not a number, don't show custom picker
+      if (hasDropdown || !isNumberField) return
+
+      // Find the block that contains this field
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const blockType = block.type
+
+      // Check which field was clicked based on the block type and field value
+      if (blockType === "turn_degrees") {
+        const currentDegrees = block.getFieldValue("DEGREES")
+        // Only open if clicked value matches the DEGREES field
+        if (fieldValue.trim() === currentDegrees.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentDegrees) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DEGREES")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 90,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        const currentHeading = block.getFieldValue("HEADING")
+        if (fieldValue.trim() === currentHeading.toString()) {
+          setCompassPickerState({
+            isOpen: true,
+            heading: Number(currentHeading) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "HEADING")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "set_drive_rotation") {
+        const currentRotation = block.getFieldValue("ROTATION")
+        if (fieldValue.trim() === currentRotation.toString()) {
+          setAnglePickerState({
+            isOpen: true,
+            angle: Number(currentRotation) || 0,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "ROTATION")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      } else if (blockType === "drive_distance") {
+        const currentDistance = block.getFieldValue("DISTANCE")
+        // Only open slider if clicked on the distance number, not the dropdown
+        if (fieldValue.trim() === currentDistance.toString()) {
+          setDistancePickerState({
+            isOpen: true,
+            distance: Number(currentDistance) || 200,
+            x: e.clientX,
+            y: e.clientY,
+            callback: (val: number) => {
+              block.setFieldValue(val.toString(), "DISTANCE")
+            },
+          })
+          e.preventDefault()
+          e.stopPropagation()
+        }
+      }
+    }
+
+    // Get the workspace's SVG element
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) {
+      workspaceSvg.addEventListener("click", handleFieldClick)
+    }
+
+    return () => {
+      if (workspaceSvg) {
+        workspaceSvg.removeEventListener("click", handleFieldClick)
+      }
+    }
+  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
 
     const Blockly = window.Blockly
 
@@ -2276,7 +2941,6 @@ function BlocklyEditor() {
           { kind: "block", type: "eye_is_near" },
           { kind: "block", type: "eye_detects_color" },
           { kind: "block", type: "eye_brightness" },
-          { kind: "block", type: "when_eye_detects" },
           { kind: "block", type: "position_value" },
           { kind: "block", type: "position_angle" },
         ]
@@ -2974,7 +3638,6 @@ function BlocklyEditor() {
         { kind: "block", type: "eye_is_near" },
         { kind: "block", type: "eye_detects_color" },
         { kind: "block", type: "eye_brightness" },
-        { kind: "block", type: "when_eye_detects" },
         { kind: "block", type: "position_value" },
         { kind: "block", type: "position_angle" },
       ]
@@ -5111,6 +5774,24 @@ function defineSwitchBlocks(Blockly: any) {
   Blockly.JavaScript.forBlock["text_value"] = (block: any) => {
     const text = block.getFieldValue("TEXT")
     return [`"${text}"`, Blockly.JavaScript.ORDER_ATOMIC]
+  }
+
+  Blockly.Blocks["random_number"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("random")
+        .appendField(new Blockly.FieldNumber(1, 0), "MIN")
+        .appendField("to")
+        .appendField(new Blockly.FieldNumber(10, 0), "MAX")
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+      this.setTooltip("Generate a random number between min and max")
+    },
+  }
+  Blockly.JavaScript.forBlock["random_number"] = (block: any) => {
+    const min = block.getFieldValue("MIN")
+    const max = block.getFieldValue("MAX")
+    return [`(Math.floor(Math.random() * (${max} - ${min} + 1)) + ${min})`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 }
 
