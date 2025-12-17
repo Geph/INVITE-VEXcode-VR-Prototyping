@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -49,6 +49,11 @@ declare global {
     Blockly: any
   }
 }
+
+// Defining Unity sidebar
+const UnitySidebar = dynamic(() => import("./UnitySidebar"), {
+  ssr: false,
+});
 
 // Robot state interface
 interface RobotState {
@@ -921,7 +926,7 @@ function BlocklyEditor() {
       const whenStartedBlock = ws.newBlock("when_started")
       whenStartedBlock.initSvg()
       whenStartedBlock.render()
-      whenStartedBlock.moveBy(50, 50)
+      whenStartedBlock.moveBy(-250, 0)
       whenStartedBlock.setDeletable(false) // Can't be deleted
       whenStartedBlock.setMovable(true) // Can be moved
     }, 100)
@@ -2190,6 +2195,16 @@ function BlocklyEditor() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
+    {/* Unity Sidebar positioned on the right */}
+  <div className="absolute top-0 right-0 w-[400px] border-l border-gray-300 z-50"
+  style={{
+        top: "55px",
+    bottom: "0",             
+    height: "auto",          // let top + bottom control height
+  }}
+  >
+    <UnitySidebar/>
+  </div>
       {/* Header */}
       <div className="h-14 bg-gradient-to-r from-[#1976D2] to-[#2196F3] flex items-center justify-between px-4 text-white shadow-md">
         <div className="flex items-center gap-4">
