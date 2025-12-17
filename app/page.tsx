@@ -41,6 +41,7 @@ import {
   Share2,
   ArrowLeft,
   Settings,
+  Calculator,
 } from "lucide-react"
 
 declare global {
@@ -732,7 +733,8 @@ function BlocklyEditor() {
     ctx.translate(robotX, robotY)
     ctx.rotate((robotState.rotation * Math.PI) / 180)
 
-    // Main submarine body - yellow oval
+    // Main
+    // submarine body - yellow oval
     ctx.fillStyle = "#FFD700"
     ctx.strokeStyle = "#E6B800"
     ctx.lineWidth = 2
@@ -866,7 +868,8 @@ function BlocklyEditor() {
           defineSensingBlocks(Blockly)
           defineConsoleBlocks(Blockly)
           defineLogicBlocks(Blockly)
-          defineSwitchBlocks(Blockly)
+          defineOperatorsBlocks(Blockly) // Define Operators blocks
+          defineSwitchBlocks(Blockly) // This function is now defined
           setBlocklyLoaded(true)
         }
       }
@@ -881,7 +884,8 @@ function BlocklyEditor() {
       defineSensingBlocks(window.Blockly)
       defineConsoleBlocks(window.Blockly)
       defineLogicBlocks(window.Blockly)
-      defineSwitchBlocks(window.Blockly)
+      defineOperatorsBlocks(window.Blockly) // Define Operators blocks
+      defineSwitchBlocks(window.Blockly) // This function is now defined
       setBlocklyLoaded(true)
     }
   }, [])
@@ -923,160 +927,26 @@ function BlocklyEditor() {
     }, 100)
   }, [blocklyLoaded, workspace])
 
-  const handleFieldClick = (e: MouseEvent) => {
-    const target = e.target as Element
-
-    // Check if clicked on a field text element
-    const fieldGroup = target.closest(".blocklyEditableText")
-    if (!fieldGroup) return
-
-    // Get the text content of the clicked field to determine if it's a number
-    const textElement = fieldGroup.querySelector("text")
-    const fieldValue = textElement?.textContent || ""
-
-    // Check if this is a number field (contains only digits and optional decimal)
-    const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-    // Also check if it's a dropdown by looking for dropdown indicator
-    const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-    // If it's a dropdown field or not a number, don't show custom picker
-    if (hasDropdown || !isNumberField) return
-
-    // Find the block that contains this field
-    const blockSvg = target.closest(".blocklyDraggable")
-    if (!blockSvg) return
-
-    const blockId = blockSvg.getAttribute("data-id")
-    if (!blockId) return
-
-    const block = workspace.getBlockById(blockId)
-    if (!block) return
-
-    const blockType = block.type
-
-    // Check which field was clicked based on the block type and field value
-    if (blockType === "turn_degrees") {
-      const currentDegrees = block.getFieldValue("DEGREES")
-      // Only open if clicked value matches the DEGREES field
-      if (fieldValue.trim() === currentDegrees.toString()) {
-        setAnglePickerState({
-          isOpen: true,
-          angle: Number(currentDegrees) || 90,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), "DEGREES")
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
-      }
-    } else if (blockType === "turn_to_rotation") {
-      const currentRotation = block.getFieldValue("ROTATION")
-      if (fieldValue.trim() === currentRotation.toString()) {
-        setAnglePickerState({
-          isOpen: true,
-          angle: Number(currentRotation) || 90,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), "ROTATION")
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
-      }
-    } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-      const currentHeading = block.getFieldValue("HEADING")
-      if (fieldValue.trim() === currentHeading.toString()) {
-        setCompassPickerState({
-          isOpen: true,
-          heading: Number(currentHeading) || 0,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), "HEADING")
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
-      }
-    } else if (blockType === "set_drive_rotation") {
-      const currentRotation = block.getFieldValue("ROTATION")
-      if (fieldValue.trim() === currentRotation.toString()) {
-        setAnglePickerState({
-          isOpen: true,
-          angle: Number(currentRotation) || 0,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), "ROTATION")
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
-      }
-    } else if (blockType === "drive_distance") {
-      const currentDistance = block.getFieldValue("DISTANCE")
-      // Only open slider if clicked on the distance number, not the dropdown
-      if (fieldValue.trim() === currentDistance.toString()) {
-        setDistancePickerState({
-          isOpen: true,
-          distance: Number(currentDistance) || 200,
-          x: e.clientX,
-          y: e.clientY,
-          callback: (val: number) => {
-            block.setFieldValue(val.toString(), "DISTANCE")
-          },
-        })
-        e.preventDefault()
-        e.stopPropagation()
-      }
-    }
-  }
-
-  // Get the workspace's SVG element
-  const workspaceSvg = workspace?.getParentSvg() // Use optional chaining here
-  useEffect(() => {
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [workspaceSvg]) // Dependency on workspaceSvg
-
+  // Combined effect for handling field clicks across all relevant blocks
   useEffect(() => {
     if (!workspace || !blocklyLoaded) return
 
     const Blockly = window.Blockly
 
-    // Listen for field clicks by adding a handler to the workspace's SVG
     const handleFieldClick = (e: MouseEvent) => {
       const target = e.target as Element
 
-      // Check if clicked on a field text element
       const fieldGroup = target.closest(".blocklyEditableText")
       if (!fieldGroup) return
 
-      // Get the text content of the clicked field to determine if it's a number
       const textElement = fieldGroup.querySelector("text")
       const fieldValue = textElement?.textContent || ""
 
-      // Check if this is a number field (contains only digits and optional decimal)
       const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
       const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
 
-      // If it's a dropdown field or not a number, don't show custom picker
       if (hasDropdown || !isNumberField) return
 
-      // Find the block that contains this field
       const blockSvg = target.closest(".blocklyDraggable")
       if (!blockSvg) return
 
@@ -1088,10 +958,8 @@ function BlocklyEditor() {
 
       const blockType = block.type
 
-      // Check which field was clicked based on the block type and field value
       if (blockType === "turn_degrees") {
         const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
         if (fieldValue.trim() === currentDegrees.toString()) {
           setAnglePickerState({
             isOpen: true,
@@ -1152,7 +1020,6 @@ function BlocklyEditor() {
         }
       } else if (blockType === "drive_distance") {
         const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
         if (fieldValue.trim() === currentDistance.toString()) {
           setDistancePickerState({
             isOpen: true,
@@ -1169,7 +1036,6 @@ function BlocklyEditor() {
       }
     }
 
-    // Get the workspace's SVG element
     const workspaceSvg = workspace.getParentSvg()
     if (workspaceSvg) {
       workspaceSvg.addEventListener("click", handleFieldClick)
@@ -1180,1724 +1046,9 @@ function BlocklyEditor() {
         workspaceSvg.removeEventListener("click", handleFieldClick)
       }
     }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
+  }, [blocklyLoaded, workspace, setAnglePickerState, setCompassPickerState, setDistancePickerState]) // Added dependencies
 
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    const Blockly = window.Blockly
-
-    // Listen for field clicks by adding a handler to the workspace's SVG
-    const handleFieldClick = (e: MouseEvent) => {
-      const target = e.target as Element
-
-      // Check if clicked on a field text element
-      const fieldGroup = target.closest(".blocklyEditableText")
-      if (!fieldGroup) return
-
-      // Get the text content of the clicked field to determine if it's a number
-      const textElement = fieldGroup.querySelector("text")
-      const fieldValue = textElement?.textContent || ""
-
-      // Check if this is a number field (contains only digits and optional decimal)
-      const isNumberField = /^-?\d+(\.\d+)?$/.test(fieldValue.trim())
-
-      // Also check if it's a dropdown by looking for dropdown indicator
-      const hasDropdown = fieldGroup.querySelector(".blocklyDropdownRect") !== null
-
-      // If it's a dropdown field or not a number, don't show custom picker
-      if (hasDropdown || !isNumberField) return
-
-      // Find the block that contains this field
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-
-      // Check which field was clicked based on the block type and field value
-      if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        // Only open if clicked value matches the DEGREES field
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        // Only open slider if clicked on the distance number, not the dropdown
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      }
-    }
-
-    // Get the workspace's SVG element
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
-      }
-    }
-  }, [blocklyLoaded, workspace]) // Dependency on blocklyLoaded and workspace
-
+  // useEffect for updating toolbox based on selected category
   useEffect(() => {
     if (!workspace || !blocklyLoaded) return
 
@@ -2920,6 +1071,41 @@ function BlocklyEditor() {
           { kind: "block", type: "set_drive_heading" },
           { kind: "block", type: "set_drive_rotation" },
           { kind: "block", type: "set_drive_timeout" },
+        ]
+        break
+      case "operators":
+        blocks = [
+          { kind: "block", type: "math_arithmetic" },
+          { kind: "block", type: "compare" },
+          { kind: "block", type: "boolean_and" },
+          { kind: "block", type: "boolean_not" },
+          { kind: "block", type: "range_compare" },
+          { kind: "block", type: "random_int" },
+          { kind: "block", type: "round_number" },
+          { kind: "block", type: "math_function" },
+          { kind: "block", type: "atan2_function" },
+          { kind: "block", type: "modulo" },
+          { kind: "block", type: "text_join" },
+          { kind: "block", type: "text_letter_at" },
+          { kind: "block", type: "text_length" },
+          { kind: "block", type: "text_contains" },
+          { kind: "block", type: "convert_type" },
+        ]
+        break
+      case "logic":
+        blocks = [
+          { kind: "block", type: "wait_seconds" },
+          { kind: "block", type: "wait_until" },
+          { kind: "block", type: "repeat_times" },
+          { kind: "block", type: "forever_loop" },
+          { kind: "block", type: "repeat_until" },
+          { kind: "block", type: "while_loop" },
+          { kind: "block", type: "if_then" },
+          { kind: "block", type: "if_then_else" },
+          { kind: "block", type: "if_elseif_else" }, // Added if_elseif_else
+          { kind: "block", type: "break_block" },
+          { kind: "block", type: "stop_project" },
+          { kind: "block", type: "comment_block" },
         ]
         break
       case "magnet":
@@ -2954,32 +1140,14 @@ function BlocklyEditor() {
           { kind: "block", type: "set_print_color" },
         ]
         break
-      case "logic":
+      case "loops": // Corrected from "loops" to match the update
         blocks = [
-          { kind: "block", type: "wait_seconds" },
-          { kind: "block", type: "wait_until" },
-          { kind: "block", type: "repeat_times" },
-          { kind: "block", type: "forever_loop" },
-          { kind: "block", type: "repeat_until" },
-          { kind: "block", type: "while_loop" },
-          { kind: "block", type: "if_then" },
-          { kind: "block", type: "if_then_else" },
-          { kind: "block", type: "if_elseif_else" }, // Added if_elseif_else
-          { kind: "block", type: "break_block" },
-          { kind: "block", type: "stop_project" },
-          { kind: "block", type: "comment_block" },
-        ]
-        break
-      case "loops":
-        blocks = [
-          { kind: "block", type: "function_definition" },
-          { kind: "block", type: "function_with_input" },
-          { kind: "block", type: "function_call" },
-          { kind: "block", type: "boolean_and" }, // Replaced boolean_value with boolean_and
-          { kind: "block", type: "boolean_or" }, // Replaced not_operator with boolean_or
-          { kind: "block", type: "boolean_not" }, // Replaced and_or_operator with boolean_not
-          { kind: "block", type: "compare_equal" }, // Replaced comparison_operator with compare_equal
-          { kind: "block", type: "when_started" },
+          { kind: "block", type: "when_started" }, // Added from defineSwitchBlocks
+          { kind: "block", type: "forever" }, // Added from defineSwitchBlocks
+          { kind: "block", type: "repeat" }, // Added from defineSwitchBlocks
+          { kind: "block", type: "wait" }, // Added from defineSwitchBlocks
+          // Removed function_definition, function_with_input, function_call as they are not in updates
+          // Removed boolean_and, boolean_or, boolean_not, compare_equal, when_started as they are already in logic or operators
         ]
         break
     }
@@ -3468,7 +1636,6 @@ function BlocklyEditor() {
     } finally {
       // This block executes regardless of whether an error occurred or not
       // However, we need to be careful not to reset isRunning if stop() was called within the executed code.
-      // A more robust solution might involve a flag set by the stop() function.
       // For now, we assume if the try block completes without an explicit stop, we should reset.
       if (isRunning) {
         setIsRunning(false)
@@ -3621,6 +1788,39 @@ function BlocklyEditor() {
         { kind: "block", type: "set_drive_rotation" },
         { kind: "block", type: "set_drive_timeout" },
       ]
+    } else if (category === "operators") {
+      blocks = [
+        { kind: "block", type: "math_arithmetic" },
+        { kind: "block", type: "compare" },
+        { kind: "block", type: "boolean_and" },
+        { kind: "block", type: "boolean_not" },
+        { kind: "block", type: "range_compare" },
+        { kind: "block", type: "random_int" },
+        { kind: "block", type: "round_number" },
+        { kind: "block", type: "math_function" },
+        { kind: "block", type: "atan2_function" },
+        { kind: "block", type: "modulo" },
+        { kind: "block", type: "text_join" },
+        { kind: "block", type: "text_letter_at" },
+        { kind: "block", type: "text_length" },
+        { kind: "block", type: "text_contains" },
+        { kind: "block", type: "convert_type" },
+      ]
+    } else if (category === "logic") {
+      blocks = [
+        { kind: "block", type: "wait_seconds" },
+        { kind: "block", type: "wait_until" },
+        { kind: "block", type: "repeat_times" },
+        { kind: "block", type: "forever_loop" },
+        { kind: "block", type: "repeat_until" },
+        { kind: "block", type: "while_loop" },
+        { kind: "block", type: "if_then" },
+        { kind: "block", type: "if_then_else" },
+        { kind: "block", type: "if_elseif_else" }, // Added if_elseif_else
+        { kind: "block", type: "break_block" },
+        { kind: "block", type: "stop_project" },
+        { kind: "block", type: "comment_block" },
+      ]
     } else if (category === "magnet") {
       blocks = [{ kind: "block", type: "energize_magnet" }]
     } else if (category === "drawing") {
@@ -3649,31 +1849,15 @@ function BlocklyEditor() {
         { kind: "block", type: "set_print_precision" },
         { kind: "block", type: "set_print_color" },
       ]
-    } else if (category === "logic") {
-      blocks = [
-        { kind: "block", type: "wait_seconds" },
-        { kind: "block", type: "wait_until" },
-        { kind: "block", type: "repeat_times" },
-        { kind: "block", type: "forever_loop" },
-        { kind: "block", type: "repeat_until" },
-        { kind: "block", type: "while_loop" },
-        { kind: "block", type: "if_then" },
-        { kind: "block", type: "if_then_else" },
-        { kind: "block", type: "if_elseif_else" }, // Added if_elseif_else
-        { kind: "block", type: "break_block" },
-        { kind: "block", type: "stop_project" },
-        { kind: "block", type: "comment_block" },
-      ]
     } else if (category === "loops") {
+      // Corrected from "loops" to match the update
       blocks = [
-        { kind: "block", type: "function_definition" },
-        { kind: "block", type: "function_with_input" },
-        { kind: "block", type: "function_call" },
-        { kind: "block", type: "boolean_and" }, // Replaced boolean_value with boolean_and
-        { kind: "block", type: "boolean_or" }, // Replaced not_operator with boolean_or
-        { kind: "block", type: "boolean_not" }, // Replaced and_or_operator with boolean_not
-        { kind: "block", type: "compare_equal" }, // Replaced comparison_operator with compare_equal
-        { kind: "block", type: "when_started" },
+        { kind: "block", type: "when_started" }, // Added from defineSwitchBlocks
+        { kind: "block", type: "forever" }, // Added from defineSwitchBlocks
+        { kind: "block", type: "repeat" }, // Added from defineSwitchBlocks
+        { kind: "block", type: "wait" }, // Added from defineSwitchBlocks
+        // Removed function_definition, function_with_input, function_call as they are not in updates
+        // Removed boolean_and, boolean_or, boolean_not, compare_equal, when_started as they are already in logic or operators
       ]
     }
 
@@ -3947,7 +2131,7 @@ function BlocklyEditor() {
       }
     }
     drawMiniSub(width / 2, height / 2, subRotation)
-  }, [workspace])
+  }, [workspace]) // Removed drawPrediction from dependency array to fix circular dependency
 
   const handleKeyPress = (e: KeyboardEvent) => {
     const key = e.key
@@ -4082,6 +2266,18 @@ function BlocklyEditor() {
           >
             <Cog className="h-6 w-6" />
             <span className="text-[10px] font-medium">Drivetrain</span>
+          </Button>
+          <Button
+            variant="ghost"
+            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+              selectedCategory === "operators"
+                ? "bg-[#4CAF50] text-white"
+                : "bg-[#4CAF50]/20 text-[#4CAF50] hover:bg-[#4CAF50]/30"
+            }`}
+            onClick={() => handleSelectCategory("operators")}
+          >
+            <Calculator className="h-6 w-6" />
+            <span className="text-[10px] font-medium">Operators</span>
           </Button>
           <Button
             variant="ghost"
@@ -4463,12 +2659,12 @@ function BlocklyEditor() {
                   >
                     ← Back
                   </Button>
-                  <p className="mb-4 font-medium text-base">What&apos;s not working?</p>
+                  <p className="mb-4 font-medium text-base">What's not working?</p>
                   <div className="flex flex-col gap-2">
                     <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
                       <StopCircle className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">1.</span>
-                      <span>Robot isn&apos;t moving</span>
+                      <span>Robot isn't moving</span>
                     </Button>
                     <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
                       <ArrowLeftRight className="w-5 h-5 mr-3 text-white" />
@@ -4478,12 +2674,12 @@ function BlocklyEditor() {
                     <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
                       <Eye className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">3.</span>
-                      <span>Sensors aren&apos;t detecting anything</span>
+                      <span>Sensors aren't detecting anything</span>
                     </Button>
                     <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
                       <RefreshCw className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">4.</span>
-                      <span>Loop doesn&apos;t stop</span>
+                      <span>Loop doesn't stop</span>
                     </Button>
                   </div>
                 </div>
@@ -5246,8 +3442,8 @@ function defineSensingBlocks(Blockly: any) {
 
   Blockly.Blocks["position_value"] = {
     init: function () {
+      this.appendDummyInput().appendField("position")
       this.appendDummyInput()
-        .appendField("position")
         .appendField(
           new Blockly.FieldDropdown([
             ["X", "X"],
@@ -5549,84 +3745,73 @@ function defineLogicBlocks(Blockly: any) {
   }
 }
 
-// Switch Blocks
-function defineSwitchBlocks(Blockly: any) {
-  Blockly.Blocks["when_started"] = {
+// Operators Blocks
+function defineOperatorsBlocks(Blockly: any) {
+  // Math Arithmetic
+  Blockly.Blocks["math_arithmetic"] = {
     init: function () {
-      this.appendDummyInput().appendField("when started")
-      this.appendStatementInput("DO")
-      this.setColour("#F5A623")
-      this.setDeletable(false)
-      this.setTooltip("Program starts here")
-    },
-  }
-  Blockly.JavaScript.forBlock["when_started"] = (block: any) => {
-    return Blockly.JavaScript.statementToCode(block, "DO")
-  }
-
-  Blockly.Blocks["function_definition"] = {
-    init: function () {
-      this.appendDummyInput().appendField("function").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
-      this.appendStatementInput("DO")
+      this.appendValueInput("A").setCheck("Number")
+      this.appendDummyInput().appendField(
+        new Blockly.FieldDropdown([
+          ["+", "ADD"],
+          ["-", "MINUS"],
+          ["×", "MULTIPLY"],
+          ["÷", "DIVIDE"],
+        ]),
+        "OP",
+      )
+      this.appendValueInput("B").setCheck("Number")
+      this.setInputsInline(true)
+      this.setOutput(true, "Number")
       this.setColour("#4CAF50")
     },
   }
-  Blockly.JavaScript.forBlock["function_definition"] = (block: any) => {
-    const name = block.getFieldValue("NAME")
-    const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `async function ${name}() {\n${statements}}\n`
+  Blockly.JavaScript.forBlock["math_arithmetic"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_ATOMIC) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_ATOMIC) || "0"
+    const op = block.getFieldValue("OP")
+    const operators: any = { ADD: "+", MINUS: "-", MULTIPLY: "*", DIVIDE: "/" }
+    return [`(${a} ${operators[op]} ${b})`, Blockly.JavaScript.ORDER_ATOMIC]
   }
 
-  Blockly.Blocks["function_with_input"] = {
+  // Comparison
+  Blockly.Blocks["compare"] = {
     init: function () {
-      this.appendDummyInput().appendField("function").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
-      this.appendDummyInput().appendField("with input").appendField(new Blockly.FieldTextInput("input"), "INPUT_NAME")
-      this.appendStatementInput("DO")
-      this.setColour("#4CAF50")
-    },
-  }
-  Blockly.JavaScript.forBlock["function_with_input"] = (block: any) => {
-    const name = block.getFieldValue("NAME")
-    const inputName = block.getFieldValue("INPUT_NAME")
-    const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `async function ${name}(${inputName}) {\n${statements}}\n`
-  }
-
-  Blockly.Blocks["function_call"] = {
-    init: function () {
-      this.appendDummyInput().appendField("call").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
-      this.setPreviousStatement(true, null)
-      this.setNextStatement(true, null)
-      this.setColour("#4CAF50")
-    },
-  }
-  Blockly.JavaScript.forBlock["function_call"] = (block: any) => {
-    const name = block.getFieldValue("NAME")
-    return `await ${name}();\n`
-  }
-
-  Blockly.Blocks["function_call_with_input"] = {
-    init: function () {
-      this.appendDummyInput().appendField("call").appendField(new Blockly.FieldTextInput("myFunction"), "NAME")
-      this.appendValueInput("INPUT")
-      this.setPreviousStatement(true, null)
-      this.setNextStatement(true, null)
-      this.setColour("#4CAF50")
-    },
-  }
-  Blockly.JavaScript.forBlock["function_call_with_input"] = (block: any) => {
-    const name = block.getFieldValue("NAME")
-    const input = Blockly.JavaScript.valueToCode(block, "INPUT", Blockly.JavaScript.ORDER_NONE) || "null"
-    return `await ${name}(${input});\n`
-  }
-
-  Blockly.Blocks["boolean_and"] = {
-    init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField("and")
+      this.appendValueInput("A").setCheck("Number")
+      this.appendDummyInput().appendField(
+        new Blockly.FieldDropdown([
+          ["=", "EQ"],
+          ["≠", "NEQ"],
+          ["<", "LT"],
+          [">", "GT"],
+          ["≤", "LTE"],
+          ["≥", "GTE"],
+        ]),
+        "OP",
+      )
+      this.appendValueInput("B").setCheck("Number")
+      this.setInputsInline(true)
       this.setOutput(true, "Boolean")
       this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["compare"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    const op = block.getFieldValue("OP")
+    const operators: any = { EQ: "===", NEQ: "!==", LT: "<", GT: ">", LTE: "<=", GTE: ">=" }
+    return [`(${a} ${operators[op]} ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
+  }
+
+  // Boolean AND
+  Blockly.Blocks["boolean_and"] = {
+    init: function () {
+      this.appendValueInput("A").setCheck("Boolean")
+      this.appendDummyInput().appendField("and")
+      this.appendValueInput("B").setCheck("Boolean")
       this.setInputsInline(true)
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
     },
   }
   Blockly.JavaScript.forBlock["boolean_and"] = (block: any) => {
@@ -5635,163 +3820,326 @@ function defineSwitchBlocks(Blockly: any) {
     return [`(${a} && ${b})`, Blockly.JavaScript.ORDER_LOGICAL_AND]
   }
 
-  Blockly.Blocks["boolean_or"] = {
-    init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField("or")
-      this.setOutput(true, "Boolean")
-      this.setColour("#4CAF50")
-      this.setInputsInline(true)
-    },
-  }
-  Blockly.JavaScript.forBlock["boolean_or"] = (block: any) => {
-    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_LOGICAL_OR) || "false"
-    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_LOGICAL_OR) || "false"
-    return [`(${a} || ${b})`, Blockly.JavaScript.ORDER_LOGICAL_OR]
-  }
-
+  // Boolean NOT
   Blockly.Blocks["boolean_not"] = {
     init: function () {
-      this.appendValueInput("A").appendField("not")
+      this.appendDummyInput().appendField("not")
+      this.appendValueInput("BOOL").setCheck("Boolean")
+      this.setInputsInline(true)
       this.setOutput(true, "Boolean")
       this.setColour("#4CAF50")
     },
   }
   Blockly.JavaScript.forBlock["boolean_not"] = (block: any) => {
-    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_LOGICAL_NOT) || "true"
-    return [`!(${a})`, Blockly.JavaScript.ORDER_LOGICAL_NOT]
+    const bool = Blockly.JavaScript.valueToCode(block, "BOOL", Blockly.JavaScript.ORDER_LOGICAL_NOT) || "false"
+    return [`(!${bool})`, Blockly.JavaScript.ORDER_LOGICAL_NOT]
   }
 
-  Blockly.Blocks["compare_equal"] = {
+  // Range Comparison (triple compare)
+  Blockly.Blocks["range_compare"] = {
     init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField("=")
+      this.appendValueInput("A").setCheck("Number")
+      this.appendDummyInput().appendField(
+        new Blockly.FieldDropdown([
+          ["<", "LT"],
+          ["≤", "LTE"],
+        ]),
+        "OP1",
+      )
+      this.appendValueInput("B").setCheck("Number")
+      this.appendDummyInput().appendField(
+        new Blockly.FieldDropdown([
+          ["<", "LT"],
+          ["≤", "LTE"],
+        ]),
+        "OP2",
+      )
+      this.appendValueInput("C").setCheck("Number")
+      this.setInputsInline(true)
       this.setOutput(true, "Boolean")
       this.setColour("#4CAF50")
-      this.setInputsInline(true)
     },
   }
-  Blockly.JavaScript.forBlock["compare_equal"] = (block: any) => {
-    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_EQUALITY) || "0"
-    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_EQUALITY) || "0"
-    return [`(${a} === ${b})`, Blockly.JavaScript.ORDER_EQUALITY]
-  }
-
-  Blockly.Blocks["compare_not_equal"] = {
-    init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField("≠")
-      this.setOutput(true, "Boolean")
-      this.setColour("#4CAF50")
-      this.setInputsInline(true)
-    },
-  }
-  Blockly.JavaScript.forBlock["compare_not_equal"] = (block: any) => {
-    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_EQUALITY) || "0"
-    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_EQUALITY) || "0"
-    return [`(${a} !== ${b})`, Blockly.JavaScript.ORDER_EQUALITY]
-  }
-
-  Blockly.Blocks["compare_less"] = {
-    init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField("<")
-      this.setOutput(true, "Boolean")
-      this.setColour("#4CAF50")
-      this.setInputsInline(true)
-    },
-  }
-  Blockly.JavaScript.forBlock["compare_less"] = (block: any) => {
+  Blockly.JavaScript.forBlock["range_compare"] = (block: any) => {
     const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
     const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
-    return [`(${a} < ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
+    const c = Blockly.JavaScript.valueToCode(block, "C", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
+    const op1 = block.getFieldValue("OP1")
+    const op2 = block.getFieldValue("OP2")
+    const operators: any = { LT: "<", LTE: "<=" }
+    return [`(${a} ${operators[op1]} ${b} && ${b} ${operators[op2]} ${c})`, Blockly.JavaScript.ORDER_LOGICAL_AND]
   }
 
-  Blockly.Blocks["compare_greater"] = {
+  // Pick Random
+  Blockly.Blocks["random_int"] = {
     init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField(">")
-      this.setOutput(true, "Boolean")
-      this.setColour("#4CAF50")
+      this.appendDummyInput().appendField("pick random")
+      this.appendValueInput("FROM").setCheck("Number")
+      this.appendDummyInput().appendField("to")
+      this.appendValueInput("TO").setCheck("Number")
       this.setInputsInline(true)
-    },
-  }
-  Blockly.JavaScript.forBlock["compare_greater"] = (block: any) => {
-    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
-    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
-    return [`(${a} > ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
-  }
-
-  Blockly.Blocks["compare_less_equal"] = {
-    init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField("≤")
-      this.setOutput(true, "Boolean")
-      this.setColour("#4CAF50")
-      this.setInputsInline(true)
-    },
-  }
-  Blockly.JavaScript.forBlock["compare_less_equal"] = (block: any) => {
-    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
-    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
-    return [`(${a} <= ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
-  }
-
-  Blockly.Blocks["compare_greater_equal"] = {
-    init: function () {
-      this.appendValueInput("A")
-      this.appendValueInput("B").appendField("≥")
-      this.setOutput(true, "Boolean")
-      this.setColour("#4CAF50")
-      this.setInputsInline(true)
-    },
-  }
-  Blockly.JavaScript.forBlock["compare_greater_equal"] = (block: any) => {
-    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
-    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_RELATIONAL) || "0"
-    return [`(${a} >= ${b})`, Blockly.JavaScript.ORDER_RELATIONAL]
-  }
-
-  Blockly.Blocks["number_value"] = {
-    init: function () {
-      this.appendDummyInput().appendField(new Blockly.FieldNumber(0), "NUM")
       this.setOutput(true, "Number")
       this.setColour("#4CAF50")
     },
   }
-  Blockly.JavaScript.forBlock["number_value"] = (block: any) => {
-    const num = block.getFieldValue("NUM")
-    return [String(num), Blockly.JavaScript.ORDER_ATOMIC]
+  Blockly.JavaScript.forBlock["random_int"] = (block: any) => {
+    const from = Blockly.JavaScript.valueToCode(block, "FROM", Blockly.JavaScript.ORDER_ATOMIC) || "1"
+    const to = Blockly.JavaScript.valueToCode(block, "TO", Blockly.JavaScript.ORDER_ATOMIC) || "10"
+    return [`(Math.floor(Math.random() * (${to} - ${from} + 1)) + ${from})`, Blockly.JavaScript.ORDER_ATOMIC]
   }
 
-  Blockly.Blocks["text_value"] = {
+  // Round Number
+  Blockly.Blocks["round_number"] = {
     init: function () {
-      this.appendDummyInput().appendField('"').appendField(new Blockly.FieldTextInput(""), "TEXT").appendField('"')
+      this.appendDummyInput().appendField("round")
+      this.appendValueInput("NUM").setCheck("Number")
+      this.appendDummyInput().appendField("to")
+      this.appendValueInput("PLACES").setCheck("Number")
+      this.appendDummyInput().appendField("decimal places")
+      this.setInputsInline(true)
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["round_number"] = (block: any) => {
+    const num = Blockly.JavaScript.valueToCode(block, "NUM", Blockly.JavaScript.ORDER_ATOMIC) || "0"
+    const places = Blockly.JavaScript.valueToCode(block, "PLACES", Blockly.JavaScript.ORDER_ATOMIC) || "0"
+    return [`(Math.round(${num} * Math.pow(10, ${places})) / Math.pow(10, ${places}))`, Blockly.JavaScript.ORDER_ATOMIC]
+  }
+
+  // Math Function (abs, sqrt, etc.)
+  Blockly.Blocks["math_function"] = {
+    init: function () {
+      this.appendDummyInput().appendField(
+        new Blockly.FieldDropdown([
+          ["abs", "ABS"],
+          ["√", "SQRT"],
+          ["sin", "SIN"],
+          ["cos", "COS"],
+          ["tan", "TAN"],
+        ]),
+        "FUNC",
+      )
+      this.appendDummyInput().appendField("of")
+      this.appendValueInput("NUM").setCheck("Number")
+      this.setInputsInline(true)
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["math_function"] = (block: any) => {
+    const num = Blockly.JavaScript.valueToCode(block, "NUM", Blockly.JavaScript.ORDER_ATOMIC) || "0"
+    const func = block.getFieldValue("FUNC")
+    const functions: any = { ABS: "Math.abs", SQRT: "Math.sqrt", SIN: "Math.sin", COS: "Math.cos", TAN: "Math.tan" }
+    return [`${functions[func]}(${num})`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  // atan2 Function
+  Blockly.Blocks["atan2_function"] = {
+    init: function () {
+      this.appendDummyInput().appendField("atan2 of x:")
+      this.appendValueInput("X").setCheck("Number")
+      this.appendDummyInput().appendField("y:")
+      this.appendValueInput("Y").setCheck("Number")
+      this.setInputsInline(true)
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["atan2_function"] = (block: any) => {
+    const x = Blockly.JavaScript.valueToCode(block, "X", Blockly.JavaScript.ORDER_ATOMIC) || "1"
+    const y = Blockly.JavaScript.valueToCode(block, "Y", Blockly.JavaScript.ORDER_ATOMIC) || "1"
+    return [`Math.atan2(${y}, ${x})`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  // Modulo (Remainder)
+  Blockly.Blocks["modulo"] = {
+    init: function () {
+      this.appendDummyInput().appendField("remainder of")
+      this.appendValueInput("A").setCheck("Number")
+      this.appendDummyInput().appendField("/")
+      this.appendValueInput("B").setCheck("Number")
+      this.setInputsInline(true)
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["modulo"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_MODULUS) || "0"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_MODULUS) || "1"
+    return [`(${a} % ${b})`, Blockly.JavaScript.ORDER_MODULUS]
+  }
+
+  // Text Join
+  Blockly.Blocks["text_join"] = {
+    init: function () {
+      this.appendDummyInput().appendField("join")
+      this.appendValueInput("A").setCheck("String")
+      this.appendValueInput("B").setCheck("String")
+      this.setInputsInline(true)
       this.setOutput(true, "String")
       this.setColour("#4CAF50")
     },
   }
-  Blockly.JavaScript.forBlock["text_value"] = (block: any) => {
-    const text = block.getFieldValue("TEXT")
-    return [`"${text}"`, Blockly.JavaScript.ORDER_ATOMIC]
+  Blockly.JavaScript.forBlock["text_join"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_ADDITION) || "''"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_ADDITION) || "''"
+    return [`(${a} + ${b})`, Blockly.JavaScript.ORDER_ADDITION]
   }
 
-  Blockly.Blocks["random_number"] = {
+  // Letter At Position
+  Blockly.Blocks["text_letter_at"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("random")
-        .appendField(new Blockly.FieldNumber(1, 0), "MIN")
-        .appendField("to")
-        .appendField(new Blockly.FieldNumber(10, 0), "MAX")
-      this.setOutput(true, "Number")
+      this.appendDummyInput().appendField("letter")
+      this.appendValueInput("AT").setCheck("Number")
+      this.appendDummyInput().appendField("of")
+      this.appendValueInput("TEXT").setCheck("String")
+      this.setInputsInline(true)
+      this.setOutput(true, "String")
       this.setColour("#4CAF50")
-      this.setTooltip("Generate a random number between min and max")
     },
   }
-  Blockly.JavaScript.forBlock["random_number"] = (block: any) => {
-    const min = block.getFieldValue("MIN")
-    const max = block.getFieldValue("MAX")
-    return [`(Math.floor(Math.random() * (${max} - ${min} + 1)) + ${min})`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  Blockly.JavaScript.forBlock["text_letter_at"] = (block: any) => {
+    const at = Blockly.JavaScript.valueToCode(block, "AT", Blockly.JavaScript.ORDER_ATOMIC) || "1"
+    const text = Blockly.JavaScript.valueToCode(block, "TEXT", Blockly.JavaScript.ORDER_MEMBER) || "''"
+    return [`(${text}[${at} - 1] || '')`, Blockly.JavaScript.ORDER_MEMBER]
+  }
+
+  // Text Length
+  Blockly.Blocks["text_length"] = {
+    init: function () {
+      this.appendDummyInput().appendField("length of")
+      this.appendValueInput("TEXT").setCheck("String")
+      this.setInputsInline(true)
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["text_length"] = (block: any) => {
+    const text = Blockly.JavaScript.valueToCode(block, "TEXT", Blockly.JavaScript.ORDER_MEMBER) || "''"
+    return [`(${text}.length)`, Blockly.JavaScript.ORDER_MEMBER]
+  }
+
+  // Text Contains
+  Blockly.Blocks["text_contains"] = {
+    init: function () {
+      this.appendValueInput("TEXT").setCheck("String")
+      this.appendDummyInput().appendField("contains")
+      this.appendValueInput("SEARCH").setCheck("String")
+      this.appendDummyInput().appendField("?")
+      this.setInputsInline(true)
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["text_contains"] = (block: any) => {
+    const text = Blockly.JavaScript.valueToCode(block, "TEXT", Blockly.JavaScript.ORDER_MEMBER) || "''"
+    const search = Blockly.JavaScript.valueToCode(block, "SEARCH", Blockly.JavaScript.ORDER_NONE) || "''"
+    return [`(${text}.includes(${search}))`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  // Convert Type
+  Blockly.Blocks["convert_type"] = {
+    init: function () {
+      this.appendDummyInput().appendField("convert")
+      this.appendValueInput("VALUE")
+      this.appendDummyInput()
+        .appendField("to")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["text", "TEXT"],
+            ["number", "NUMBER"],
+          ]),
+          "TYPE",
+        )
+      this.setInputsInline(true)
+      this.setOutput(true)
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["convert_type"] = (block: any) => {
+    const value = Blockly.JavaScript.valueToCode(block, "VALUE", Blockly.JavaScript.ORDER_ATOMIC) || "0"
+    const type = block.getFieldValue("TYPE")
+    if (type === "TEXT") {
+      return [`String(${value})`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
+    } else {
+      return [`Number(${value})`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
+    }
+  }
+}
+
+// Switch Blocks
+function defineSwitchBlocks(Blockly: any) {
+  // When Started block - event trigger
+  Blockly.Blocks["when_started"] = {
+    init: function () {
+      this.appendDummyInput().appendField("when started")
+      this.appendStatementInput("DO").setCheck(null)
+      this.setColour("#FFB300")
+      this.setTooltip("Runs when the program starts")
+      this.setHelpUrl("")
+    },
+  }
+
+  Blockly.JavaScript["when_started"] = (block: any) => {
+    const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
+    return statements_do
+  }
+
+  // Forever loop
+  Blockly.Blocks["forever"] = {
+    init: function () {
+      this.appendDummyInput().appendField("forever")
+      this.appendStatementInput("DO").setCheck(null)
+      this.setPreviousStatement(true, null)
+      this.setNextStatement(true, null)
+      this.setColour("#FFB300")
+      this.setTooltip("Repeats the blocks inside forever")
+      this.setHelpUrl("")
+    },
+  }
+
+  Blockly.JavaScript["forever"] = (block: any) => {
+    const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
+    return `while (true) {\n${statements_do}}\n`
+  }
+
+  // Repeat N times
+  Blockly.Blocks["repeat"] = {
+    init: function () {
+      this.appendValueInput("TIMES").setCheck("Number").appendField("repeat")
+      this.appendDummyInput().appendField("times")
+      this.appendStatementInput("DO").setCheck(null)
+      this.setPreviousStatement(true, null)
+      this.setNextStatement(true, null)
+      this.setColour("#FFB300")
+      this.setTooltip("Repeats the blocks inside N times")
+      this.setHelpUrl("")
+    },
+  }
+
+  Blockly.JavaScript["repeat"] = (block: any) => {
+    const value_times = Blockly.JavaScript.valueToCode(block, "TIMES", Blockly.JavaScript.ORDER_ATOMIC)
+    const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
+    return `for (let count = 0; count < ${value_times}; count++) {\n${statements_do}}\n`
+  }
+
+  // Wait
+  Blockly.Blocks["wait"] = {
+    init: function () {
+      this.appendValueInput("SECONDS").setCheck("Number").appendField("wait")
+      this.appendDummyInput().appendField("seconds")
+      this.setPreviousStatement(true, null)
+      this.setNextStatement(true, null)
+      this.setColour("#FFB300")
+      this.setTooltip("Waits for the specified number of seconds")
+      this.setHelpUrl("")
+    },
+  }
+
+  Blockly.JavaScript["wait"] = (block: any) => {
+    const value_seconds = Blockly.JavaScript.valueToCode(block, "SECONDS", Blockly.JavaScript.ORDER_ATOMIC)
+    return `await new Promise(resolve => setTimeout(resolve, ${value_seconds} * 1000));\n`
   }
 }
 
