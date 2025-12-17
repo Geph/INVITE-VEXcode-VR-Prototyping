@@ -564,16 +564,18 @@ function BlocklyEditor() {
   const blocklyDivRef = useRef<HTMLDivElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
   const aiAssistantRef = useRef<HTMLDivElement>(null)
-  const predictCanvasRef = useRef<HTMLCanvasElement>(null) // Added for prediction canvas
+  const predictCanvasRef = useRef<HTMLCanvasElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [workspace, setWorkspace] = useState<any>(null)
   const [blocklyLoaded, setBlocklyLoaded] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
-  const [isRunning, setIsRunning] = useState<boolean>(false) // Added isRunning state
-  const animationRef = useRef<number | null>(null) // Added animationRef
+  const [isRunning, setIsRunning] = useState<boolean>(false)
+  const animationRef = useRef<number | null>(null)
   const [deletedBlocks, setDeletedBlocks] = useState<string | null>(null)
   const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
-  const [aiStep, setAiStep] = useState<AIAssistantState["surveyStep"]>("main") // Added aiStep state
+  const [aiStep, setAiStep] = useState<AIAssistantState["surveyStep"]>("main")
+
+  const robotStateRef = useRef<{ x: number; y: number; rotation: number }>({ x: 200, y: 200, rotation: 0 })
 
   interface CoralPiece {
     x: number
@@ -1281,32 +1283,29 @@ function BlocklyEditor() {
     const scale = playgroundState.isMaximized ? 1.5 : 1
     const robotSize = 30 * scale // Use the updated robot size for collision
 
-    setGameState((prev) => {
-      let collected = 0
-      const updatedTrash = trashItems.map((trash) => {
-        if (trash.isCollected) return trash
+    let collectedCount = 0
+    const updatedTrash = trashItems.map((trash) => {
+      if (trash.isCollected) return trash
 
-        const dx = robotState.x - trash.x
-        const dy = robotState.y - trash.y
-        const distance = Math.sqrt(dx * dx + dy * dy)
+      const dx = robotState.x - trash.x
+      const dy = robotState.y - trash.y
+      const distance = Math.sqrt(dx * dx + dy * dy)
 
-        // Collision detection: robot radius + trash radius (approximated)
-        if (distance < robotSize * 0.5 + 15 * scale * trash.scale) {
-          collected++
-          return { ...trash, isCollected: true }
-        }
-        return trash
-      })
-
-      if (collected > 0) {
-        return {
-          ...prev,
-          trashItems: updatedTrash,
-          trashCollected: prev.trashCollected + collected,
-        }
+      // Collision detection: robot radius + trash radius (approximated)
+      if (distance < robotSize * 0.5 + 15 * scale * trash.scale) {
+        collectedCount++
+        return { ...trash, isCollected: true }
       }
-      return prev
+      return trash
     })
+
+    if (collectedCount > 0) {
+      setTrashItems(updatedTrash)
+      setGameState((prev) => ({
+        ...prev,
+        trashCollected: prev.trashCollected + collectedCount,
+      }))
+    }
   }, [robotState.x, robotState.y, playgroundState.isMaximized, trashItems])
 
   // Around line 1315, replace spawnTrash function
@@ -1403,10 +1402,14 @@ function BlocklyEditor() {
     return () => clearTimeout(timer)
   }, [playgroundState.isVisible, playgroundState.isMinimized])
 
-  const animateRobotFluid = (targetState: Partial<RobotState>, duration = 500) => {
+  const animateRobotFluid = (
+    targetState: Partial<RobotState>,
+    duration = 500,
+    robotStateRef: React.MutableRefObject<{ x: number; y: number; rotation: number }>,
+  ) => {
     return new Promise<void>((resolve) => {
       const startTime = performance.now()
-      const startState = { ...robotState }
+      const startState = { ...robotStateRef.current }
 
       const animate = (currentTime: number) => {
         const elapsed = currentTime - startTime
@@ -1424,6 +1427,7 @@ function BlocklyEditor() {
           if (targetState.rotation !== undefined) {
             newState.rotation = startState.rotation + (targetState.rotation - startState.rotation) * easeProgress
           }
+          robotStateRef.current = { x: newState.x, y: newState.y, rotation: newState.rotation }
           return newState
         })
 
@@ -1436,6 +1440,7 @@ function BlocklyEditor() {
             if (targetState.x !== undefined) finalState.x = targetState.x
             if (targetState.y !== undefined) finalState.y = targetState.y
             if (targetState.rotation !== undefined) finalState.rotation = targetState.rotation
+            robotStateRef.current = { x: finalState.x, y: finalState.y, rotation: finalState.rotation }
             return finalState
           })
           resolve()
@@ -1450,7 +1455,7 @@ function BlocklyEditor() {
     if (!workspace || !window.Blockly || isRunning) return
 
     setIsRunning(true)
-    setGameState((prev) => ({ ...prev, isGameOver: false, gameLost: false })) // Reset game over state
+    setGameState((prev) => ({ ...prev, isGameOver: false, gameLost: false }))
     startSpawningTrash()
 
     const Blockly = window.Blockly
@@ -1470,40 +1475,54 @@ function BlocklyEditor() {
 
     await new Promise((resolve) => setTimeout(resolve, 100))
 
+    robotStateRef.current = { x: canvasWidth / 2, y: canvasHeight / 2, rotation: 0 }
+
+    // Update ref whenever state changes
+    const updateRobotState = (newState: Partial<RobotState>) => {
+      return new Promise<void>((resolve) => {
+        setRobotState((prev) => {
+          const updated = { ...prev, ...newState }
+          robotStateRef.current = { x: updated.x, y: updated.y, rotation: updated.rotation }
+          return updated
+        })
+        resolve()
+      })
+    }
+
     const robotAPI = {
       drive: async (direction: string, distance?: number, unit?: string) => {
         const multiplier = direction === "forward" ? -1 : 1
         if (distance === undefined) {
           const pixels = 200 // Default distance in pixels
-          const angleRad = (robotState.rotation * Math.PI) / 180
-          const targetX = robotState.x + pixels * multiplier * Math.sin(angleRad)
-          const targetY = robotState.y + pixels * multiplier * Math.cos(angleRad)
-          await animateRobotFluid({ x: targetX, y: targetY }, 1000)
+          const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
+          const targetX = robotStateRef.current.x + pixels * multiplier * Math.sin(angleRad)
+          const targetY = robotStateRef.current.y + pixels * multiplier * Math.cos(angleRad)
+          await animateRobotFluid({ x: targetX, y: targetY }, 1000, robotStateRef)
         } else {
           // Convert distance to pixels based on unit
           const pixels = unit === "mm" ? distance * 0.133333 : distance // Approximately 100mm = 13.33 pixels
-          const angleRad = (robotState.rotation * Math.PI) / 180
-          const targetX = robotState.x + pixels * multiplier * Math.sin(angleRad)
-          const targetY = robotState.y + pixels * multiplier * Math.cos(angleRad)
-          await animateRobotFluid({ x: targetX, y: targetY }, 500)
+          const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
+          const targetX = robotStateRef.current.x + pixels * multiplier * Math.sin(angleRad)
+          const targetY = robotStateRef.current.y + pixels * multiplier * Math.cos(angleRad)
+          await animateRobotFluid({ x: targetX, y: targetY }, 500, robotStateRef)
         }
       },
       turn: async (direction: string, degrees?: number) => {
         const multiplier = direction === "right" ? 1 : -1
         if (degrees === undefined) {
           // Default turn of 90 degrees
-          const targetRotation = robotState.rotation + 90 * multiplier
-          await animateRobotFluid({ rotation: targetRotation }, 500)
+          const targetRotation = robotStateRef.current.rotation + 90 * multiplier
+          await animateRobotFluid({ rotation: targetRotation }, 500, robotStateRef)
         } else {
-          const targetRotation = robotState.rotation + degrees * multiplier
-          await animateRobotFluid({ rotation: targetRotation }, 500)
+          const targetRotation = robotStateRef.current.rotation + degrees * multiplier
+          await animateRobotFluid({ rotation: targetRotation }, 500, robotStateRef)
         }
       },
       turnToHeading: async (heading: number) => {
-        await animateRobotFluid({ rotation: heading }, 500)
+        await animateRobotFluid({ rotation: heading }, 500, robotStateRef)
       },
       turnToRotation: async (rotation: number) => {
-        await animateRobotFluid({ rotation: rotation }, 500)
+        await animateRobotFluid({ rotation: rotation }, 500, robotStateRef)
       },
       stopDriving: () => {
         if (animationRef.current) {
@@ -1602,13 +1621,13 @@ function BlocklyEditor() {
       },
       getPosition: (axis: string, unit: string) => {
         console.log(`Getting position ${axis} in ${unit}`)
-        if (axis === "x") return robotState.x
-        if (axis === "y") return robotState.y
+        if (axis === "x") return robotStateRef.current.x
+        if (axis === "y") return robotStateRef.current.y
         return 0 // Default
       },
       getPositionAngle: () => {
         console.log("Getting position angle")
-        return robotState.rotation
+        return robotStateRef.current.rotation
       },
       stop: () => {
         // Added stop function for stop_project block
@@ -3873,18 +3892,19 @@ function defineOperatorsBlocks(Blockly: any) {
   // Pick Random
   Blockly.Blocks["random_int"] = {
     init: function () {
-      this.appendDummyInput().appendField("pick random")
-      this.appendValueInput("FROM").setCheck("Number")
-      this.appendDummyInput().appendField("to")
-      this.appendValueInput("TO").setCheck("Number")
+      this.appendDummyInput()
+        .appendField("pick random")
+        .appendField(new Blockly.FieldNumber(1, 0), "FROM")
+        .appendField("to")
+        .appendField(new Blockly.FieldNumber(10, 0), "TO")
       this.setInputsInline(true)
       this.setOutput(true, "Number")
       this.setColour("#4CAF50")
     },
   }
   Blockly.JavaScript.forBlock["random_int"] = (block: any) => {
-    const from = Blockly.JavaScript.valueToCode(block, "FROM", Blockly.JavaScript.ORDER_ATOMIC) || "1"
-    const to = Blockly.JavaScript.valueToCode(block, "TO", Blockly.JavaScript.ORDER_ATOMIC) || "10"
+    const from = block.getFieldValue("FROM") || "1"
+    const to = block.getFieldValue("TO") || "10"
     return [`(Math.floor(Math.random() * (${to} - ${from} + 1)) + ${from})`, Blockly.JavaScript.ORDER_ATOMIC]
   }
 
