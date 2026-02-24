@@ -72,6 +72,17 @@ interface PlaygroundState {
   isMaximized: boolean
 }
 
+interface RobotConfigState {
+  x: number
+  y: number
+  isDragging: boolean
+  dragStartX: number
+  dragStartY: number
+  isVisible: boolean
+  isMinimized: boolean
+  isMaximized: boolean
+}
+
 // Draggable AI Assistant state
 interface AIAssistantState {
   x: number
@@ -105,6 +116,7 @@ interface GameState {
   isGameOver: boolean
   isSpawningTrash: boolean
   gameLost: boolean
+  showCelebration: boolean // Track if celebration should show
 }
 
 // AngleWheelPicker component for rotation/degrees input
@@ -577,6 +589,28 @@ function BlocklyEditor() {
 
   const robotStateRef = useRef<{ x: number; y: number; rotation: number }>({ x: 200, y: 200, rotation: 0 })
 
+  const [robotConfigState, setRobotConfigState] = useState<RobotConfigState>({
+    x: typeof window !== "undefined" ? window.innerWidth / 2 - 200 : 400,
+    y: 150,
+    isDragging: false,
+    dragStartX: 0,
+    dragStartY: 0,
+    isVisible: false,
+    isMinimized: false,
+    isMaximized: false,
+  })
+
+  const [robotCapabilities, setRobotCapabilities] = useState({
+    eyeSensor: true,
+    bumperSensor: false,
+    arm: false,
+    gyro: false,
+    gps: false,
+    inertial: false,
+    rangeFinder: false,
+    lineTracker: false,
+  })
+
   interface CoralPiece {
     x: number
     y: number
@@ -661,6 +695,9 @@ function BlocklyEditor() {
   const [gameState, setGameState] = useState<GameState>({
     trashCollected: 0,
     gameLost: false,
+    isGameOver: false, // Added initialization for isGameOver
+    isSpawningTrash: false,
+    showCelebration: false, // Initialize celebration state
   })
   const trashSpawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const floatAnimationRef = useRef<number | null>(null)
@@ -2199,6 +2236,23 @@ function BlocklyEditor() {
     }
   }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiStep, drawPrediction])
 
+  useEffect(() => {
+    const HIGH_SCORE_THRESHOLD = 10
+    if (gameState.trashCollected >= HIGH_SCORE_THRESHOLD && !gameState.showCelebration) {
+      setGameState((prev) => ({ ...prev, showCelebration: true }))
+      // Auto-hide celebration after 5 seconds
+      setTimeout(() => {
+        setGameState((prev) => ({ ...prev, showCelebration: false }))
+      }, 5000)
+    }
+  }, [gameState.trashCollected, gameState.showCelebration])
+
+  useEffect(() => {
+    if (gameState.isGameOver) {
+      setAiAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
+    }
+  }, [gameState.isGameOver])
+
   const handleRestoreBlocks = () => {
     if (workspace && deletedBlocks) {
       const xml = (window as any).Blockly.Xml.textToDom(deletedBlocks)
@@ -2207,12 +2261,66 @@ function BlocklyEditor() {
     }
   }
 
+  const handleOpenRobotConfig = () => {
+    setRobotConfigState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
+  }
+
+  const handleCloseRobotConfig = () => {
+    setRobotConfigState((prev) => ({ ...prev, isVisible: false }))
+  }
+
+  const handleMinimizeRobotConfig = () => {
+    setRobotConfigState((prev) => ({ ...prev, isMinimized: !prev.isMinimized }))
+  }
+
+  const handleMaximizeRobotConfig = () => {
+    setRobotConfigState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
+  }
+
+  const handleRobotConfigMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return
+    if (!(e.target as HTMLElement).closest(".robot-config-header")) return
+
+    setRobotConfigState((prev) => ({
+      ...prev,
+      isDragging: true,
+      dragStartX: e.clientX - prev.x,
+      dragStartY: e.clientY - prev.y,
+    }))
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (robotConfigState.isDragging) {
+        setRobotConfigState((prev) => ({
+          ...prev,
+          x: e.clientX - prev.dragStartX,
+          y: e.clientY - prev.dragStartY,
+        }))
+      }
+    }
+
+    const handleMouseUp = () => {
+      setRobotConfigState((prev) => ({ ...prev, isDragging: false }))
+    }
+
+    if (robotConfigState.isDragging) {
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [robotConfigState.isDragging])
+
   return (
     <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Header */}
       <div className="h-14 bg-gradient-to-r from-[#1976D2] to-[#2196F3] flex items-center justify-between px-4 text-white shadow-md">
         <div className="flex items-center gap-4">
-          <div className="bg-[#FF6B35] px-3 py-1.5 rounded font-bold text-sm">VR</div>
+          <div className="bg-[#FF6B35] px-3 py-1.5 rounded font-bold text-xs">VEXcode VR Codesign Prototype</div>
           <div className="flex items-center gap-2 text-sm">
             <Button
               variant="ghost"
@@ -2253,6 +2361,15 @@ function BlocklyEditor() {
           >
             <HelpCircle className="h-4 w-4" />
             Get Help
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="bg-blue-500 hover:bg-blue-600 text-white border-0 flex items-center gap-1"
+            onClick={handleOpenRobotConfig}
+          >
+            <Settings className="h-4 w-4" />
+            Robot
           </Button>
           <Button
             size="sm"
@@ -2800,6 +2917,251 @@ function BlocklyEditor() {
         </div>
       )}
 
+      {/* Robot Config Window */}
+      {robotConfigState.isVisible && (
+        <div
+          className="fixed bg-white border-2 border-gray-300 shadow-xl z-50"
+          style={{
+            left: `${robotConfigState.x}px`,
+            top: `${robotConfigState.y}px`,
+            width: robotConfigState.isMaximized ? "560px" : "460px",
+            height: robotConfigState.isMaximized ? "500px" : "auto",
+          }}
+          onMouseDown={handleRobotConfigMouseDown}
+        >
+          <div className="robot-config-header bg-gradient-to-r from-blue-600 to-blue-500 text-white p-3 rounded-t-lg flex items-center justify-between cursor-move">
+            <div className="flex items-center gap-2">
+              <GripVertical className="h-5 w-5" />
+              <span className="font-bold text-lg">Devices</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 hover:bg-white/20 text-white"
+                onClick={handleMinimizeRobotConfig}
+              >
+                <Minimize2 className="h-4 w-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 hover:bg-white/20 text-white"
+                onClick={handleMaximizeRobotConfig}
+              >
+                {robotConfigState.isMaximized ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 hover:bg-white/20 text-white"
+                onClick={handleCloseRobotConfig}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {!robotConfigState.isMinimized && (
+            <div className="p-5">
+              {/* Grid of device cards matching VEX VR style */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {/* Controller - always enabled */}
+                <div className="flex flex-col items-center justify-center p-3 border-2 border-blue-500 bg-blue-50 rounded-lg cursor-default relative">
+                  <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">✓</span>
+                  </div>
+                  <Cog className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">CONTROLLER</span>
+                </div>
+
+                {/* Drivetrain - always enabled */}
+                <div className="flex flex-col items-center justify-center p-3 border-2 border-blue-500 bg-blue-50 rounded-lg cursor-default relative">
+                  <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">✓</span>
+                  </div>
+                  <Settings className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">DRIVETRAIN</span>
+                </div>
+
+                {/* Eye/Vision Sensor */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.eyeSensor
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, eyeSensor: !prev.eyeSensor }))}
+                >
+                  {robotCapabilities.eyeSensor && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <Eye className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">VISION</span>
+                </div>
+
+                {/* Bumper Sensor */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.bumperSensor
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, bumperSensor: !prev.bumperSensor }))}
+                >
+                  {robotCapabilities.bumperSensor && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <Target className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">BUMPER</span>
+                </div>
+
+                {/* Inertial Sensor */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.inertial
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, inertial: !prev.inertial }))}
+                >
+                  {robotCapabilities.inertial && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <Gauge className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">INERTIAL</span>
+                </div>
+
+                {/* Gyro Sensor */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.gyro ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, gyro: !prev.gyro }))}
+                >
+                  {robotCapabilities.gyro && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <RefreshCw className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">GYRO</span>
+                </div>
+
+                {/* GPS Sensor */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.gps ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, gps: !prev.gps }))}
+                >
+                  {robotCapabilities.gps && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <Zap className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">GPS</span>
+                </div>
+
+                {/* Electromagnet */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.rangeFinder
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, rangeFinder: !prev.rangeFinder }))}
+                >
+                  {robotCapabilities.rangeFinder && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <Magnet className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">
+                    ELECTRO-
+                    <br />
+                    MAGNET
+                  </span>
+                </div>
+
+                {/* Arm */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.arm ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, arm: !prev.arm }))}
+                >
+                  {robotCapabilities.arm && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <Wrench className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">ARM</span>
+                </div>
+
+                {/* 2-Wire Motor */}
+                <div
+                  className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg cursor-pointer relative transition-all ${
+                    robotCapabilities.lineTracker
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-white hover:bg-gray-50"
+                  }`}
+                  onClick={() => setRobotCapabilities((prev) => ({ ...prev, lineTracker: !prev.lineTracker }))}
+                >
+                  {robotCapabilities.lineTracker && (
+                    <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">✓</span>
+                    </div>
+                  )}
+                  <Zap className="h-10 w-10 text-gray-700 mb-1" />
+                  <span className="text-xs font-medium text-center">
+                    2-WIRE
+                    <br />
+                    MOTOR
+                  </span>
+                </div>
+              </div>
+
+              {/* Bottom buttons matching VEX VR style */}
+              <div className="flex justify-end gap-3 pt-3 border-t">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="px-6 bg-transparent"
+                  onClick={() => {
+                    setRobotCapabilities({
+                      eyeSensor: true,
+                      bumperSensor: false,
+                      arm: false,
+                      gyro: false,
+                      gps: false,
+                      inertial: false,
+                      rangeFinder: false,
+                      lineTracker: false,
+                    })
+                    handleCloseRobotConfig()
+                  }}
+                >
+                  CANCEL
+                </Button>
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 px-6" onClick={handleCloseRobotConfig}>
+                  DONE
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {showDeletedBlocks && deletedBlocks && (
         <div
           className="fixed bg-white rounded-lg shadow-2xl border border-gray-300 overflow-hidden"
@@ -2842,6 +3204,40 @@ function BlocklyEditor() {
               >
                 Clear Trash
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {gameState.showCelebration && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
+          {/* Confetti particles */}
+          {Array.from({ length: 50 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-confetti"
+              style={{
+                left: `${50 + (Math.random() - 0.5) * 20}%`,
+                top: "-10%",
+                width: "10px",
+                height: "10px",
+                backgroundColor: ["#FFD700", "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8"][
+                  Math.floor(Math.random() * 6)
+                ],
+                borderRadius: Math.random() > 0.5 ? "50%" : "0%",
+                transform: `rotate(${Math.random() * 360}deg)`,
+                animationDelay: `${Math.random() * 0.5}s`,
+                animationDuration: `${2 + Math.random() * 1}s`,
+              }}
+            />
+          ))}
+          {/* Celebration message */}
+          <div className="bg-gradient-to-br from-yellow-400 via-orange-400 to-pink-500 text-white p-8 rounded-2xl shadow-2xl pointer-events-auto transform animate-bounce-in">
+            <div className="text-center">
+              <div className="text-6xl mb-4">🎉</div>
+              <h2 className="text-4xl font-bold mb-2">Amazing Work!</h2>
+              <p className="text-2xl mb-4">You collected {gameState.trashCollected} pieces of trash!</p>
+              <div className="text-lg opacity-90">Keep up the great work cleaning the ocean!</div>
             </div>
           </div>
         </div>
@@ -2917,6 +3313,10 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
 
   Blockly.Blocks["drive_distance"] = {
     init: function () {
+      const distanceField = new Blockly.FieldTextInput("200", (val) => {
+        return val
+      })
+
       this.appendDummyInput()
         .appendField("drive")
         .appendField(
@@ -2927,19 +3327,35 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
           "DIRECTION",
         )
         .appendField("for")
-        // Changed to use the DistanceSliderPicker
+        .appendField(distanceField, "DISTANCE")
         .appendField(
-          new Blockly.FieldTextInput("200", (val) => {
-            // Removed direct call to setDistancePickerState, handled by click listener
-            return val
-          }),
-          "DISTANCE",
-        )
-        .appendField(
-          new Blockly.FieldDropdown([
-            ["mm", "mm"],
-            ["inches", "inches"],
-          ]),
+          new Blockly.FieldDropdown(
+            [
+              ["mm", "mm"],
+              ["inches", "inches"],
+            ],
+            (newValue) => {
+              // When unit changes, show alert and highlight distance field
+              if (newValue !== this.getFieldValue("UNIT")) {
+                alert("⚠️ Units changed! Please check your distance value.")
+
+                // Highlight the distance field in bright pink
+                const distanceFieldElement = distanceField as any
+                if (distanceFieldElement.fieldGroup_) {
+                  const rect = distanceFieldElement.fieldGroup_.querySelector("rect")
+                  if (rect) {
+                    rect.setAttribute("fill", "#ff1493") // Bright pink
+
+                    // Reset after 3 seconds
+                    setTimeout(() => {
+                      rect.setAttribute("fill", "#ffffff")
+                    }, 3000)
+                  }
+                }
+              }
+              return newValue
+            },
+          ),
           "UNIT",
         )
       this.setPreviousStatement(true, null)
