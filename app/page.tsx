@@ -2620,38 +2620,67 @@ function BlocklyEditor() {
               )}
 
               {aiStep === "strategy-examples" && (
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-b-lg p-4">
-                  <div className="bg-white rounded-xl shadow-2xl max-w-2xl max-h-96 overflow-y-auto">
-                    <div className="p-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-t-xl">
-                      <h3 className="font-bold text-lg">Strategies to Collect More Trash</h3>
-                      <p className="text-sm text-blue-100">Try these approaches and compare the results</p>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      {/* Approach 1 */}
-                      <div className="border-l-4 border-blue-500 bg-blue-50 p-3 rounded">
-                        <p className="font-bold text-blue-900 mb-1">Approach 1: Increase Velocity</p>
-                        <div className="bg-white p-2 rounded border border-blue-200 mb-2 font-mono text-xs text-gray-700">
-                          when started<br/>
-                          &nbsp;&nbsp;set drive velocity to 100<br/>
-                          &nbsp;&nbsp;drive forward 500 mm
-                        </div>
-                        <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Fast collection in one area. Good for quick bursts.</p>
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-b-lg p-4 z-40">
+                  <div className="bg-white rounded-xl shadow-2xl max-w-3xl max-h-96 overflow-y-auto">
+                    <div className="p-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-t-xl flex justify-between items-center">
+                      <div>
+                        <h3 className="font-bold text-lg">Strategies to Collect More Trash</h3>
+                        <p className="text-sm text-blue-100">Try these approaches and compare the results</p>
                       </div>
+                      <button
+                        onClick={() => setAiStep("strategy")}
+                        className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Approach 1 */}
+                        <div className="border-l-4 border-blue-500 bg-blue-50 p-3 rounded">
+                          <p className="font-bold text-blue-900 mb-2">Approach 1: Increase Velocity</p>
+                          
+                          {/* Movement visualization */}
+                          <svg width="100%" height="100" viewBox="0 0 150 100" className="border border-blue-200 rounded mb-2 bg-white">
+                            <rect x="10" y="10" width="130" height="80" fill="none" stroke="#d4d4d8" strokeDasharray="2" />
+                            <circle cx="75" cy="15" r="3" fill="#ff6b35" />
+                            <line x1="75" y1="15" x2="75" y2="55" stroke="#3b82f6" strokeWidth="2" strokeDasharray="4" />
+                            <circle cx="75" cy="55" r="6" fill="#3b82f6" opacity="0.3" />
+                            <text x="75" y="75" fontSize="10" textAnchor="middle" fill="#666">Straight line forward</text>
+                          </svg>
 
-                      {/* Approach 2 */}
-                      <div className="border-l-4 border-green-500 bg-green-50 p-3 rounded">
-                        <p className="font-bold text-green-900 mb-1">Approach 2: Continuous Patrol Loop</p>
-                        <div className="bg-white p-2 rounded border border-green-200 mb-2 font-mono text-xs text-gray-700">
-                          when started<br/>
-                          &nbsp;&nbsp;forever<br/>
-                          &nbsp;&nbsp;&nbsp;&nbsp;drive forward 300 mm<br/>
-                          &nbsp;&nbsp;&nbsp;&nbsp;turn right 90 degrees
+                          <div className="bg-white p-2 rounded border border-blue-200 mb-2 font-mono text-xs text-gray-700">
+                            when started<br/>
+                            set drive velocity to 100<br/>
+                            drive forward 500 mm
+                          </div>
+                          <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Fast collection in one line. Good for quick focused movement.</p>
                         </div>
-                        <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Covers more area over time. Maximum trash collection.</p>
+
+                        {/* Approach 2 */}
+                        <div className="border-l-4 border-green-500 bg-green-50 p-3 rounded">
+                          <p className="font-bold text-green-900 mb-2">Approach 2: Continuous Patrol Loop</p>
+                          
+                          {/* Movement visualization */}
+                          <svg width="100%" height="100" viewBox="0 0 150 100" className="border border-green-200 rounded mb-2 bg-white">
+                            <rect x="10" y="10" width="130" height="80" fill="none" stroke="#d4d4d8" strokeDasharray="2" />
+                            <circle cx="75" cy="15" r="3" fill="#ff6b35" />
+                            <polyline points="75,15 75,50 120,50 120,80 40,80 40,50 75,50" stroke="#16a34a" strokeWidth="2" fill="none" strokeDasharray="4" />
+                            <text x="75" y="95" fontSize="10" textAnchor="middle" fill="#666">Square patrol pattern</text>
+                          </svg>
+
+                          <div className="bg-white p-2 rounded border border-green-200 mb-2 font-mono text-xs text-gray-700">
+                            when started<br/>
+                            forever<br/>
+                            &nbsp;&nbsp;drive forward 300 mm<br/>
+                            &nbsp;&nbsp;turn right 90 degrees
+                          </div>
+                          <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Covers large area continuously. Maximum trash collection.</p>
+                        </div>
                       </div>
 
                       <div className="bg-yellow-50 border border-yellow-300 p-3 rounded">
-                        <p className="text-xs font-semibold text-yellow-900">💡 Challenge: Try both approaches and see which collects more trash!</p>
+                        <p className="text-xs font-semibold text-yellow-900">Challenge: Try both approaches and see which collects more trash!</p>
                       </div>
                     </div>
                   </div>
