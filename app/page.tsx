@@ -2618,6 +2618,45 @@ function BlocklyEditor() {
                   </div>
                 </div>
               )}
+
+              {aiStep === "strategy-examples" && (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-b-lg p-4">
+                  <div className="bg-white rounded-xl shadow-2xl max-w-2xl max-h-96 overflow-y-auto">
+                    <div className="p-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-t-xl">
+                      <h3 className="font-bold text-lg">Strategies to Collect More Trash</h3>
+                      <p className="text-sm text-blue-100">Try these approaches and compare the results</p>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {/* Approach 1 */}
+                      <div className="border-l-4 border-blue-500 bg-blue-50 p-3 rounded">
+                        <p className="font-bold text-blue-900 mb-1">Approach 1: Increase Velocity</p>
+                        <div className="bg-white p-2 rounded border border-blue-200 mb-2 font-mono text-xs text-gray-700">
+                          when started<br/>
+                          &nbsp;&nbsp;set drive velocity to 100<br/>
+                          &nbsp;&nbsp;drive forward 500 mm
+                        </div>
+                        <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Fast collection in one area. Good for quick bursts.</p>
+                      </div>
+
+                      {/* Approach 2 */}
+                      <div className="border-l-4 border-green-500 bg-green-50 p-3 rounded">
+                        <p className="font-bold text-green-900 mb-1">Approach 2: Continuous Patrol Loop</p>
+                        <div className="bg-white p-2 rounded border border-green-200 mb-2 font-mono text-xs text-gray-700">
+                          when started<br/>
+                          &nbsp;&nbsp;forever<br/>
+                          &nbsp;&nbsp;&nbsp;&nbsp;drive forward 300 mm<br/>
+                          &nbsp;&nbsp;&nbsp;&nbsp;turn right 90 degrees
+                        </div>
+                        <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Covers more area over time. Maximum trash collection.</p>
+                      </div>
+
+                      <div className="bg-yellow-50 border border-yellow-300 p-3 rounded">
+                        <p className="text-xs font-semibold text-yellow-900">💡 Challenge: Try both approaches and see which collects more trash!</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
