@@ -93,7 +93,7 @@ interface AIAssistantState {
   isVisible: boolean
   isMinimized: boolean
   isMaximized: boolean
-  surveyStep: "main" | "strategy" | "predict" | "fix" | "compare" | "feel" | "partner"
+  surveyStep: "main" | "strategy" | "predict" | "fix" | "compare" | "feel" | "partner" | "strategy-examples"
 }
 
 interface CategoryState {
@@ -2747,7 +2747,10 @@ function BlocklyEditor() {
                   </Button>
                   <p className="mb-4 font-medium text-base">What strategy would you like help with?</p>
                   <div className="flex flex-col gap-2">
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                    <Button 
+                      className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0"
+                      onClick={() => setAiStep("strategy-examples")}
+                    >
                       <Zap className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">1.</span>
                       <span>Move faster (efficiently)</span>
@@ -2762,6 +2765,53 @@ function BlocklyEditor() {
                       <span className="mr-2 font-semibold">3.</span>
                       <span>Find more blocks that could help you</span>
                     </Button>
+                  </div>
+                </div>
+              ) : aiStep === "strategy-examples" ? (
+                <div className="text-gray-700 text-sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
+                    onClick={() => setAiStep("strategy")}
+                  >
+                    ← Back
+                  </Button>
+                  <p className="mb-3 font-medium text-base">Two approaches to move efficiently:</p>
+                  
+                  {/* Approach 1 */}
+                  <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded">
+                    <p className="font-semibold text-blue-900 mb-2">Approach 1: Increase Velocity</p>
+                    <p className="text-xs text-gray-600 mb-2">Set drive velocity to 100 at the start, then drive forward.</p>
+                    <div className="bg-white p-2 rounded border border-blue-200 mb-2 font-mono text-xs">
+                      <div className="text-blue-700">when started</div>
+                      <div className="ml-4 text-green-700">set drive_velocity to 100</div>
+                      <div className="ml-4 text-purple-700">drive forward 500 mm</div>
+                    </div>
+                    <p className="text-xs text-gray-700"><span className="font-semibold">Why:</span> Higher velocity = faster movement. This approach is simple and direct.</p>
+                  </div>
+
+                  {/* Approach 2 */}
+                  <div className="mb-4 p-3 bg-green-50 border-l-4 border-green-500 rounded">
+                    <p className="font-semibold text-green-900 mb-2">Approach 2: Add Loop for Continuous Movement</p>
+                    <p className="text-xs text-gray-600 mb-2">Use a forever loop to keep collecting trash continuously without stopping.</p>
+                    <div className="bg-white p-2 rounded border border-green-200 mb-2 font-mono text-xs">
+                      <div className="text-blue-700">when started</div>
+                      <div className="ml-4 text-purple-700">forever</div>
+                      <div className="ml-8 text-green-700">drive forward 300 mm</div>
+                      <div className="ml-8 text-blue-700">turn right 90 degrees</div>
+                    </div>
+                    <p className="text-xs text-gray-700"><span className="font-semibold">Why:</span> Loops allow the robot to patrol continuously, covering more area and collecting more trash automatically.</p>
+                  </div>
+
+                  {/* Comparison */}
+                  <div className="p-3 bg-gray-50 border border-gray-300 rounded">
+                    <p className="font-semibold text-gray-900 mb-2">Comparison:</p>
+                    <div className="text-xs space-y-1">
+                      <div><span className="font-semibold text-blue-700">Approach 1:</span> Best for collecting one area quickly. Limited trash collection.</div>
+                      <div><span className="font-semibold text-green-700">Approach 2:</span> Best for collecting more trash over time. Continuously patrols the area.</div>
+                      <div className="mt-2 text-gray-600">Try both approaches and see which gets you more trash!</div>
+                    </div>
                   </div>
                 </div>
               ) : aiStep === "predict" ? (
