@@ -1490,6 +1490,19 @@ function BlocklyEditor() {
   const getPythonCode = useCallback(() => {
     if (!workspace) return "# No code yet"
     
+    // Recursively generate code for a statement input (DO, ELSE, etc.)
+    const generateStatements = (block: any, inputName: string, indent: string): string => {
+      const child = block.getInputTargetBlock(inputName)
+      if (!child) return `${indent}pass\n`
+      return generateSequence(child, indent)
+    }
+
+    // Walk a chain of next-connected blocks
+    const generateSequence = (block: any, indent: string): string => {
+      if (!block) return ""
+      return generatePythonFromBlock(block, indent) + generateSequence(block.getNextBlock(), indent)
+    }
+
     // Custom Python code generator - traverse blocks and generate Python syntax
     const generatePythonFromBlock = (block: any, indent: string = ""): string => {
       if (!block) return ""
@@ -1500,12 +1513,7 @@ function BlocklyEditor() {
       switch (type) {
         case "when_started":
           code = "# When Started\ndef main():\n"
-          const nextBlock = block.getNextBlock()
-          if (nextBlock) {
-            code += generatePythonFromBlock(nextBlock, "    ")
-          } else {
-            code += "    pass\n"
-          }
+          code += generateStatements(block, "DO", "    ")
           code += "\nmain()"
           break
           
@@ -1583,87 +1591,60 @@ function BlocklyEditor() {
           code = `${indent}drivetrain.stop()\n`
           break
           
+        case "forever":
         case "forever_loop": {
           code = `${indent}while True:\n`
-          const foreverStatement = block.getInputTargetBlock("DO")
-          if (foreverStatement) {
-            code += generatePythonFromBlock(foreverStatement, indent + "    ")
-          } else {
-            code += `${indent}    pass\n`
-          }
+          code += generateStatements(block, "DO", indent + "    ")
           break
         }
-          
+
+        case "repeat":
         case "repeat_times": {
           const times = block.getFieldValue("TIMES") || "10"
           code = `${indent}for i in range(${times}):\n`
-          const repeatStatement = block.getInputTargetBlock("DO")
-          if (repeatStatement) {
-            code += generatePythonFromBlock(repeatStatement, indent + "    ")
-          } else {
-            code += `${indent}    pass\n`
-          }
+          code += generateStatements(block, "DO", indent + "    ")
           break
         }
         
         case "repeat_until": {
-          code = `${indent}while not condition:  # Add your condition\n`
-          const repeatUntilStatement = block.getInputTargetBlock("DO")
-          if (repeatUntilStatement) {
-            code += generatePythonFromBlock(repeatUntilStatement, indent + "    ")
-          } else {
-            code += `${indent}    pass\n`
-          }
+          const cond = block.getInputTargetBlock("CONDITION")
+          const condStr = cond ? `not ${cond.type}()` : "not condition"
+          code = `${indent}while ${condStr}:\n`
+          code += generateStatements(block, "DO", indent + "    ")
           break
         }
         
         case "while_loop": {
-          code = `${indent}while condition:  # Add your condition\n`
-          const whileStatement = block.getInputTargetBlock("DO")
-          if (whileStatement) {
-            code += generatePythonFromBlock(whileStatement, indent + "    ")
-          } else {
-            code += `${indent}    pass\n`
-          }
+          code = `${indent}while condition:\n`
+          code += generateStatements(block, "DO", indent + "    ")
           break
         }
           
         case "wait_seconds": {
-          const waitTime = block.getFieldValue("TIME") || "1"
+          const waitTime = block.getFieldValue("SECONDS") || "1"
           code = `${indent}wait(${waitTime}, SECONDS)\n`
           break
         }
         
         case "wait_until":
-          code = `${indent}wait_until(condition)  # Add your condition\n`
+          code = `${indent}wait_until(condition)\n`
           break
           
         case "if_then": {
-          code = `${indent}if condition:  # Add your condition\n`
-          const ifStatement = block.getInputTargetBlock("DO")
-          if (ifStatement) {
-            code += generatePythonFromBlock(ifStatement, indent + "    ")
-          } else {
-            code += `${indent}    pass\n`
-          }
+          const ifCond = block.getInputTargetBlock("CONDITION")
+          const ifCondStr = ifCond ? generatePythonFromBlock(ifCond, "").trim() : "condition"
+          code = `${indent}if ${ifCondStr}:\n`
+          code += generateStatements(block, "DO", indent + "    ")
           break
         }
         
         case "if_then_else": {
-          code = `${indent}if condition:  # Add your condition\n`
-          const ifDoStatement = block.getInputTargetBlock("DO")
-          if (ifDoStatement) {
-            code += generatePythonFromBlock(ifDoStatement, indent + "    ")
-          } else {
-            code += `${indent}    pass\n`
-          }
+          const ifelseCond = block.getInputTargetBlock("CONDITION")
+          const ifelseCondStr = ifelseCond ? generatePythonFromBlock(ifelseCond, "").trim() : "condition"
+          code = `${indent}if ${ifelseCondStr}:\n`
+          code += generateStatements(block, "DO", indent + "    ")
           code += `${indent}else:\n`
-          const elseStatement = block.getInputTargetBlock("ELSE")
-          if (elseStatement) {
-            code += generatePythonFromBlock(elseStatement, indent + "    ")
-          } else {
-            code += `${indent}    pass\n`
-          }
+          code += generateStatements(block, "ELSE", indent + "    ")
           break
         }
         
@@ -1757,14 +1738,6 @@ function BlocklyEditor() {
           
         default:
           code = `${indent}# ${type}()\n`
-      }
-      
-      // Process next block in sequence (skip for value blocks)
-      if (!["math_arithmetic", "random_int", "bumper_pressed", "eye_is_near", "eye_detects_color"].includes(type)) {
-        const next = block.getNextBlock()
-        if (next) {
-          code += generatePythonFromBlock(next, indent)
-        }
       }
       
       return code
