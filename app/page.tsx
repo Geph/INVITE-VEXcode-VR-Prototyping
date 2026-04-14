@@ -2655,16 +2655,19 @@ function BlocklyEditor() {
 
         {/* Blockly Workspace */}
         <div className="flex-1 relative">
-          {codeView === "blocks" ? (
-            <>
-              {!blocklyLoaded && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <p className="text-gray-600">Loading Blockly...</p>
-                </div>
-              )}
-              <div ref={blocklyDivRef} className="w-full h-full" />
-            </>
-          ) : (
+          {!blocklyLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <p className="text-gray-600">Loading Blockly...</p>
+            </div>
+          )}
+          {/* Always keep blocklyDiv mounted, just hide with CSS */}
+          <div 
+            ref={blocklyDivRef} 
+            className="w-full h-full" 
+            style={{ display: codeView === "blocks" ? "block" : "none" }}
+          />
+          {/* Python code view */}
+          {codeView === "python" && (
             <div className="w-full h-full bg-gray-900 text-gray-100 font-mono text-sm overflow-auto p-4">
               <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
                 <code>{getPythonCode()}</code>
