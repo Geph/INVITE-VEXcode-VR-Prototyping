@@ -1509,42 +1509,81 @@ function BlocklyEditor() {
           code += "\nmain()"
           break
           
-        case "drive_forward":
-        case "drive_distance":
+        case "drive_simple": {
+          const dir = block.getFieldValue("DIRECTION") || "forward"
+          code = `${indent}drivetrain.drive(${dir.toUpperCase()})\n`
+          break
+        }
+          
+        case "drive_distance": {
           const direction = block.getFieldValue("DIRECTION") || "forward"
           const distance = block.getFieldValue("DISTANCE") || "200"
           const unit = block.getFieldValue("UNIT") || "mm"
           const unitPython = unit === "inches" ? "INCHES" : "MM"
           code = `${indent}drivetrain.drive_for(${direction.toUpperCase()}, ${distance}, ${unitPython})\n`
           break
+        }
           
-        case "turn_right":
-        case "turn_angle":
+        case "turn_simple": {
+          const dir = block.getFieldValue("DIRECTION") || "right"
+          code = `${indent}drivetrain.turn(${dir.toUpperCase()})\n`
+          break
+        }
+          
+        case "turn_degrees": {
           const turnDir = block.getFieldValue("DIRECTION") || "right"
           const degrees = block.getFieldValue("DEGREES") || "90"
           code = `${indent}drivetrain.turn_for(${turnDir.toUpperCase()}, ${degrees}, DEGREES)\n`
           break
+        }
+        
+        case "turn_to_heading": {
+          const heading = block.getFieldValue("HEADING") || "0"
+          code = `${indent}drivetrain.turn_to_heading(${heading}, DEGREES)\n`
+          break
+        }
+        
+        case "turn_to_rotation": {
+          const rotation = block.getFieldValue("ROTATION") || "0"
+          code = `${indent}drivetrain.turn_to_rotation(${rotation}, DEGREES)\n`
+          break
+        }
           
-        case "set_drive_velocity":
+        case "set_drive_velocity": {
           const velocity = block.getFieldValue("VELOCITY") || "50"
           code = `${indent}drivetrain.set_drive_velocity(${velocity}, PERCENT)\n`
           break
+        }
           
-        case "set_turn_velocity":
+        case "set_turn_velocity": {
           const turnVel = block.getFieldValue("VELOCITY") || "50"
           code = `${indent}drivetrain.set_turn_velocity(${turnVel}, PERCENT)\n`
           break
+        }
           
-        case "set_heading":
+        case "set_drive_heading": {
           const heading = block.getFieldValue("HEADING") || "0"
           code = `${indent}drivetrain.set_heading(${heading}, DEGREES)\n`
           break
+        }
+        
+        case "set_drive_rotation": {
+          const rotation = block.getFieldValue("ROTATION") || "0"
+          code = `${indent}drivetrain.set_rotation(${rotation}, DEGREES)\n`
+          break
+        }
+        
+        case "set_drive_timeout": {
+          const timeout = block.getFieldValue("TIMEOUT") || "1"
+          code = `${indent}drivetrain.set_timeout(${timeout}, SECONDS)\n`
+          break
+        }
           
         case "stop_driving":
           code = `${indent}drivetrain.stop()\n`
           break
           
-        case "forever":
+        case "forever_loop": {
           code = `${indent}while True:\n`
           const foreverStatement = block.getInputTargetBlock("DO")
           if (foreverStatement) {
@@ -1553,8 +1592,9 @@ function BlocklyEditor() {
             code += `${indent}    pass\n`
           }
           break
+        }
           
-        case "repeat":
+        case "repeat_times": {
           const times = block.getFieldValue("TIMES") || "10"
           code = `${indent}for i in range(${times}):\n`
           const repeatStatement = block.getInputTargetBlock("DO")
@@ -1564,13 +1604,41 @@ function BlocklyEditor() {
             code += `${indent}    pass\n`
           }
           break
+        }
+        
+        case "repeat_until": {
+          code = `${indent}while not condition:  # Add your condition\n`
+          const repeatUntilStatement = block.getInputTargetBlock("DO")
+          if (repeatUntilStatement) {
+            code += generatePythonFromBlock(repeatUntilStatement, indent + "    ")
+          } else {
+            code += `${indent}    pass\n`
+          }
+          break
+        }
+        
+        case "while_loop": {
+          code = `${indent}while condition:  # Add your condition\n`
+          const whileStatement = block.getInputTargetBlock("DO")
+          if (whileStatement) {
+            code += generatePythonFromBlock(whileStatement, indent + "    ")
+          } else {
+            code += `${indent}    pass\n`
+          }
+          break
+        }
           
-        case "wait":
+        case "wait_seconds": {
           const waitTime = block.getFieldValue("TIME") || "1"
           code = `${indent}wait(${waitTime}, SECONDS)\n`
           break
+        }
+        
+        case "wait_until":
+          code = `${indent}wait_until(condition)  # Add your condition\n`
+          break
           
-        case "if_then":
+        case "if_then": {
           code = `${indent}if condition:  # Add your condition\n`
           const ifStatement = block.getInputTargetBlock("DO")
           if (ifStatement) {
@@ -1579,41 +1647,124 @@ function BlocklyEditor() {
             code += `${indent}    pass\n`
           }
           break
-          
-        case "magnet_on":
-          code = `${indent}electromagnet.pickup()\n`
+        }
+        
+        case "if_then_else": {
+          code = `${indent}if condition:  # Add your condition\n`
+          const ifDoStatement = block.getInputTargetBlock("DO")
+          if (ifDoStatement) {
+            code += generatePythonFromBlock(ifDoStatement, indent + "    ")
+          } else {
+            code += `${indent}    pass\n`
+          }
+          code += `${indent}else:\n`
+          const elseStatement = block.getInputTargetBlock("ELSE")
+          if (elseStatement) {
+            code += generatePythonFromBlock(elseStatement, indent + "    ")
+          } else {
+            code += `${indent}    pass\n`
+          }
           break
-          
-        case "magnet_off":
-          code = `${indent}electromagnet.drop()\n`
+        }
+        
+        case "break_block":
+          code = `${indent}break\n`
           break
-          
-        case "pen_down":
-          code = `${indent}pen.move(DOWN)\n`
+        
+        case "stop_project":
+          code = `${indent}stop()\n`
           break
-          
-        case "pen_up":
-          code = `${indent}pen.move(UP)\n`
+        
+        case "comment_block": {
+          const comment = block.getFieldValue("COMMENT") || ""
+          code = `${indent}# ${comment}\n`
           break
+        }
           
-        case "set_pen_color":
+        case "energize_magnet": {
+          const action = block.getFieldValue("ACTION") || "pick up"
+          code = action === "pick up" 
+            ? `${indent}electromagnet.pickup()\n`
+            : `${indent}electromagnet.drop()\n`
+          break
+        }
+          
+        case "move_pen": {
+          const penAction = block.getFieldValue("POSITION") || "down"
+          code = `${indent}pen.move(${penAction.toUpperCase()})\n`
+          break
+        }
+        
+        case "set_pen_width": {
+          const width = block.getFieldValue("WIDTH") || "1"
+          code = `${indent}pen.set_pen_width(${width})\n`
+          break
+        }
+          
+        case "set_pen_color": {
           const color = block.getFieldValue("COLOR") || "red"
           code = `${indent}pen.set_pen_color("${color}")\n`
           break
+        }
           
-        case "print_console":
+        case "print_text": {
           const text = block.getFieldValue("TEXT") || ""
-          code = `${indent}print("${text}")\n`
+          code = `${indent}brain.print("${text}")\n`
           break
+        }
+        
+        case "clear_all_rows":
+          code = `${indent}brain.clear()\n`
+          break
+        
+        case "set_cursor_next_row":
+          code = `${indent}brain.next_row()\n`
+          break
+        
+        // Sensing blocks
+        case "bumper_pressed":
+          code = `bumper.pressed()`
+          break
+        
+        case "eye_is_near": {
+          const nearObj = block.getFieldValue("OBJECT") || "any"
+          code = `eye.is_near_object()`
+          break
+        }
+        
+        case "eye_detects_color": {
+          const detColor = block.getFieldValue("COLOR") || "red"
+          code = `eye.detect("${detColor}")`
+          break
+        }
+        
+        // Operators
+        case "math_arithmetic": {
+          const op = block.getFieldValue("OP") || "ADD"
+          const opMap: { [key: string]: string } = { ADD: "+", MINUS: "-", MULTIPLY: "*", DIVIDE: "/" }
+          const a = block.getFieldValue("A") || "0"
+          const b = block.getFieldValue("B") || "0"
+          code = `(${a} ${opMap[op] || "+"} ${b})`
+          break
+        }
+        
+        case "random_int": {
+          const from = block.getFieldValue("FROM") || "1"
+          const to = block.getFieldValue("TO") || "10"
+          code = `random.randint(${from}, ${to})`
+          break
+        }
           
         default:
           code = `${indent}# ${type}()\n`
       }
       
-      // Process next block in sequence
-      const next = block.getNextBlock()
-      if (next) {
-        code += generatePythonFromBlock(next, indent)
+      // Process next block in sequence (skip for value blocks)
+      if (!["math_arithmetic", "random_int", "bumper_pressed", "eye_is_near", "eye_detects_color"].includes(type)) {
+        const next = block.getNextBlock()
+        if (next) {
+          code += generatePythonFromBlock(next, indent)
+        }
       }
       
       return code
@@ -1623,7 +1774,7 @@ function BlocklyEditor() {
     const topBlocks = workspace.getTopBlocks(true)
     if (topBlocks.length === 0) return "# No code yet\n# Add blocks to see Python code"
     
-    let pythonCode = "# VEXcode VR Python\nfrom vexcode import *\n\n"
+    let pythonCode = "# VEXcode VR Python\nfrom vexcode import *\nimport random\n\n"
     
     for (const block of topBlocks) {
       pythonCode += generatePythonFromBlock(block)
