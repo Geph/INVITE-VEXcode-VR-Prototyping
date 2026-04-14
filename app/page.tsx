@@ -694,11 +694,10 @@ function BlocklyEditor() {
   const [trashItems, setTrashItems] = useState<TrashItem[]>([])
   const [gameState, setGameState] = useState<GameState>({
     trashCollected: 0,
-    gameLost: false,
-    isGameOver: false, // Added initialization for isGameOver
-    isSpawningTrash: false,
-    showCelebration: false, // Initialize celebration state
+    isGameOver: false,
+    trashItems: [],
   })
+  const [codeView, setCodeView] = useState<"blocks" | "python">("blocks")
   const trashSpawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const floatAnimationRef = useRef<number | null>(null)
 
@@ -1487,6 +1486,11 @@ function BlocklyEditor() {
       animationRef.current = requestAnimationFrame(animate)
     })
   }
+
+  const getPythonCode = useCallback(() => {
+    if (!workspace) return "# No code yet"
+    return window.Blockly.Python.workspaceToCode(workspace)
+  }, [workspace])
 
   const handleRun = async () => {
     if (!workspace || !window.Blockly || isRunning) return
@@ -2340,6 +2344,12 @@ function BlocklyEditor() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">VEXcode Project</span>
+          <button
+            onClick={() => setCodeView(codeView === "blocks" ? "python" : "blocks")}
+            className="text-xs bg-white/20 hover:bg-white/30 text-white px-2 py-1 rounded transition-colors"
+          >
+            {codeView === "blocks" ? "Show Python" : "Show Blocks"}
+          </button>
           <span className="text-xs text-white/70">Not Saving</span>
         </div>
         <div className="flex items-center gap-2">
@@ -2505,12 +2515,22 @@ function BlocklyEditor() {
 
         {/* Blockly Workspace */}
         <div className="flex-1 relative">
-          {!blocklyLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-gray-600">Loading Blockly...</p>
+          {codeView === "blocks" ? (
+            <>
+              {!blocklyLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <p className="text-gray-600">Loading Blockly...</p>
+                </div>
+              )}
+              <div ref={blocklyDivRef} className="w-full h-full" />
+            </>
+          ) : (
+            <div className="w-full h-full bg-gray-900 text-gray-100 font-mono text-sm overflow-auto p-4">
+              <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
+                <code>{getPythonCode()}</code>
+              </pre>
             </div>
           )}
-          <div ref={blocklyDivRef} className="w-full h-full" />
         </div>
       </div>
 
