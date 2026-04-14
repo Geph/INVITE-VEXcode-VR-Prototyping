@@ -1489,7 +1489,147 @@ function BlocklyEditor() {
 
   const getPythonCode = useCallback(() => {
     if (!workspace) return "# No code yet"
-    return window.Blockly.Python.workspaceToCode(workspace)
+    
+    // Custom Python code generator - traverse blocks and generate Python syntax
+    const generatePythonFromBlock = (block: any, indent: string = ""): string => {
+      if (!block) return ""
+      
+      const type = block.type
+      let code = ""
+      
+      switch (type) {
+        case "when_started":
+          code = "# When Started\ndef main():\n"
+          const nextBlock = block.getNextBlock()
+          if (nextBlock) {
+            code += generatePythonFromBlock(nextBlock, "    ")
+          } else {
+            code += "    pass\n"
+          }
+          code += "\nmain()"
+          break
+          
+        case "drive_forward":
+        case "drive_distance":
+          const direction = block.getFieldValue("DIRECTION") || "forward"
+          const distance = block.getFieldValue("DISTANCE") || "200"
+          const unit = block.getFieldValue("UNIT") || "mm"
+          const unitPython = unit === "inches" ? "INCHES" : "MM"
+          code = `${indent}drivetrain.drive_for(${direction.toUpperCase()}, ${distance}, ${unitPython})\n`
+          break
+          
+        case "turn_right":
+        case "turn_angle":
+          const turnDir = block.getFieldValue("DIRECTION") || "right"
+          const degrees = block.getFieldValue("DEGREES") || "90"
+          code = `${indent}drivetrain.turn_for(${turnDir.toUpperCase()}, ${degrees}, DEGREES)\n`
+          break
+          
+        case "set_drive_velocity":
+          const velocity = block.getFieldValue("VELOCITY") || "50"
+          code = `${indent}drivetrain.set_drive_velocity(${velocity}, PERCENT)\n`
+          break
+          
+        case "set_turn_velocity":
+          const turnVel = block.getFieldValue("VELOCITY") || "50"
+          code = `${indent}drivetrain.set_turn_velocity(${turnVel}, PERCENT)\n`
+          break
+          
+        case "set_heading":
+          const heading = block.getFieldValue("HEADING") || "0"
+          code = `${indent}drivetrain.set_heading(${heading}, DEGREES)\n`
+          break
+          
+        case "stop_driving":
+          code = `${indent}drivetrain.stop()\n`
+          break
+          
+        case "forever":
+          code = `${indent}while True:\n`
+          const foreverStatement = block.getInputTargetBlock("DO")
+          if (foreverStatement) {
+            code += generatePythonFromBlock(foreverStatement, indent + "    ")
+          } else {
+            code += `${indent}    pass\n`
+          }
+          break
+          
+        case "repeat":
+          const times = block.getFieldValue("TIMES") || "10"
+          code = `${indent}for i in range(${times}):\n`
+          const repeatStatement = block.getInputTargetBlock("DO")
+          if (repeatStatement) {
+            code += generatePythonFromBlock(repeatStatement, indent + "    ")
+          } else {
+            code += `${indent}    pass\n`
+          }
+          break
+          
+        case "wait":
+          const waitTime = block.getFieldValue("TIME") || "1"
+          code = `${indent}wait(${waitTime}, SECONDS)\n`
+          break
+          
+        case "if_then":
+          code = `${indent}if condition:  # Add your condition\n`
+          const ifStatement = block.getInputTargetBlock("DO")
+          if (ifStatement) {
+            code += generatePythonFromBlock(ifStatement, indent + "    ")
+          } else {
+            code += `${indent}    pass\n`
+          }
+          break
+          
+        case "magnet_on":
+          code = `${indent}electromagnet.pickup()\n`
+          break
+          
+        case "magnet_off":
+          code = `${indent}electromagnet.drop()\n`
+          break
+          
+        case "pen_down":
+          code = `${indent}pen.move(DOWN)\n`
+          break
+          
+        case "pen_up":
+          code = `${indent}pen.move(UP)\n`
+          break
+          
+        case "set_pen_color":
+          const color = block.getFieldValue("COLOR") || "red"
+          code = `${indent}pen.set_pen_color("${color}")\n`
+          break
+          
+        case "print_console":
+          const text = block.getFieldValue("TEXT") || ""
+          code = `${indent}print("${text}")\n`
+          break
+          
+        default:
+          code = `${indent}# ${type}()\n`
+      }
+      
+      // Process next block in sequence
+      const next = block.getNextBlock()
+      if (next) {
+        code += generatePythonFromBlock(next, indent)
+      }
+      
+      return code
+    }
+    
+    // Get top-level blocks and generate code
+    const topBlocks = workspace.getTopBlocks(true)
+    if (topBlocks.length === 0) return "# No code yet\n# Add blocks to see Python code"
+    
+    let pythonCode = "# VEXcode VR Python\nfrom vexcode import *\n\n"
+    
+    for (const block of topBlocks) {
+      pythonCode += generatePythonFromBlock(block)
+    }
+    
+    return pythonCode
   }, [workspace])
 
   const handleRun = async () => {
