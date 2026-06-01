@@ -2,8 +2,25 @@
 
 import type React from "react"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
+import {
+  clampRobotPosition,
+  distanceToPixels,
+  driveDurationMs,
+  maxDriveDistanceMm,
+  forEachProgramBlock,
+  nearestTrashDistanceMm,
+  normalizeDegrees,
+  pixelsToDistance,
+  pointHitsCoral,
+  raycastToBorder,
+  registerBlockGenerator,
+  seededRandom,
+  shortestRotationDelta,
+  turnDurationMs,
+  type CoralPiece,
+} from "@/lib/robot-runtime"
 import {
   Play,
   GripVertical,
@@ -48,6 +65,59 @@ declare global {
   interface Window {
     Blockly: any
   }
+}
+
+/** Close any active Blockly inline editor so it cannot overwrite picker values on Apply. */
+function dismissBlocklyFieldEditors() {
+  if (typeof window === "undefined" || !window.Blockly) return
+  const Blockly = window.Blockly
+  try {
+    Blockly.WidgetDiv?.hide?.()
+    Blockly.DropDownDiv?.hideIfOwner?.(null)
+    Blockly.DropDownDiv?.hide?.()
+  } catch {
+    /* Blockly may not have dropdown API in all builds */
+  }
+}
+
+/** Push a new number into a Blockly field and refresh the workspace SVG immediately. */
+function updateBlocklyNumberField(
+  block: {
+    id: string
+    setFieldValue: (value: string, name: string) => void
+    getFieldValue: (name: string) => string
+    getField: (name: string) => {
+      setValue: (value: string) => void
+      getSvgRoot?: () => SVGElement | null
+    } | null
+    render?: () => void
+  },
+  workspace: { render: () => void },
+  fieldName: string,
+  value: number,
+) {
+  dismissBlocklyFieldEditors()
+
+  const text = String(Math.round(value))
+  const oldText = String(block.getFieldValue(fieldName))
+  const Blockly = window.Blockly
+
+  if (Blockly?.Events?.isEnabled?.() && oldText !== text) {
+    Blockly.Events.fire(new Blockly.Events.BlockChange(block, "field", fieldName, oldText, text))
+  }
+
+  block.setFieldValue(text, fieldName)
+  const field = block.getField(fieldName)
+  if (field) {
+    field.setValue(text)
+    const textEl = field.getSvgRoot?.()?.querySelector("text")
+    if (textEl) {
+      textEl.textContent = text
+    }
+  }
+
+  block.render?.()
+  workspace.render()
 }
 
 // Robot state interface
@@ -116,18 +186,19 @@ interface GameState {
   isGameOver: boolean
   isSpawningTrash: boolean
   gameLost: boolean
+  runError: string | null
   showCelebration: boolean // Track if celebration should show
 }
 
 // AngleWheelPicker component for rotation/degrees input
 interface AngleWheelPickerProps {
   value: number
-  onChange: (value: number) => void
+  onApply: (value: number) => void
   onClose: () => void
   max?: number
 }
 
-function AngleWheelPicker({ value, onChange, onClose, max = 360 }: AngleWheelPickerProps) {
+function AngleWheelPicker({ value, onApply, onClose, max = 360 }: AngleWheelPickerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [currentAngle, setCurrentAngle] = useState(value)
@@ -258,8 +329,9 @@ function AngleWheelPicker({ value, onChange, onClose, max = 360 }: AngleWheelPic
           <Button
             size="sm"
             onClick={() => {
-              onChange(Math.round(currentAngle))
-              onClose()
+              const final = Math.round(currentAngle)
+              onApply(final)
+              requestAnimationFrame(() => onClose())
             }}
           >
             Apply
@@ -273,11 +345,11 @@ function AngleWheelPicker({ value, onChange, onClose, max = 360 }: AngleWheelPic
 // CompassPicker component for heading input
 interface CompassPickerProps {
   value: number
-  onChange: (value: number) => void
+  onApply: (value: number) => void
   onClose: () => void
 }
 
-function CompassPicker({ value, onChange, onClose }: CompassPickerProps) {
+function CompassPicker({ value, onApply, onClose }: CompassPickerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [currentHeading, setCurrentHeading] = useState(value)
@@ -417,8 +489,9 @@ function CompassPicker({ value, onChange, onClose }: CompassPickerProps) {
             size="sm"
             className="bg-green-600 hover:bg-green-700"
             onClick={() => {
-              onChange(Math.round(currentHeading))
-              onClose()
+              const final = Math.round(currentHeading)
+              onApply(final)
+              requestAnimationFrame(() => onClose())
             }}
           >
             Apply
@@ -431,15 +504,35 @@ function CompassPicker({ value, onChange, onClose }: CompassPickerProps) {
 
 interface DistanceSliderPickerProps {
   value: number
-  onChange: (value: number) => void
+  onApply: (value: number) => void
   onClose: () => void
   robotState: RobotState
   direction: string
+  playgroundWidth: number
+  playgroundHeight: number
 }
 
-function DistanceSliderPicker({ value, onChange, onClose, robotState, direction }: DistanceSliderPickerProps) {
+function DistanceSliderPicker({
+  value,
+  onApply,
+  onClose,
+  robotState,
+  direction,
+  playgroundWidth,
+  playgroundHeight,
+}: DistanceSliderPickerProps) {
   const [currentDistance, setCurrentDistance] = useState(value)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null)
+  const previewSize = 280
+  const previewScale = previewSize / Math.max(playgroundWidth, playgroundHeight)
+  const maxMm = Math.min(
+    2000,
+    Math.max(50, maxDriveDistanceMm(robotState.x, robotState.y, robotState.rotation, direction, playgroundWidth, playgroundHeight)),
+  )
+
+  useEffect(() => {
+    setCurrentDistance(Math.min(value, maxMm))
+  }, [value, maxMm])
 
   useEffect(() => {
     const widgetDiv = document.querySelector(".blocklyWidgetDiv") as HTMLElement
@@ -452,64 +545,87 @@ function DistanceSliderPicker({ value, onChange, onClose, robotState, direction 
     }
   }, [])
 
-  // Draw the preview line on the Ocean Cleanup window
   const drawPreview = useCallback(() => {
     const canvas = previewCanvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    const size = 200
-    const scale = 0.5 // Scale down the preview
-    ctx.clearRect(0, 0, size, size)
+    ctx.clearRect(0, 0, previewSize, previewSize)
 
-    // Draw background grid
-    ctx.strokeStyle = "#e0e0e0"
-    ctx.lineWidth = 0.5
-    for (let i = 0; i <= size; i += 20) {
+    const offsetX = (previewSize - playgroundWidth * previewScale) / 2
+    const offsetY = (previewSize - playgroundHeight * previewScale) / 2
+
+    const toPreview = (px: number, py: number) => ({
+      x: offsetX + px * previewScale,
+      y: offsetY + py * previewScale,
+    })
+
+    // Sandy floor (matches playground)
+    const floorX = offsetX
+    const floorY = offsetY
+    const floorW = playgroundWidth * previewScale
+    const floorH = playgroundHeight * previewScale
+    const gradient = ctx.createLinearGradient(0, floorY, 0, floorY + floorH)
+    gradient.addColorStop(0, "#f4d6a2")
+    gradient.addColorStop(0.5, "#e8c18e")
+    gradient.addColorStop(1, "#d4a76a")
+    ctx.fillStyle = gradient
+    ctx.fillRect(floorX, floorY, floorW, floorH)
+
+    // Coral border hint
+    ctx.fillStyle = "#FF6B6B"
+    for (let x = 0; x < playgroundWidth; x += 30) {
+      const p1 = toPreview(x + 15, 15)
+      const p2 = toPreview(x + 15, playgroundHeight - 15)
       ctx.beginPath()
-      ctx.moveTo(i, 0)
-      ctx.lineTo(i, size)
-      ctx.stroke()
+      ctx.arc(p1.x, p1.y, 6, 0, Math.PI * 2)
+      ctx.fill()
       ctx.beginPath()
-      ctx.moveTo(0, i)
-      ctx.lineTo(size, i)
-      ctx.stroke()
+      ctx.arc(p2.x, p2.y, 6, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    for (let y = 30; y < playgroundHeight - 30; y += 30) {
+      const p1 = toPreview(15, y + 15)
+      const p2 = toPreview(playgroundWidth - 15, y + 15)
+      ctx.beginPath()
+      ctx.arc(p1.x, p1.y, 6, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(p2.x, p2.y, 6, 0, Math.PI * 2)
+      ctx.fill()
     }
 
-    // Robot position scaled down
-    const robotX = robotState.x * scale
-    const robotY = robotState.y * scale
-    const angle = (robotState.rotation * Math.PI) / 180
+    const robot = toPreview(robotState.x, robotState.y)
+    const angleRad = (robotState.rotation * Math.PI) / 180
+    const sign = direction === "forward" ? 1 : -1
+    const distancePx = distanceToPixels(currentDistance, "mm")
+    const end = toPreview(
+      robotState.x + sign * distancePx * Math.sin(angleRad),
+      robotState.y - sign * distancePx * Math.cos(angleRad),
+    )
 
-    // Draw robot
-    ctx.fillStyle = "#4A90E2"
     ctx.beginPath()
-    ctx.arc(robotX, robotY, 10, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Calculate end point based on direction and distance
-    const distanceScaled = currentDistance * scale
-    const dirMultiplier = direction === "forward" ? -1 : 1
-    const endX = robotX + Math.sin(angle) * distanceScaled * dirMultiplier
-    const endY = robotY + Math.cos(angle) * distanceScaled * dirMultiplier
-
-    // Draw dotted preview line
-    ctx.beginPath()
-    ctx.setLineDash([5, 5])
-    ctx.strokeStyle = "#FF6B6B"
-    ctx.lineWidth = 3
-    ctx.moveTo(robotX, robotY)
-    ctx.lineTo(endX, endY)
+    ctx.setLineDash([6, 4])
+    ctx.strokeStyle = "#22C55E"
+    ctx.lineWidth = 2
+    ctx.moveTo(robot.x, robot.y)
+    ctx.lineTo(end.x, end.y)
     ctx.stroke()
     ctx.setLineDash([])
 
-    // Draw end marker
+    ctx.fillStyle = "#FFD700"
+    ctx.strokeStyle = "#E6B800"
     ctx.beginPath()
-    ctx.arc(endX, endY, 6, 0, Math.PI * 2)
-    ctx.fillStyle = "#FF6B6B"
+    ctx.arc(robot.x, robot.y, 8, 0, Math.PI * 2)
     ctx.fill()
-  }, [currentDistance, robotState, direction])
+    ctx.stroke()
+
+    ctx.fillStyle = "#22C55E"
+    ctx.beginPath()
+    ctx.arc(end.x, end.y, 5, 0, Math.PI * 2)
+    ctx.fill()
+  }, [currentDistance, robotState, direction, playgroundWidth, playgroundHeight, previewScale, previewSize])
 
   useEffect(() => {
     drawPreview()
@@ -518,15 +634,15 @@ function DistanceSliderPicker({ value, onChange, onClose, robotState, direction 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]" onClick={onClose}>
       <div className="bg-white rounded-lg p-6 shadow-xl min-w-[400px]" onClick={(e) => e.stopPropagation()}>
-        <p className="text-sm font-medium text-center mb-4 text-gray-600">Set distance (0-400)</p>
+        <p className="text-sm font-medium text-center mb-4 text-gray-600">
+          Set distance — Ocean Cleanup ({playgroundWidth}×{playgroundHeight} px)
+        </p>
 
         <div className="flex gap-6 items-center">
-          {/* Preview canvas */}
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <canvas ref={previewCanvasRef} width={200} height={200} />
+          <div className="border border-gray-200 rounded-lg overflow-hidden shrink-0">
+            <canvas ref={previewCanvasRef} width={previewSize} height={previewSize} />
           </div>
 
-          {/* Slider and value */}
           <div className="flex flex-col gap-4 flex-1">
             <div className="text-center">
               <span className="text-4xl font-bold text-blue-600">{currentDistance}</span>
@@ -536,7 +652,7 @@ function DistanceSliderPicker({ value, onChange, onClose, robotState, direction 
             <input
               type="range"
               min={0}
-              max={400}
+              max={Math.round(maxMm)}
               value={currentDistance}
               onChange={(e) => setCurrentDistance(Number(e.target.value))}
               className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
@@ -544,10 +660,10 @@ function DistanceSliderPicker({ value, onChange, onClose, robotState, direction 
 
             <div className="flex justify-between text-xs text-gray-400">
               <span>0</span>
-              <span>100</span>
-              <span>200</span>
-              <span>300</span>
-              <span>400</span>
+              <span>{Math.round(maxMm / 4)}</span>
+              <span>{Math.round(maxMm / 2)}</span>
+              <span>{Math.round((maxMm * 3) / 4)}</span>
+              <span>{Math.round(maxMm)}</span>
             </div>
           </div>
         </div>
@@ -560,8 +676,8 @@ function DistanceSliderPicker({ value, onChange, onClose, robotState, direction 
             size="sm"
             className="bg-blue-600 hover:bg-blue-700"
             onClick={() => {
-              onChange(currentDistance)
-              onClose()
+              onApply(currentDistance)
+              requestAnimationFrame(() => onClose())
             }}
           >
             Apply
@@ -588,9 +704,34 @@ function BlocklyEditor() {
   const [aiStep, setAiStep] = useState<AIAssistantState["surveyStep"]>("main")
 
   const robotStateRef = useRef<{ x: number; y: number; rotation: number }>({ x: 200, y: 200, rotation: 0 })
+  const runtimeRef = useRef({
+    driveVelocity: 50,
+    turnVelocity: 50,
+    driveTimeoutSec: null as number | null,
+    heading: 0,
+    penDown: false,
+    penColor: "#000000",
+    penWidth: 2,
+    magnetBoost: false,
+    printPrecision: 1,
+    printColor: "black",
+    lastPenPoint: null as { x: number; y: number } | null,
+  })
+  const isRunningRef = useRef(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+    const playgroundX = Math.max(16, window.innerWidth - 520)
+    const aiX = Math.max(16, window.innerWidth - 420)
+    setPlaygroundState((prev) => ({ ...prev, x: playgroundX }))
+    setAiAssistantState((prev) => ({ ...prev, x: aiX }))
+    setRobotConfigState((prev) => ({ ...prev, x: Math.max(16, window.innerWidth / 2 - 200) }))
+  }, [])
+
+  const [isMounted, setIsMounted] = useState(false)
 
   const [robotConfigState, setRobotConfigState] = useState<RobotConfigState>({
-    x: typeof window !== "undefined" ? window.innerWidth / 2 - 200 : 400,
+    x: 400,
     y: 150,
     isDragging: false,
     dragStartX: 0,
@@ -611,14 +752,11 @@ function BlocklyEditor() {
     lineTracker: false,
   })
 
-  interface CoralPiece {
-    x: number
-    y: number
-    radius: number
-    color: string
-  }
-
   const [coralPieces, setCoralPieces] = useState<CoralPiece[]>([])
+  const [penTrail, setPenTrail] = useState<
+    { x1: number; y1: number; x2: number; y2: number; color: string; width: number }[]
+  >([])
+  const [consoleLines, setConsoleLines] = useState<string[]>([])
 
   const [robotState, setRobotState] = useState<RobotState>({
     x: 200,
@@ -630,7 +768,7 @@ function BlocklyEditor() {
   })
 
   const [playgroundState, setPlaygroundState] = useState<PlaygroundState>({
-    x: typeof window !== "undefined" ? window.innerWidth - 520 : 400,
+    x: 400,
     y: 100,
     isDragging: false,
     dragStartX: 0,
@@ -641,7 +779,7 @@ function BlocklyEditor() {
   })
 
   const [aiAssistantState, setAiAssistantState] = useState<AIAssistantState>({
-    x: typeof window !== "undefined" ? window.innerWidth - 420 : 400,
+    x: 400,
     y: 200,
     isDragging: false,
     dragStartX: 0,
@@ -657,7 +795,6 @@ function BlocklyEditor() {
     angle: number
     x: number
     y: number
-    callback?: (angle: number) => void
   }>({
     isOpen: false,
     angle: 90,
@@ -670,7 +807,6 @@ function BlocklyEditor() {
     heading: number
     x: number
     y: number
-    callback?: (heading: number) => void
   }>({
     isOpen: false,
     heading: 0,
@@ -681,12 +817,13 @@ function BlocklyEditor() {
   const [distancePickerState, setDistancePickerState] = useState<{
     isOpen: boolean
     distance: number
+    direction: string
     x: number
     y: number
-    callback?: (distance: number) => void
   }>({
     isOpen: false,
     distance: 200,
+    direction: "forward",
     x: 0,
     y: 0,
   })
@@ -698,62 +835,59 @@ function BlocklyEditor() {
     trashItems: [],
   })
   const [codeView, setCodeView] = useState<"blocks" | "python">("blocks")
+    gameLost: false,
+    isGameOver: false,
+    isSpawningTrash: false,
+    runError: null,
+    showCelebration: false,
+  })
+  const coralGraceUntilRef = useRef(0)
+  const blocklyPickerRef = useRef<{ blockId: string; fieldName: string } | null>(null)
+
+  const applyPickerValue = useCallback(
+    (value: number) => {
+      if (!workspace || !blocklyPickerRef.current) return
+      const { blockId, fieldName } = blocklyPickerRef.current
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+      updateBlocklyNumberField(block, workspace, fieldName, value)
+    },
+    [workspace],
+  )
   const trashSpawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const floatAnimationRef = useRef<number | null>(null)
 
-  const initializeCoralBorders = useCallback(() => {
-    const width = playgroundState.isMaximized ? 600 : 400
-    const height = playgroundState.isMaximized ? 600 : 400
+  const initializeCoralBorders = useCallback((maximized: boolean) => {
+    const width = maximized ? 600 : 400
+    const height = maximized ? 600 : 400
     const coralColors = ["#FF6B6B", "#FF8E8E", "#FFB6B6", "#E67E22", "#FF5252", "#F39C12"]
     const pieces: CoralPiece[] = []
 
-    // Top coral border
+    const pushPiece = (x: number, y: number, seed: number) => {
+      pieces.push({
+        x,
+        y,
+        radius: 12 + seededRandom(seed) * 8,
+        color: coralColors[Math.floor(seededRandom(seed + 1) * coralColors.length)],
+      })
+    }
+
     for (let x = 0; x < width; x += 30) {
-      pieces.push({
-        x: x + 15,
-        y: 15,
-        radius: 12 + Math.random() * 8,
-        color: coralColors[Math.floor(Math.random() * coralColors.length)],
-      })
+      pushPiece(x + 15, 15, x)
+      pushPiece(x + 15, height - 15, x + 1000)
     }
-
-    // Bottom coral border
-    for (let x = 0; x < width; x += 30) {
-      pieces.push({
-        x: x + 15,
-        y: height - 15,
-        radius: 12 + Math.random() * 8,
-        color: coralColors[Math.floor(Math.random() * coralColors.length)],
-      })
-    }
-
-    // Left coral border
     for (let y = 30; y < height - 30; y += 30) {
-      pieces.push({
-        x: 15,
-        y: y + 15,
-        radius: 12 + Math.random() * 8,
-        color: coralColors[Math.floor(Math.random() * coralColors.length)],
-      })
-    }
-
-    // Right coral border
-    for (let y = 30; y < height - 30; y += 30) {
-      pieces.push({
-        x: width - 15,
-        y: y + 15,
-        radius: 12 + Math.random() * 8,
-        color: coralColors[Math.floor(Math.random() * coralColors.length)],
-      })
+      pushPiece(15, y + 15, y + 2000)
+      pushPiece(width - 15, y + 15, y + 3000)
     }
 
     setCoralPieces(pieces)
-  }, [playgroundState.isMaximized])
+  }, [])
 
-  // Initialize coral on mount
   useEffect(() => {
-    initializeCoralBorders()
-  }, [initializeCoralBorders])
+    if (!isMounted) return
+    initializeCoralBorders(playgroundState.isMaximized)
+  }, [isMounted, playgroundState.isMaximized, initializeCoralBorders])
 
   const drawRobot = useCallback(() => {
     const canvas = canvasRef.current
@@ -762,13 +896,10 @@ function BlocklyEditor() {
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    const size = playgroundState.isMaximized ? 600 : 400
     const scale = playgroundState.isMaximized ? 1.5 : 1
-    const robotX = robotState.x * scale
-    const robotY = robotState.y * scale
 
     ctx.save()
-    ctx.translate(robotX, robotY)
+    ctx.translate(robotState.x, robotState.y)
     ctx.rotate((robotState.rotation * Math.PI) / 180)
 
     // Main
@@ -971,7 +1102,7 @@ function BlocklyEditor() {
 
     const Blockly = window.Blockly
 
-    const handleFieldClick = (e: MouseEvent) => {
+    const openCustomPicker = (e: PointerEvent) => {
       const target = e.target as Element
 
       const fieldGroup = target.closest(".blocklyEditableText")
@@ -995,96 +1126,66 @@ function BlocklyEditor() {
       if (!block) return
 
       const blockType = block.type
+      let fieldName: string | null = null
 
       if (blockType === "turn_degrees") {
-        const currentDegrees = block.getFieldValue("DEGREES")
-        if (fieldValue.trim() === currentDegrees.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentDegrees) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DEGREES")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "turn_to_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 90,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
+        fieldName = "DEGREES"
+      } else if (blockType === "turn_to_rotation" || blockType === "set_drive_rotation") {
+        fieldName = "ROTATION"
       } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        const currentHeading = block.getFieldValue("HEADING")
-        if (fieldValue.trim() === currentHeading.toString()) {
-          setCompassPickerState({
-            isOpen: true,
-            heading: Number(currentHeading) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "HEADING")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
-      } else if (blockType === "set_drive_rotation") {
-        const currentRotation = block.getFieldValue("ROTATION")
-        if (fieldValue.trim() === currentRotation.toString()) {
-          setAnglePickerState({
-            isOpen: true,
-            angle: Number(currentRotation) || 0,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "ROTATION")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
+        fieldName = "HEADING"
       } else if (blockType === "drive_distance") {
-        const currentDistance = block.getFieldValue("DISTANCE")
-        if (fieldValue.trim() === currentDistance.toString()) {
-          setDistancePickerState({
-            isOpen: true,
-            distance: Number(currentDistance) || 200,
-            x: e.clientX,
-            y: e.clientY,
-            callback: (val: number) => {
-              block.setFieldValue(val.toString(), "DISTANCE")
-            },
-          })
-          e.preventDefault()
-          e.stopPropagation()
-        }
+        fieldName = "DISTANCE"
+      }
+
+      if (!fieldName) return
+
+      const currentVal = block.getFieldValue(fieldName)
+      if (fieldValue.trim() !== String(currentVal).trim()) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      e.stopImmediatePropagation()
+      dismissBlocklyFieldEditors()
+
+      blocklyPickerRef.current = { blockId: block.id, fieldName }
+
+      if (blockType === "turn_degrees" || blockType === "turn_to_rotation" || blockType === "set_drive_rotation") {
+        setAnglePickerState({
+          isOpen: true,
+          angle: Number(currentVal) || 0,
+          x: e.clientX,
+          y: e.clientY,
+        })
+      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
+        setCompassPickerState({
+          isOpen: true,
+          heading: Number(currentVal) || 0,
+          x: e.clientX,
+          y: e.clientY,
+        })
+      } else if (blockType === "drive_distance") {
+        setDistancePickerState({
+          isOpen: true,
+          distance: Number(currentVal) || 200,
+          direction: block.getFieldValue("DIRECTION") || "forward",
+          x: e.clientX,
+          y: e.clientY,
+        })
       }
     }
 
     const workspaceSvg = workspace.getParentSvg()
     if (workspaceSvg) {
-      workspaceSvg.addEventListener("click", handleFieldClick)
+      workspaceSvg.addEventListener("pointerdown", openCustomPicker, true)
     }
 
     return () => {
       if (workspaceSvg) {
-        workspaceSvg.removeEventListener("click", handleFieldClick)
+        workspaceSvg.removeEventListener("pointerdown", openCustomPicker, true)
       }
     }
-  }, [blocklyLoaded, workspace, setAnglePickerState, setCompassPickerState, setDistancePickerState]) // Added dependencies
+  }, [blocklyLoaded, workspace])
 
   // useEffect for updating toolbox based on selected category
   useEffect(() => {
@@ -1116,7 +1217,9 @@ function BlocklyEditor() {
           { kind: "block", type: "math_arithmetic" },
           { kind: "block", type: "compare" },
           { kind: "block", type: "boolean_and" },
+          { kind: "block", type: "boolean_or" },
           { kind: "block", type: "boolean_not" },
+          { kind: "block", type: "text_string" },
           { kind: "block", type: "range_compare" },
           { kind: "block", type: "random_int" },
           { kind: "block", type: "round_number" },
@@ -1172,6 +1275,7 @@ function BlocklyEditor() {
       case "console":
         blocks = [
           { kind: "block", type: "print_text" },
+          { kind: "block", type: "text_string" },
           { kind: "block", type: "set_cursor_next_row" },
           { kind: "block", type: "clear_all_rows" },
           { kind: "block", type: "set_print_precision" },
@@ -1212,13 +1316,24 @@ function BlocklyEditor() {
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, width, height)
 
-    // Add sand texture with dots
+    // Add sand texture with dots (deterministic — avoids hydration flicker)
     ctx.fillStyle = "rgba(180, 140, 90, 0.15)"
     for (let i = 0; i < 200; i++) {
       ctx.beginPath()
-      ctx.arc(Math.random() * width, Math.random() * height, Math.random() * 2, 0, Math.PI * 2)
+      ctx.arc(seededRandom(i) * width, seededRandom(i + 50) * height, seededRandom(i + 100) * 2, 0, Math.PI * 2)
       ctx.fill()
     }
+
+    const scale = playgroundState.isMaximized ? 1.5 : 1
+    penTrail.forEach((seg) => {
+      ctx.strokeStyle = seg.color
+      ctx.lineWidth = seg.width * scale
+      ctx.lineCap = "round"
+      ctx.beginPath()
+      ctx.moveTo(seg.x1, seg.y1)
+      ctx.lineTo(seg.x2, seg.y2)
+      ctx.stroke()
+    })
 
     // Draw coral borders along all edges
     // Using the pre-calculated coralPieces state
@@ -1233,9 +1348,9 @@ function BlocklyEditor() {
     trashItems.forEach((trash) => {
       if (trash.isCollected) return
 
-      const trashX = trash.x * (playgroundState.isMaximized ? 1.5 : 1)
-      const trashY = (trash.y + Math.sin(trash.floatOffset) * 3) * (playgroundState.isMaximized ? 1.5 : 1)
-      const trashScale = trash.scale * (playgroundState.isMaximized ? 1.5 : 1)
+      const trashX = trash.x
+      const trashY = trash.y + Math.sin(trash.floatOffset) * 3
+      const trashScale = trash.scale * scale
 
       ctx.save()
       ctx.translate(trashX, trashY)
@@ -1295,29 +1410,28 @@ function BlocklyEditor() {
 
     // Draw robot
     drawRobot()
-  }, [drawRobot, robotState, playgroundState.isMaximized, trashItems, coralPieces]) // Added coralPieces dependency
+  }, [drawRobot, robotState, playgroundState.isMaximized, trashItems, coralPieces, penTrail])
 
   const checkCoralCollision = useCallback(
     (x: number, y: number): boolean => {
-      const canvasSize = playgroundState.isMaximized ? 600 : 400
-      const scale = playgroundState.isMaximized ? 1.5 : 1
-      const robotSize = 30 * scale // Use the updated robot size for collision
+      if (coralPieces.length === 0) return false
+      const robotRadius = 22
 
-      // Check against pre-calculated coral pieces
       for (const piece of coralPieces) {
-        const distance = Math.sqrt(Math.pow(x * scale - piece.x * scale, 2) + Math.pow(y * scale - piece.y * scale, 2))
-        if (distance < robotSize / 2 + piece.radius * scale) {
+        const distance = Math.hypot(x - piece.x, y - piece.y)
+        if (distance < robotRadius + piece.radius) {
           return true
         }
       }
       return false
     },
-    [playgroundState.isMaximized, coralPieces], // Added coralPieces dependency
+    [coralPieces],
   )
 
   const checkTrashCollision = useCallback(() => {
     const scale = playgroundState.isMaximized ? 1.5 : 1
-    const robotSize = 30 * scale // Use the updated robot size for collision
+    const robotSize = 30 * scale
+    const magnetRange = runtimeRef.current.magnetBoost ? 40 : 0
 
     let collectedCount = 0
     const updatedTrash = trashItems.map((trash) => {
@@ -1326,9 +1440,10 @@ function BlocklyEditor() {
       const dx = robotState.x - trash.x
       const dy = robotState.y - trash.y
       const distance = Math.sqrt(dx * dx + dy * dy)
+      const pickupRadius = robotSize * 0.5 + 15 * scale * trash.scale
+      const magnetRadius = magnetRange + 15 * scale * trash.scale
 
-      // Collision detection: robot radius + trash radius (approximated)
-      if (distance < robotSize * 0.5 + 15 * scale * trash.scale) {
+      if (distance < pickupRadius || distance < magnetRadius) {
         collectedCount++
         return { ...trash, isCollected: true }
       }
@@ -1406,6 +1521,10 @@ function BlocklyEditor() {
   useEffect(() => {
     checkTrashCollision()
 
+    if (isRunning && performance.now() < coralGraceUntilRef.current) {
+      return
+    }
+
     if (checkCoralCollision(robotState.x, robotState.y) && isRunning) {
       setIsRunning(false)
       setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: true }))
@@ -1438,6 +1557,21 @@ function BlocklyEditor() {
     return () => clearTimeout(timer)
   }, [playgroundState.isVisible, playgroundState.isMinimized])
 
+  const recordPenSegment = useCallback((from: { x: number; y: number }, to: { x: number; y: number }) => {
+    if (!runtimeRef.current.penDown) return
+    setPenTrail((prev) => [
+      ...prev,
+      {
+        x1: from.x,
+        y1: from.y,
+        x2: to.x,
+        y2: to.y,
+        color: runtimeRef.current.penColor,
+        width: runtimeRef.current.penWidth,
+      },
+    ])
+  }, [])
+
   const animateRobotFluid = (
     targetState: Partial<RobotState>,
     duration = 500,
@@ -1446,6 +1580,10 @@ function BlocklyEditor() {
     return new Promise<void>((resolve) => {
       const startTime = performance.now()
       const startState = { ...robotStateRef.current }
+      let lastPoint = { x: startState.x, y: startState.y }
+
+      const canvasW = playgroundState.isMaximized ? 600 : 400
+      const canvasH = playgroundState.isMaximized ? 600 : 400
 
       const animate = (currentTime: number) => {
         const elapsed = currentTime - startTime
@@ -1461,7 +1599,16 @@ function BlocklyEditor() {
             newState.y = startState.y + (targetState.y - startState.y) * easeProgress
           }
           if (targetState.rotation !== undefined) {
-            newState.rotation = startState.rotation + (targetState.rotation - startState.rotation) * easeProgress
+            const delta = shortestRotationDelta(startState.rotation, targetState.rotation)
+            newState.rotation = normalizeDegrees(startState.rotation + delta * easeProgress)
+          }
+          const clamped = clampRobotPosition(newState.x, newState.y, canvasW, canvasH)
+          newState.x = clamped.x
+          newState.y = clamped.y
+          const currentPoint = { x: newState.x, y: newState.y }
+          if (currentPoint.x !== lastPoint.x || currentPoint.y !== lastPoint.y) {
+            recordPenSegment(lastPoint, currentPoint)
+            lastPoint = currentPoint
           }
           robotStateRef.current = { x: newState.x, y: newState.y, rotation: newState.rotation }
           return newState
@@ -1476,6 +1623,9 @@ function BlocklyEditor() {
             if (targetState.x !== undefined) finalState.x = targetState.x
             if (targetState.y !== undefined) finalState.y = targetState.y
             if (targetState.rotation !== undefined) finalState.rotation = targetState.rotation
+            const clamped = clampRobotPosition(finalState.x, finalState.y, canvasW, canvasH)
+            finalState.x = clamped.x
+            finalState.y = clamped.y
             robotStateRef.current = { x: finalState.x, y: finalState.y, rotation: finalState.rotation }
             return finalState
           })
@@ -1759,8 +1909,11 @@ function BlocklyEditor() {
   const handleRun = async () => {
     if (!workspace || !window.Blockly || isRunning) return
 
+    isRunningRef.current = true
     setIsRunning(true)
-    setGameState((prev) => ({ ...prev, isGameOver: false, gameLost: false }))
+    coralGraceUntilRef.current = performance.now() + 400
+    setGameState((prev) => ({ ...prev, isGameOver: false, gameLost: false, runError: null }))
+    setConsoleLines([])
     startSpawningTrash()
 
     const Blockly = window.Blockly
@@ -1768,6 +1921,20 @@ function BlocklyEditor() {
 
     const canvasWidth = playgroundState.isMaximized ? 600 : 400
     const canvasHeight = playgroundState.isMaximized ? 600 : 400
+
+    runtimeRef.current = {
+      driveVelocity: 50,
+      turnVelocity: 50,
+      driveTimeoutSec: null,
+      heading: 0,
+      penDown: false,
+      penColor: "#000000",
+      penWidth: 2,
+      magnetBoost: false,
+      printPrecision: 1,
+      printColor: "black",
+      lastPenPoint: null,
+    }
 
     setRobotState({
       x: canvasWidth / 2,
@@ -1780,54 +1947,80 @@ function BlocklyEditor() {
 
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    robotStateRef.current = { x: canvasWidth / 2, y: canvasHeight / 2, rotation: 0 }
+    const startX = canvasWidth / 2
+    const startY = canvasHeight / 2
+    robotStateRef.current = { x: startX, y: startY, rotation: 0 }
 
-    // Update ref whenever state changes
-    const updateRobotState = (newState: Partial<RobotState>) => {
-      return new Promise<void>((resolve) => {
-        setRobotState((prev) => {
-          const updated = { ...prev, ...newState }
-          robotStateRef.current = { x: updated.x, y: updated.y, rotation: updated.rotation }
-          return updated
-        })
-        resolve()
-      })
+    const getCanvasSize = () => ({
+      w: playgroundState.isMaximized ? 600 : 400,
+      h: playgroundState.isMaximized ? 600 : 400,
+    })
+
+    const clampPosition = (x: number, y: number) => {
+      const { w, h } = getCanvasSize()
+      return clampRobotPosition(x, y, w, h)
+    }
+
+    const formatPrint = (text: unknown) => {
+      const raw = String(text)
+      const precision = runtimeRef.current.printPrecision
+      const asNum = Number(raw)
+      const formatted = Number.isFinite(asNum) ? Number(asNum.toFixed(Math.max(0, -Math.log10(precision)))) : raw
+      return formatted
+    }
+
+    const appendConsole = (text: unknown) => {
+      const line = formatPrint(text)
+      setConsoleLines((prev) => [...prev, line])
     }
 
     const robotAPI = {
       drive: async (direction: string, distance?: number, unit?: string) => {
-        const multiplier = direction === "forward" ? -1 : 1
-        if (distance === undefined) {
-          const pixels = 200 // Default distance in pixels
-          const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
-          const targetX = robotStateRef.current.x + pixels * multiplier * Math.sin(angleRad)
-          const targetY = robotStateRef.current.y + pixels * multiplier * Math.cos(angleRad)
-          await animateRobotFluid({ x: targetX, y: targetY }, 1000, robotStateRef)
+        const sign = direction === "forward" ? 1 : -1
+        const pixels =
+          distance === undefined
+            ? distanceToPixels(200, "mm")
+            : distanceToPixels(Number(distance), unit || "mm")
+        const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
+        const rawX = robotStateRef.current.x + sign * pixels * Math.sin(angleRad)
+        const rawY = robotStateRef.current.y - sign * pixels * Math.cos(angleRad)
+        const { x: targetX, y: targetY } = clampPosition(rawX, rawY)
+        const actualPixels = Math.hypot(targetX - robotStateRef.current.x, targetY - robotStateRef.current.y)
+        const duration = driveDurationMs(actualPixels, runtimeRef.current.driveVelocity)
+        const drivePromise = animateRobotFluid({ x: targetX, y: targetY }, duration, robotStateRef)
+        if (runtimeRef.current.driveTimeoutSec != null) {
+          await Promise.race([
+            drivePromise,
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Drive timeout")), runtimeRef.current.driveTimeoutSec! * 1000),
+            ),
+          ]).catch(() => {
+            robotAPI.stopDriving()
+          })
         } else {
-          // Convert distance to pixels based on unit
-          const pixels = unit === "mm" ? distance * 0.133333 : distance // Approximately 100mm = 13.33 pixels
-          const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
-          const targetX = robotStateRef.current.x + pixels * multiplier * Math.sin(angleRad)
-          const targetY = robotStateRef.current.y + pixels * multiplier * Math.cos(angleRad)
-          await animateRobotFluid({ x: targetX, y: targetY }, 500, robotStateRef)
+          await drivePromise
         }
       },
       turn: async (direction: string, degrees?: number) => {
         const multiplier = direction === "right" ? 1 : -1
-        if (degrees === undefined) {
-          // Default turn of 90 degrees
-          const targetRotation = robotStateRef.current.rotation + 90 * multiplier
-          await animateRobotFluid({ rotation: targetRotation }, 500, robotStateRef)
-        } else {
-          const targetRotation = robotStateRef.current.rotation + degrees * multiplier
-          await animateRobotFluid({ rotation: targetRotation }, 500, robotStateRef)
-        }
+        const turnAmount = degrees === undefined ? 90 : Number(degrees)
+        const targetRotation = normalizeDegrees(robotStateRef.current.rotation + turnAmount * multiplier)
+        const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, targetRotation))
+        const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
+        await animateRobotFluid({ rotation: targetRotation }, duration, robotStateRef)
       },
       turnToHeading: async (heading: number) => {
-        await animateRobotFluid({ rotation: heading }, 500, robotStateRef)
+        const target = normalizeDegrees(Number(heading))
+        const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
+        const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
+        await animateRobotFluid({ rotation: target }, duration, robotStateRef)
+        runtimeRef.current.heading = target
       },
       turnToRotation: async (rotation: number) => {
-        await animateRobotFluid({ rotation: rotation }, 500, robotStateRef)
+        const target = normalizeDegrees(Number(rotation))
+        const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
+        const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
+        await animateRobotFluid({ rotation: target }, duration, robotStateRef)
       },
       stopDriving: () => {
         if (animationRef.current) {
@@ -1836,106 +2029,153 @@ function BlocklyEditor() {
         }
       },
       setDriveVelocity: (velocity: number) => {
-        setRobotState((prev) => ({ ...prev, driveVelocity: velocity }))
+        runtimeRef.current.driveVelocity = Number(velocity)
+        setRobotState((prev) => ({ ...prev, driveVelocity: Number(velocity) }))
       },
       setTurnVelocity: (velocity: number) => {
-        setRobotState((prev) => ({ ...prev, turnVelocity: velocity }))
+        runtimeRef.current.turnVelocity = Number(velocity)
+        setRobotState((prev) => ({ ...prev, turnVelocity: Number(velocity) }))
       },
       setDriveHeading: (heading: number) => {
-        setRobotState((prev) => ({ ...prev, heading: heading }))
+        const h = normalizeDegrees(Number(heading))
+        runtimeRef.current.heading = h
+        setRobotState((prev) => ({ ...prev, heading: h, rotation: h }))
+        robotStateRef.current.rotation = h
       },
       setDriveRotation: (rotation: number) => {
-        setRobotState((prev) => ({ ...prev, rotation: rotation }))
+        const r = normalizeDegrees(Number(rotation))
+        setRobotState((prev) => ({ ...prev, rotation: r }))
+        robotStateRef.current.rotation = r
       },
-      setDriveTimeout: (seconds: number) => {
-        return new Promise((resolve) => setTimeout(resolve, seconds * 1000))
+      setDriveTimeout: async (seconds: number) => {
+        runtimeRef.current.driveTimeoutSec = Number(seconds)
       },
-      energize: (device: string, mode: string) => {
-        console.log(`Energizing ${device} to ${mode}`)
+      energize: (_device: string, mode: string) => {
+        runtimeRef.current.magnetBoost = mode === "boost"
+        if (mode === "drop") runtimeRef.current.magnetBoost = false
       },
       movePen: (position: string) => {
-        console.log(`Move pen ${position}`)
+        runtimeRef.current.penDown = position === "down"
+        if (runtimeRef.current.penDown) {
+          runtimeRef.current.lastPenPoint = { ...robotStateRef.current }
+        }
       },
       setPenWidth: (width: string) => {
-        console.log(`Set pen width to ${width}`)
+        const widths: Record<string, number> = { thin: 1, medium: 3, thick: 6 }
+        runtimeRef.current.penWidth = widths[width] ?? 2
       },
       setPenColor: (color: string) => {
-        console.log(`Set pen color to ${color}`)
+        const colors: Record<string, string> = {
+          black: "#000000",
+          red: "#E74C3C",
+          blue: "#3498DB",
+          green: "#27AE60",
+          yellow: "#F1C40F",
+          purple: "#9B59B6",
+          orange: "#E67E22",
+        }
+        runtimeRef.current.penColor = colors[color] ?? color
       },
-      print: (text: string) => {
-        console.log(`[Console] ${text}`)
+      print: (text: unknown) => {
+        appendConsole(text)
       },
       wait: async (seconds: number) => {
-        await new Promise((resolve) => setTimeout(resolve, seconds * 1000))
-      },
-      customFunction: async () => {
-        console.log("Custom function called")
-      },
-      customFunctionWithInput: async (input: any) => {
-        console.log(`Custom function called with input: ${input}`)
-      },
-      booleanTrue: () => true,
-      booleanFalse: () => false,
-      not: (value: boolean) => !value,
-      and: (a: boolean, b: boolean) => a && b,
-      or: (a: boolean, b: boolean) => a || b,
-      equals: (a: number, b: number) => a === b,
-      notEquals: (a: number, b: number) => a !== b,
-      lessThan: (a: number, b: number) => a < b,
-      greaterThan: (a: number, b: number) => a > b,
-      lessThanOrEqual: (a: number, b: number) => a <= b,
-      greaterThanOrEqual: (a: number, b: number) => a >= b,
-      whenStarted: async () => {
-        console.log("Program started")
+        await new Promise((resolve) => setTimeout(resolve, Number(seconds) * 1000))
       },
       setCursorNextRow: () => {
-        console.log("Set cursor to next row")
+        appendConsole("")
       },
       clearAllRows: () => {
-        console.log("Clear all rows")
+        setConsoleLines([])
       },
       setPrintPrecision: (precision: number) => {
-        console.log(`Set print precision to ${precision}`)
+        runtimeRef.current.printPrecision = Number(precision)
       },
       setPrintColor: (color: string) => {
-        console.log(`Set print color to ${color}`)
+        runtimeRef.current.printColor = color.toLowerCase()
       },
       bumperPressed: (bumper: string) => {
-        console.log(`Checking if ${bumper} bumper is pressed`)
-        return false // Placeholder
+        if (!robotCapabilities.bumperSensor) return false
+        const side = bumper.toLowerCase()
+        const offset = side === "left" ? -90 : 90
+        const angleRad = ((robotStateRef.current.rotation + offset) * Math.PI) / 180
+        const probeX = robotStateRef.current.x + Math.sin(angleRad) * 22
+        const probeY = robotStateRef.current.y - Math.cos(angleRad) * 22
+        return pointHitsCoral(probeX, probeY, coralPieces, 4)
       },
       distanceFoundObject: (sensor: string) => {
-        console.log(`Checking if ${sensor} found object`)
-        return false // Placeholder
+        const { w, h } = getCanvasSize()
+        const dist = raycastToBorder(
+          robotStateRef.current.x,
+          robotStateRef.current.y,
+          robotStateRef.current.rotation + (sensor === "down" ? 0 : 0),
+          w,
+          h,
+          coralPieces,
+          300,
+        )
+        const trashDist = nearestTrashDistanceMm(robotStateRef.current.x, robotStateRef.current.y, trashItems)
+        if (trashDist != null && trashDist < 150) return true
+        return dist < 200
       },
       getDistance: (sensor: string, unit: string) => {
-        console.log(`Getting distance from ${sensor} in ${unit}`)
-        return 0 // Placeholder
+        const { w, h } = getCanvasSize()
+        const mm = raycastToBorder(
+          robotStateRef.current.x,
+          robotStateRef.current.y,
+          robotStateRef.current.rotation,
+          w,
+          h,
+          coralPieces,
+        )
+        const trashDist = nearestTrashDistanceMm(robotStateRef.current.x, robotStateRef.current.y, trashItems)
+        const valueMm = trashDist != null && trashDist < mm ? trashDist : mm
+        return unit === "inches" ? valueMm / 25.4 : valueMm
       },
       eyeIsNear: (sensor: string) => {
-        console.log(`Checking if ${sensor} is near object`)
-        return false // Placeholder
+        if (!robotCapabilities.eyeSensor) return false
+        const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
+        const probeX = robotStateRef.current.x + Math.sin(angleRad) * 30
+        const probeY = robotStateRef.current.y - Math.cos(angleRad) * 30
+        const trashDist = nearestTrashDistanceMm(probeX, probeY, trashItems)
+        return trashDist != null && trashDist < 80
       },
-      eyeDetectsColor: (sensor: string, color: string) => {
-        console.log(`Checking if ${sensor} detects ${color}`)
-        return false // Placeholder
+      eyeDetectsColor: (_sensor: string, color: string) => {
+        if (!robotCapabilities.eyeSensor) return false
+        const { x, y } = robotStateRef.current
+        for (const t of trashItems) {
+          if (t.isCollected) continue
+          if (Math.hypot(x - t.x, y - t.y) > 40) continue
+          const trashColors: Record<string, string[]> = {
+            red: ["can"],
+            green: ["bag"],
+            blue: ["bottle"],
+            yellow: ["wrapper"],
+            orange: ["wrapper"],
+            purple: ["bag"],
+          }
+          return trashColors[color]?.includes(t.type) ?? false
+        }
+        if (color === "red" || color === "orange") {
+          return pointHitsCoral(x, y, coralPieces, 20)
+        }
+        return false
       },
-      eyeBrightness: (sensor: string) => {
-        console.log(`Getting brightness from ${sensor}`)
-        return 50 // Placeholder
+      eyeBrightness: (_sensor: string) => {
+        if (!robotCapabilities.eyeSensor) return 0
+        const { x, y } = robotStateRef.current
+        if (pointHitsCoral(x, y, coralPieces, 15)) return 25
+        const nearTrash = nearestTrashDistanceMm(x, y, trashItems)
+        if (nearTrash != null && nearTrash < 60) return 40
+        return 85
       },
       getPosition: (axis: string, unit: string) => {
-        console.log(`Getting position ${axis} in ${unit}`)
-        if (axis === "x") return robotStateRef.current.x
-        if (axis === "y") return robotStateRef.current.y
-        return 0 // Default
+        const a = axis.toLowerCase()
+        const pixels = a === "x" ? robotStateRef.current.x : robotStateRef.current.y
+        return pixelsToDistance(pixels, unit.toLowerCase() === "inches" ? "inches" : "mm")
       },
-      getPositionAngle: () => {
-        console.log("Getting position angle")
-        return robotStateRef.current.rotation
-      },
+      getPositionAngle: () => normalizeDegrees(robotStateRef.current.rotation),
       stop: () => {
-        // Added stop function for stop_project block
         if (animationRef.current) {
           cancelAnimationFrame(animationRef.current)
           animationRef.current = null
@@ -1944,24 +2184,27 @@ function BlocklyEditor() {
           clearInterval(trashSpawnIntervalRef.current)
           trashSpawnIntervalRef.current = null
         }
+        isRunningRef.current = false
         setIsRunning(false)
       },
     }
 
     try {
-      const transformedCode = code.replace(/\/\/ comment/g, "/* comment */") // Handle comments
+      if (!code.trim()) {
+        appendConsole("Add blocks inside when started to run your program.")
+        return
+      }
       const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
-      const execFunc = new AsyncFunction("robot", transformedCode)
+      const execFunc = new AsyncFunction("robot", code)
       await execFunc(robotAPI)
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Execution error:", error)
-      setIsRunning(false) // Ensure isRunning is reset on error
-      setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: true })) // Set game over on error
+      const message = error instanceof Error ? error.message : "Program error"
+      setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: false, runError: message }))
+      appendConsole(`Error: ${message}`)
     } finally {
-      // This block executes regardless of whether an error occurred or not
-      // However, we need to be careful not to reset isRunning if stop() was called within the executed code.
-      // For now, we assume if the try block completes without an explicit stop, we should reset.
-      if (isRunning) {
+      if (isRunningRef.current) {
+        isRunningRef.current = false
         setIsRunning(false)
       }
     }
@@ -1977,20 +2220,28 @@ function BlocklyEditor() {
       trashSpawnIntervalRef.current = null
     }
     setIsRunning(false)
+    isRunningRef.current = false
+    const resetW = playgroundState.isMaximized ? 600 : 400
+    const resetH = playgroundState.isMaximized ? 600 : 400
+    const resetPos = clampRobotPosition(resetW / 2, resetH / 2, resetW, resetH)
     setRobotState({
-      x: 200,
-      y: 200,
+      x: resetPos.x,
+      y: resetPos.y,
       rotation: 0,
       driveVelocity: 50,
       turnVelocity: 50,
       heading: 0,
     })
+    robotStateRef.current = { x: resetPos.x, y: resetPos.y, rotation: 0 }
     setGameState({
       trashCollected: 0,
       gameLost: false,
       isGameOver: false,
+      runError: null,
     })
-    setTrashItems([]) // Clear trash items
+    setTrashItems([])
+    setPenTrail([])
+    setConsoleLines([])
   }
 
   const handleClear = () => {
@@ -2012,8 +2263,11 @@ function BlocklyEditor() {
       trashCollected: 0,
       gameLost: false,
       isGameOver: false,
+      runError: null,
     })
-    setTrashItems([]) // Clear trash items
+    setTrashItems([])
+    setPenTrail([])
+    setConsoleLines([])
     if (trashSpawnIntervalRef.current) {
       clearInterval(trashSpawnIntervalRef.current)
       trashSpawnIntervalRef.current = null
@@ -2023,6 +2277,7 @@ function BlocklyEditor() {
       floatAnimationRef.current = null
     }
     setIsRunning(false)
+    isRunningRef.current = false
   }
 
   const handleTrash = () => {
@@ -2037,6 +2292,7 @@ function BlocklyEditor() {
       trashCollected: 0,
       gameLost: false,
       isGameOver: false,
+      runError: null,
     })
     setTrashItems([])
     if (trashSpawnIntervalRef.current) {
@@ -2048,6 +2304,7 @@ function BlocklyEditor() {
       floatAnimationRef.current = null
     }
     setIsRunning(false)
+    isRunningRef.current = false
   }
 
   const handleSave = () => {
@@ -2115,10 +2372,12 @@ function BlocklyEditor() {
     } else if (category === "operators") {
       blocks = [
         { kind: "block", type: "math_arithmetic" },
-        { kind: "block", type: "compare" },
-        { kind: "block", type: "boolean_and" },
-        { kind: "block", type: "boolean_not" },
-        { kind: "block", type: "range_compare" },
+          { kind: "block", type: "compare" },
+          { kind: "block", type: "boolean_and" },
+          { kind: "block", type: "boolean_or" },
+          { kind: "block", type: "boolean_not" },
+          { kind: "block", type: "text_string" },
+          { kind: "block", type: "range_compare" },
         { kind: "block", type: "random_int" },
         { kind: "block", type: "round_number" },
         { kind: "block", type: "math_function" },
@@ -2168,6 +2427,7 @@ function BlocklyEditor() {
     } else if (category === "console") {
       blocks = [
         { kind: "block", type: "print_text" },
+        { kind: "block", type: "text_string" },
         { kind: "block", type: "set_cursor_next_row" },
         { kind: "block", type: "clear_all_rows" },
         { kind: "block", type: "set_print_precision" },
@@ -2373,52 +2633,42 @@ function BlocklyEditor() {
     const Blockly = window.Blockly
     const pathPoints: { x: number; y: number }[] = [{ x: currentX, y: currentY }]
 
-    // Find when_started block and trace connected blocks
     const allBlocks = workspace.getAllBlocks()
-    const startBlock = allBlocks.find((b: any) => b.type === "when_started")
+    const startBlock = allBlocks.find((b: { type: string }) => b.type === "when_started")
 
     if (startBlock) {
-      let currentBlock = startBlock.getNextBlock()
+      forEachProgramBlock(startBlock, (block) => {
+        const blockType = block.type
 
-      while (currentBlock) {
-        const blockType = currentBlock.type
-
-        if (blockType === "turn_degrees") {
-          const direction = currentBlock.getFieldValue("DIRECTION")
-          const degrees = Number.parseFloat(currentBlock.getFieldValue("DEGREES")) || 90
+        if (blockType === "turn_degrees" || blockType === "turn_simple") {
+          const direction = block.getFieldValue("DIRECTION")
+          const degrees =
+            blockType === "turn_simple" ? 90 : Number.parseFloat(block.getFieldValue("DEGREES")) || 90
           currentRotation += direction === "right" ? degrees : -degrees
         } else if (blockType === "turn_to_heading") {
-          const heading = Number.parseFloat(currentBlock.getFieldValue("HEADING")) || 0
-          currentRotation = heading
+          currentRotation = Number.parseFloat(block.getFieldValue("HEADING")) || 0
         } else if (blockType === "turn_to_rotation") {
-          const rotation = Number.parseFloat(currentBlock.getFieldValue("ROTATION")) || 0
-          currentRotation = rotation
+          currentRotation = Number.parseFloat(block.getFieldValue("ROTATION")) || 0
         } else if (blockType === "drive_distance") {
-          const direction = currentBlock.getFieldValue("DIRECTION")
-          const distance = Number.parseFloat(currentBlock.getFieldValue("DISTANCE")) || 200
-          const unit = currentBlock.getFieldValue("UNIT") || "mm"
-
-          // Convert to pixels (scaled for preview)
-          const pixels = (unit === "mm" ? distance * 0.5 : distance * 12.7) * scale
-          const multiplier = direction === "forward" ? -1 : 1
+          const direction = block.getFieldValue("DIRECTION")
+          const distance = Number.parseFloat(block.getFieldValue("DISTANCE")) || 200
+          const unit = block.getFieldValue("UNIT") || "mm"
+          const pixels = distanceToPixels(distance, unit) * scale
+          const sign = direction === "forward" ? 1 : -1
           const angleRad = (currentRotation * Math.PI) / 180
-
-          currentX += pixels * multiplier * Math.sin(angleRad)
-          currentY += pixels * multiplier * Math.cos(angleRad)
+          currentX += sign * pixels * Math.sin(angleRad)
+          currentY -= sign * pixels * Math.cos(angleRad)
           pathPoints.push({ x: currentX, y: currentY })
-        } else if (blockType === "drive") {
-          const direction = currentBlock.getFieldValue("DIRECTION")
-          const pixels = 50 * scale // Default distance
-          const multiplier = direction === "forward" ? -1 : 1
+        } else if (blockType === "drive_simple") {
+          const direction = block.getFieldValue("DIRECTION")
+          const pixels = distanceToPixels(200, "mm") * scale
+          const sign = direction === "forward" ? 1 : -1
           const angleRad = (currentRotation * Math.PI) / 180
-
-          currentX += pixels * multiplier * Math.sin(angleRad)
-          currentY += pixels * multiplier * Math.cos(angleRad)
+          currentX += sign * pixels * Math.sin(angleRad)
+          currentY -= sign * pixels * Math.cos(angleRad)
           pathPoints.push({ x: currentX, y: currentY })
         }
-
-        currentBlock = currentBlock.getNextBlock()
-      }
+      })
     }
 
     if (pathPoints.length > 1) {
@@ -2438,23 +2688,7 @@ function BlocklyEditor() {
     }
 
     // Draw submarine at start position with correct rotation
-    let subRotation = 0
-    if (startBlock) {
-      let block = startBlock.getNextBlock()
-      while (block) {
-        if (block.type === "turn_degrees") {
-          const dir = block.getFieldValue("DIRECTION")
-          const deg = Number.parseFloat(block.getFieldValue("DEGREES")) || 90
-          subRotation += dir === "right" ? deg : -deg
-        } else if (block.type === "turn_to_heading" || block.type === "turn_to_rotation") {
-          subRotation = Number.parseFloat(block.getFieldValue("HEADING") || block.getFieldValue("ROTATION")) || 0
-          break
-        }
-        if (block.type === "drive_distance" || block.type === "drive") break
-        block = block.getNextBlock()
-      }
-    }
-    drawMiniSub(width / 2, height / 2, subRotation)
+    drawMiniSub(width / 2, height / 2, currentRotation)
   }, [workspace]) // Removed drawPrediction from dependency array to fix circular dependency
 
   const handleKeyPress = (e: KeyboardEvent) => {
@@ -2582,6 +2816,25 @@ function BlocklyEditor() {
       document.removeEventListener("mouseup", handleMouseUp)
     }
   }, [robotConfigState.isDragging])
+
+  const confettiParticles = useMemo(() => {
+    if (!gameState.showCelebration) return []
+    const colors = ["#FFD700", "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8"]
+    return Array.from({ length: 50 }, (_, i) => ({
+      id: i,
+      style: {
+        left: `${50 + (seededRandom(i) - 0.5) * 20}%`,
+        top: "-10%",
+        width: "10px",
+        height: "10px",
+        backgroundColor: colors[Math.floor(seededRandom(i + 10) * colors.length)],
+        borderRadius: seededRandom(i + 20) > 0.5 ? "50%" : "0%",
+        transform: `rotate(${seededRandom(i + 30) * 360}deg)`,
+        animationDelay: `${seededRandom(i + 40) * 0.5}s`,
+        animationDuration: `${2 + seededRandom(i + 50)}s`,
+      } as React.CSSProperties,
+    }))
+  }, [gameState.showCelebration])
 
   return (
     <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
@@ -2806,6 +3059,7 @@ function BlocklyEditor() {
         <div
           ref={playgroundRef}
           onMouseDown={handlePlaygroundMouseDown}
+          suppressHydrationWarning
           className="fixed bg-white rounded-lg shadow-2xl border-2 border-gray-300 z-50 transition-all duration-200"
           style={{
             left: `${playgroundState.x}px`,
@@ -2862,6 +3116,14 @@ function BlocklyEditor() {
                 Trash: {gameState.trashCollected}
               </div>
 
+              {consoleLines.length > 0 && (
+                <div className="absolute top-10 left-2 right-12 z-10 max-h-24 overflow-y-auto rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] text-green-300 shadow-md">
+                  {consoleLines.map((line, i) => (
+                    <div key={`${i}-${line}`}>{line || "\u00a0"}</div>
+                  ))}
+                </div>
+              )}
+
               {/* Fixed layout with canvas, right ruler, and bottom ruler */}
               <div className="flex">
                 <canvas
@@ -2894,8 +3156,17 @@ function BlocklyEditor() {
               {gameState.isGameOver && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-b-lg">
                   <div className="bg-white rounded-xl p-6 shadow-2xl text-center">
-                    <h3 className="text-2xl font-bold text-red-600 mb-2">You Lose!</h3>
-                    <p className="text-gray-600 mb-4">You hit the coral reef!</p>
+                    {gameState.runError ? (
+                      <>
+                        <h3 className="text-2xl font-bold text-amber-600 mb-2">Program stopped</h3>
+                        <p className="text-gray-600 mb-4">{gameState.runError}</p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="text-2xl font-bold text-red-600 mb-2">You Lose!</h3>
+                        <p className="text-gray-600 mb-4">You hit the coral reef!</p>
+                      </>
+                    )}
                     <p className="text-lg font-semibold text-orange-500 mb-4">
                       Trash Collected: {gameState.trashCollected}
                     </p>
@@ -2983,6 +3254,7 @@ function BlocklyEditor() {
         <div
           ref={aiAssistantRef}
           onMouseDown={handleAIAssistantMouseDown}
+          suppressHydrationWarning
           className="fixed bg-white rounded-lg shadow-2xl border-2 border-gray-300 z-50 transition-all duration-200"
           style={{
             left: `${aiAssistantState.x}px`,
@@ -3614,27 +3886,10 @@ function BlocklyEditor() {
         </div>
       )}
 
-      {gameState.showCelebration && (
+      {gameState.showCelebration && confettiParticles.length > 0 && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
-          {/* Confetti particles */}
-          {Array.from({ length: 50 }).map((_, i) => (
-            <div
-              key={i}
-              className="absolute animate-confetti"
-              style={{
-                left: `${50 + (Math.random() - 0.5) * 20}%`,
-                top: "-10%",
-                width: "10px",
-                height: "10px",
-                backgroundColor: ["#FFD700", "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8"][
-                  Math.floor(Math.random() * 6)
-                ],
-                borderRadius: Math.random() > 0.5 ? "50%" : "0%",
-                transform: `rotate(${Math.random() * 360}deg)`,
-                animationDelay: `${Math.random() * 0.5}s`,
-                animationDuration: `${2 + Math.random() * 1}s`,
-              }}
-            />
+          {confettiParticles.map((particle) => (
+            <div key={particle.id} className="absolute animate-confetti" style={particle.style} />
           ))}
           {/* Celebration message */}
           <div className="bg-gradient-to-br from-yellow-400 via-orange-400 to-pink-500 text-white p-8 rounded-2xl shadow-2xl pointer-events-auto transform animate-bounce-in">
@@ -3652,38 +3907,37 @@ function BlocklyEditor() {
       {anglePickerState.isOpen && (
         <AngleWheelPicker
           value={anglePickerState.angle}
-          onChange={(newValue) => {
-            if (anglePickerState.callback) {
-              anglePickerState.callback(newValue)
-            }
+          onApply={applyPickerValue}
+          onClose={() => {
+            blocklyPickerRef.current = null
+            setAnglePickerState((prev) => ({ ...prev, isOpen: false }))
           }}
-          onClose={() => setAnglePickerState((prev) => ({ ...prev, isOpen: false }))}
         />
       )}
 
       {compassPickerState.isOpen && (
         <CompassPicker
           value={compassPickerState.heading}
-          onChange={(newValue) => {
-            if (compassPickerState.callback) {
-              compassPickerState.callback(newValue)
-            }
+          onApply={applyPickerValue}
+          onClose={() => {
+            blocklyPickerRef.current = null
+            setCompassPickerState((prev) => ({ ...prev, isOpen: false }))
           }}
-          onClose={() => setCompassPickerState((prev) => ({ ...prev, isOpen: false }))}
         />
       )}
 
       {distancePickerState.isOpen && (
         <DistanceSliderPicker
           value={distancePickerState.distance}
-          direction={playgroundState.isMaximized ? "forward" : "forward"} // Placeholder, needs to be dynamically set
+          direction={distancePickerState.direction}
+          playgroundWidth={playgroundState.isMaximized ? 600 : 400}
+          playgroundHeight={playgroundState.isMaximized ? 600 : 400}
           robotState={robotState}
-          onChange={(newValue) => {
-            if (distancePickerState.callback) {
-              distancePickerState.callback(newValue)
-            }
+          onApply={applyPickerValue}
+          onClose={() => {
+            blocklyPickerRef.current = null
+            setDistancePickerState((prev) => ({ ...prev, isOpen: false }))
           }}
-          onClose={() => setDistancePickerState((prev) => ({ ...prev, isOpen: false }))}
         />
       )}
     </div>
@@ -3718,10 +3972,6 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
 
   Blockly.Blocks["drive_distance"] = {
     init: function () {
-      const distanceField = new Blockly.FieldTextInput("200", (val) => {
-        return val
-      })
-
       this.appendDummyInput()
         .appendField("drive")
         .appendField(
@@ -3732,7 +3982,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
           "DIRECTION",
         )
         .appendField("for")
-        .appendField(distanceField, "DISTANCE")
+        .appendField(new Blockly.FieldNumber(200, 0, 5000), "DISTANCE")
         .appendField(
           new Blockly.FieldDropdown(
             [
@@ -3744,14 +3994,11 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
               if (newValue !== this.getFieldValue("UNIT")) {
                 alert("⚠️ Units changed! Please check your distance value.")
 
-                // Highlight the distance field in bright pink
-                const distanceFieldElement = distanceField as any
-                if (distanceFieldElement.fieldGroup_) {
+                const distanceFieldElement = this.getField("DISTANCE") as { fieldGroup_?: { querySelector: (s: string) => Element | null } }
+                if (distanceFieldElement?.fieldGroup_) {
                   const rect = distanceFieldElement.fieldGroup_.querySelector("rect")
                   if (rect) {
-                    rect.setAttribute("fill", "#ff1493") // Bright pink
-
-                    // Reset after 3 seconds
+                    rect.setAttribute("fill", "#ff1493")
                     setTimeout(() => {
                       rect.setAttribute("fill", "#ffffff")
                     }, 3000)
@@ -3772,7 +4019,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
 
   Blockly.JavaScript.forBlock["drive_distance"] = (block: any) => {
     const direction = block.getFieldValue("DIRECTION")
-    const distance = block.getFieldValue("DISTANCE")
+    const distance = Number(block.getFieldValue("DISTANCE")) || 0
     const unit = block.getFieldValue("UNIT")
     return `await robot.drive('${direction}', ${distance}, '${unit}');\n`
   }
@@ -4660,6 +4907,35 @@ function defineOperatorsBlocks(Blockly: any) {
     return [`(${a} && ${b})`, Blockly.JavaScript.ORDER_LOGICAL_AND]
   }
 
+  Blockly.Blocks["boolean_or"] = {
+    init: function () {
+      this.appendValueInput("A").setCheck("Boolean")
+      this.appendDummyInput().appendField("or")
+      this.appendValueInput("B").setCheck("Boolean")
+      this.setInputsInline(true)
+      this.setOutput(true, "Boolean")
+      this.setColour("#4CAF50")
+    },
+  }
+  Blockly.JavaScript.forBlock["boolean_or"] = (block: any) => {
+    const a = Blockly.JavaScript.valueToCode(block, "A", Blockly.JavaScript.ORDER_LOGICAL_OR) || "false"
+    const b = Blockly.JavaScript.valueToCode(block, "B", Blockly.JavaScript.ORDER_LOGICAL_OR) || "false"
+    return [`(${a} || ${b})`, Blockly.JavaScript.ORDER_LOGICAL_OR]
+  }
+
+  Blockly.Blocks["text_string"] = {
+    init: function () {
+      this.appendDummyInput().appendField(new Blockly.FieldTextInput("text"), "TEXT")
+      this.setOutput(true, "String")
+      this.setColour("#4CAF50")
+      this.setTooltip("Text value for print and other blocks")
+    },
+  }
+  Blockly.JavaScript.forBlock["text_string"] = (block: any) => {
+    const text = block.getFieldValue("TEXT").replace(/\\/g, "\\\\").replace(/'/g, "\\'")
+    return [`'${text}'`, Blockly.JavaScript.ORDER_ATOMIC]
+  }
+
   // Boolean NOT
   Blockly.Blocks["boolean_not"] = {
     init: function () {
@@ -4922,10 +5198,9 @@ function defineSwitchBlocks(Blockly: any) {
     },
   }
 
-  Blockly.JavaScript["when_started"] = (block: any) => {
-    const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
-    return statements_do
-  }
+  registerBlockGenerator(Blockly, "when_started", (block: any) => {
+    return Blockly.JavaScript.statementToCode(block, "DO")
+  })
 
   // Forever loop
   Blockly.Blocks["forever"] = {
@@ -4940,10 +5215,10 @@ function defineSwitchBlocks(Blockly: any) {
     },
   }
 
-  Blockly.JavaScript["forever"] = (block: any) => {
+  registerBlockGenerator(Blockly, "forever", (block: any) => {
     const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while (true) {\n${statements_do}}\n`
-  }
+    return `while (true) {\n${statements_do}await robot.wait(0.01);\n}\n`
+  })
 
   // Repeat N times
   Blockly.Blocks["repeat"] = {
@@ -4959,11 +5234,11 @@ function defineSwitchBlocks(Blockly: any) {
     },
   }
 
-  Blockly.JavaScript["repeat"] = (block: any) => {
-    const value_times = Blockly.JavaScript.valueToCode(block, "TIMES", Blockly.JavaScript.ORDER_ATOMIC)
+  registerBlockGenerator(Blockly, "repeat", (block: any) => {
+    const value_times = Blockly.JavaScript.valueToCode(block, "TIMES", Blockly.JavaScript.ORDER_ATOMIC) || "0"
     const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
     return `for (let count = 0; count < ${value_times}; count++) {\n${statements_do}}\n`
-  }
+  })
 
   // Wait
   Blockly.Blocks["wait"] = {
@@ -4978,10 +5253,10 @@ function defineSwitchBlocks(Blockly: any) {
     },
   }
 
-  Blockly.JavaScript["wait"] = (block: any) => {
-    const value_seconds = Blockly.JavaScript.valueToCode(block, "SECONDS", Blockly.JavaScript.ORDER_ATOMIC)
-    return `await new Promise(resolve => setTimeout(resolve, ${value_seconds} * 1000));\n`
-  }
+  registerBlockGenerator(Blockly, "wait", (block: any) => {
+    const value_seconds = Blockly.JavaScript.valueToCode(block, "SECONDS", Blockly.JavaScript.ORDER_ATOMIC) || "0"
+    return `await robot.wait(${value_seconds});\n`
+  })
 }
 
 export default BlocklyEditor
