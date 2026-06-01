@@ -1633,13 +1633,14 @@ function BlocklyEditor() {
   }, [drawRobot, playgroundState.isMaximized, playgroundState.isVisible, playgroundState.isMinimized])
 
   useEffect(() => {
-    if (!canvasRef.current || !playgroundState.isVisible || playgroundState.isMinimized) return
+    if (!playgroundState.isVisible || playgroundState.isMinimized) return
 
     const timer = setTimeout(() => {
+      drawPlayground()
       drawRobot()
-    }, 100)
+    }, 50)
     return () => clearTimeout(timer)
-  }, [playgroundState.isVisible, playgroundState.isMinimized])
+  }, [playgroundState.isVisible, playgroundState.isMinimized, drawPlayground, drawRobot])
 
   const recordPenSegment = useCallback((from: { x: number; y: number }, to: { x: number; y: number }) => {
     if (!runtimeRef.current.penDown) return
@@ -2548,7 +2549,11 @@ function BlocklyEditor() {
   }
 
   const handleOpenPlayground = () => {
-    setPlaygroundState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
+    setPlaygroundState((prev) => ({
+      ...prev,
+      isVisible: true,
+      isMinimized: false,
+    }))
   }
 
   const handleClosePlayground = () => {
@@ -3021,12 +3026,14 @@ function BlocklyEditor() {
           {!playgroundState.isVisible && (
             <Button
               id="vex-btn-open-playground"
+              type="button"
               variant="secondary"
               size="sm"
               onClick={handleOpenPlayground}
               className="bg-white/20 hover:bg-white/30 text-white border-0"
+              aria-label="Open Ocean Reef Cleanup playground window"
             >
-              Open Playground
+              Open Ocean Reef Cleanup
             </Button>
           )}
           <Button
