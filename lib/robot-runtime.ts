@@ -1,5 +1,14 @@
 /** Shared helpers for VEXcode VR–style robot simulation (units, angles, block traversal). */
 
+/** Coral Reef Cleanup playground (VEXcode VR docs). */
+export const CORAL_REEF_FIELD_MM = 2000
+export const CORAL_REEF_START_MM = { x: 0, y: -800 }
+/** Solar battery lasts a few minutes in the official challenge (~3 min). */
+export const CORAL_REEF_BATTERY_SEC = 180
+export const CORAL_REEF_TRASH_COUNT = 12
+/** Front distance sensor range (VEXcode VR). */
+export const DISTANCE_SENSOR_MAX_MM = 3000
+
 /** ~13.33 playground pixels per 100 mm (7.5 mm per pixel). */
 export const MM_PER_PIXEL = 7.5
 export const PIXELS_PER_MM = 1 / MM_PER_PIXEL
@@ -105,7 +114,7 @@ export interface TrashSim {
   x: number
   y: number
   isCollected: boolean
-  type: string
+  type: "bottle" | "can" | "wrapper" | "bag"
 }
 
 export function pointHitsCoral(
@@ -202,4 +211,65 @@ export function forEachProgramBlock(
 
 export function registerBlockGenerator(Blockly: { JavaScript: { forBlock: Record<string, unknown> } }, type: string, fn: (block: unknown) => string | [string, number]) {
   Blockly.JavaScript.forBlock[type] = fn
+}
+
+export function getPlaygroundCanvasSize(isMaximized: boolean): { w: number; h: number } {
+  return { w: isMaximized ? 600 : 400, h: isMaximized ? 600 : 400 }
+}
+
+/** Canvas pixel position for a VEX field coordinate (origin at playground center). */
+export function fieldMmToPixel(xMm: number, yMm: number, canvasW: number, canvasH: number): { x: number; y: number } {
+  return {
+    x: canvasW / 2 + distanceToPixels(xMm, "mm"),
+    y: canvasH / 2 + distanceToPixels(yMm, "mm"),
+  }
+}
+
+/** VEX field mm from canvas pixels (origin at playground center). */
+export function pixelToFieldMm(px: number, py: number, canvasW: number, canvasH: number): { x: number; y: number } {
+  return {
+    x: Math.round(pixelsToDistance(px - canvasW / 2, "mm")),
+    y: Math.round(pixelsToDistance(py - canvasH / 2, "mm")),
+  }
+}
+
+export function getDefaultRobotPixelPosition(isMaximized: boolean): { x: number; y: number } {
+  const { w, h } = getPlaygroundCanvasSize(isMaximized)
+  const pos = fieldMmToPixel(CORAL_REEF_START_MM.x, CORAL_REEF_START_MM.y, w, h)
+  return clampRobotPosition(pos.x, pos.y, w, h)
+}
+
+export function fieldRulerTicksMm(): number[] {
+  return [-1000, -500, 0, 500, 1000]
+}
+
+/** Place trash away from coral borders and the default spawn point. */
+export function createInitialTrashItems(
+  canvasW: number,
+  canvasH: number,
+  coralPieces: CoralPiece[],
+  count = CORAL_REEF_TRASH_COUNT,
+): TrashSim[] {
+  const types: TrashSim["type"][] = ["bottle", "can", "wrapper", "bag"]
+  const items: TrashSim[] = []
+  const margin = 55
+  const spawn = fieldMmToPixel(CORAL_REEF_START_MM.x, CORAL_REEF_START_MM.y, canvasW, canvasH)
+  let attempts = 0
+
+  while (items.length < count && attempts < count * 50) {
+    attempts++
+    const x = margin + seededRandom(attempts) * (canvasW - margin * 2)
+    const y = margin + seededRandom(attempts + 500) * (canvasH - margin * 2)
+    if (pointHitsCoral(x, y, coralPieces, 28)) continue
+    if (Math.hypot(x - spawn.x, y - spawn.y) < 70) continue
+
+    items.push({
+      x,
+      y,
+      isCollected: false,
+      type: types[Math.floor(seededRandom(attempts + 1000) * types.length)],
+    })
+  }
+
+  return items
 }

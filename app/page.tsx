@@ -6,12 +6,22 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import {
   clampRobotPosition,
+  CORAL_REEF_BATTERY_SEC,
+  CORAL_REEF_FIELD_MM,
+  CORAL_REEF_TRASH_COUNT,
+  createInitialTrashItems,
   distanceToPixels,
+  DISTANCE_SENSOR_MAX_MM,
   driveDurationMs,
-  maxDriveDistanceMm,
+  fieldMmToPixel,
+  fieldRulerTicksMm,
   forEachProgramBlock,
+  getDefaultRobotPixelPosition,
+  getPlaygroundCanvasSize,
+  maxDriveDistanceMm,
   nearestTrashDistanceMm,
   normalizeDegrees,
+  pixelToFieldMm,
   pixelsToDistance,
   pointHitsCoral,
   raycastToBorder,
@@ -163,7 +173,7 @@ interface AIAssistantState {
   isVisible: boolean
   isMinimized: boolean
   isMaximized: boolean
-  surveyStep: "main" | "strategy" | "predict" | "fix" | "compare" | "feel" | "partner"
+  surveyStep: "main" | "strategy" | "predict" | "fix" | "compare" | "feel" | "partner" | "strategy-examples"
 }
 
 interface CategoryState {
@@ -180,14 +190,18 @@ interface TrashItem {
   isCollected: boolean
 }
 
+type MissionEndReason = "coral" | "battery" | "complete" | null
+
 interface GameState {
   trashCollected: number
-  trashItems: TrashItem[]
+  trashTotal: number
+  batteryPercent: number
   isGameOver: boolean
   isSpawningTrash: boolean
   gameLost: boolean
   runError: string | null
-  showCelebration: boolean // Track if celebration should show
+  showCelebration: boolean
+  missionEndReason: MissionEndReason
 }
 
 // AngleWheelPicker component for rotation/degrees input
@@ -306,8 +320,12 @@ function AngleWheelPicker({ value, onApply, onClose, max = 360 }: AngleWheelPick
   }
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]" onClick={onClose}>
-      <div className="bg-white rounded-lg p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      id="vex-picker-angle-overlay"
+      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]"
+      onClick={onClose}
+    >
+      <div id="vex-picker-angle" className="bg-white rounded-lg p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <p className="text-sm font-medium text-center mb-2 text-gray-600">Drag to set degrees</p>
         <canvas
           ref={canvasRef}
@@ -465,8 +483,12 @@ function CompassPicker({ value, onApply, onClose }: CompassPickerProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]" onClick={onClose}>
-      <div className="bg-white rounded-lg p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      id="vex-picker-compass-overlay"
+      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]"
+      onClick={onClose}
+    >
+      <div id="vex-picker-compass" className="bg-white rounded-lg p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <p className="text-sm font-medium text-center mb-2 text-gray-600">Select compass heading</p>
         <canvas
           ref={canvasRef}
@@ -632,10 +654,14 @@ function DistanceSliderPicker({
   }, [drawPreview])
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]" onClick={onClose}>
-      <div className="bg-white rounded-lg p-6 shadow-xl min-w-[400px]" onClick={(e) => e.stopPropagation()}>
+    <div
+      id="vex-picker-distance-overlay"
+      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]"
+      onClick={onClose}
+    >
+      <div id="vex-picker-distance" className="bg-white rounded-lg p-6 shadow-xl min-w-[400px]" onClick={(e) => e.stopPropagation()}>
         <p className="text-sm font-medium text-center mb-4 text-gray-600">
-          Set distance — Ocean Cleanup ({playgroundWidth}×{playgroundHeight} px)
+          Set distance — Coral Reef field ({CORAL_REEF_FIELD_MM}×{CORAL_REEF_FIELD_MM} mm)
         </p>
 
         <div className="flex gap-6 items-center">
@@ -703,7 +729,12 @@ function BlocklyEditor() {
   const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
   const [aiStep, setAiStep] = useState<AIAssistantState["surveyStep"]>("main")
 
-  const robotStateRef = useRef<{ x: number; y: number; rotation: number }>({ x: 200, y: 200, rotation: 0 })
+  const initialRobotPos = getDefaultRobotPixelPosition(false)
+  const robotStateRef = useRef<{ x: number; y: number; rotation: number }>({
+    x: initialRobotPos.x,
+    y: initialRobotPos.y,
+    rotation: 0,
+  })
   const runtimeRef = useRef({
     driveVelocity: 50,
     turnVelocity: 50,
@@ -743,7 +774,7 @@ function BlocklyEditor() {
 
   const [robotCapabilities, setRobotCapabilities] = useState({
     eyeSensor: true,
-    bumperSensor: false,
+    bumperSensor: true,
     arm: false,
     gyro: false,
     gps: false,
@@ -759,8 +790,8 @@ function BlocklyEditor() {
   const [consoleLines, setConsoleLines] = useState<string[]>([])
 
   const [robotState, setRobotState] = useState<RobotState>({
-    x: 200,
-    y: 200,
+    x: initialRobotPos.x,
+    y: initialRobotPos.y,
     rotation: 0,
     driveVelocity: 50,
     turnVelocity: 50,
@@ -831,12 +862,16 @@ function BlocklyEditor() {
   const [trashItems, setTrashItems] = useState<TrashItem[]>([])
   const [gameState, setGameState] = useState<GameState>({
     trashCollected: 0,
+    trashTotal: 0,
+    batteryPercent: 100,
     gameLost: false,
     isGameOver: false,
     isSpawningTrash: false,
     runError: null,
     showCelebration: false,
+    missionEndReason: null,
   })
+  const [codeView, setCodeView] = useState<"blocks" | "python">("blocks")
   const coralGraceUntilRef = useRef(0)
   const blocklyPickerRef = useRef<{ blockId: string; fieldName: string } | null>(null)
 
@@ -854,8 +889,7 @@ function BlocklyEditor() {
   const floatAnimationRef = useRef<number | null>(null)
 
   const initializeCoralBorders = useCallback((maximized: boolean) => {
-    const width = maximized ? 600 : 400
-    const height = maximized ? 600 : 400
+    const { w: width, h: height } = getPlaygroundCanvasSize(maximized)
     const coralColors = ["#FF6B6B", "#FF8E8E", "#FFB6B6", "#E67E22", "#FF5252", "#F39C12"]
     const pieces: CoralPiece[] = []
 
@@ -1301,8 +1335,7 @@ function BlocklyEditor() {
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    const width = playgroundState.isMaximized ? 600 : 400
-    const height = playgroundState.isMaximized ? 600 : 400
+    const { w: width, h: height } = getPlaygroundCanvasSize(playgroundState.isMaximized)
 
     // Draw sandy ocean floor background
     const gradient = ctx.createLinearGradient(0, 0, 0, height)
@@ -1331,8 +1364,24 @@ function BlocklyEditor() {
       ctx.stroke()
     })
 
+    // Field origin marker (0, 0 mm) — VEX location reference
+    const origin = fieldMmToPixel(0, 0, width, height)
+    ctx.strokeStyle = "rgba(60, 120, 180, 0.35)"
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(origin.x - 10, origin.y)
+    ctx.lineTo(origin.x + 10, origin.y)
+    ctx.moveTo(origin.x, origin.y - 10)
+    ctx.lineTo(origin.x, origin.y + 10)
+    ctx.stroke()
+
+    const spawn = fieldMmToPixel(0, -800, width, height)
+    ctx.fillStyle = "rgba(46, 125, 50, 0.25)"
+    ctx.beginPath()
+    ctx.arc(spawn.x, spawn.y, 14, 0, Math.PI * 2)
+    ctx.fill()
+
     // Draw coral borders along all edges
-    // Using the pre-calculated coralPieces state
     coralPieces.forEach((piece) => {
       ctx.fillStyle = piece.color
       ctx.beginPath()
@@ -1404,9 +1453,33 @@ function BlocklyEditor() {
       ctx.restore()
     })
 
-    // Draw robot
+    // Front distance sensor ray while program runs (VEXcode VR front eye / distance sensor)
+    if (isRunning) {
+      const borderMm = raycastToBorder(
+        robotState.x,
+        robotState.y,
+        robotState.rotation,
+        width,
+        height,
+        coralPieces,
+        DISTANCE_SENSOR_MAX_MM,
+      )
+      const trashMm = nearestTrashDistanceMm(robotState.x, robotState.y, trashItems)
+      const frontMm = trashMm != null && trashMm < borderMm ? trashMm : borderMm
+      const rayPx = distanceToPixels(Math.min(frontMm, DISTANCE_SENSOR_MAX_MM), "mm")
+      const angleRad = (robotState.rotation * Math.PI) / 180
+      ctx.strokeStyle = "rgba(0, 188, 212, 0.65)"
+      ctx.lineWidth = 2
+      ctx.setLineDash([4, 4])
+      ctx.beginPath()
+      ctx.moveTo(robotState.x, robotState.y)
+      ctx.lineTo(robotState.x + Math.sin(angleRad) * rayPx, robotState.y - Math.cos(angleRad) * rayPx)
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+
     drawRobot()
-  }, [drawRobot, robotState, playgroundState.isMaximized, trashItems, coralPieces, penTrail])
+  }, [drawRobot, robotState, playgroundState.isMaximized, trashItems, coralPieces, penTrail, isRunning])
 
   const checkCoralCollision = useCallback(
     (x: number, y: number): boolean => {
@@ -1455,40 +1528,60 @@ function BlocklyEditor() {
     }
   }, [robotState.x, robotState.y, playgroundState.isMaximized, trashItems])
 
-  // Around line 1315, replace spawnTrash function
-  const startSpawningTrash = useCallback(() => {
+  const deployTrashField = useCallback(() => {
     if (trashSpawnIntervalRef.current) {
       clearInterval(trashSpawnIntervalRef.current)
+      trashSpawnIntervalRef.current = null
     }
 
-    setGameState((prev) => ({ ...prev, isSpawningTrash: true }))
+    const { w, h } = getPlaygroundCanvasSize(playgroundState.isMaximized)
+    const base = createInitialTrashItems(w, h, coralPieces, CORAL_REEF_TRASH_COUNT)
+    const items: TrashItem[] = base.map((t, i) => ({
+      id: Date.now() + i,
+      x: t.x,
+      y: t.y,
+      type: t.type as TrashItem["type"],
+      scale: 0.85 + seededRandom(i) * 0.15,
+      floatOffset: seededRandom(i + 20) * Math.PI * 2,
+      isCollected: false,
+    }))
 
-    const spawnTrash = () => {
-      const canvasWidth = playgroundState.isMaximized ? 600 : 400
-      const canvasHeight = playgroundState.isMaximized ? 600 : 400
-      const margin = 60
+    setTrashItems(items)
+    setGameState((prev) => ({
+      ...prev,
+      trashTotal: items.length,
+      trashCollected: 0,
+      isSpawningTrash: true,
+      batteryPercent: 100,
+      missionEndReason: null,
+      showCelebration: false,
+      isGameOver: false,
+      gameLost: false,
+      runError: null,
+    }))
+  }, [playgroundState.isMaximized, coralPieces])
 
-      setTrashItems((prev) => {
-        if (prev.length >= 20) return prev
-
-        const types: ("bottle" | "can" | "wrapper" | "bag")[] = ["bottle", "can", "wrapper", "bag"]
-        const newTrash: TrashItem = {
-          id: Date.now() + Math.random(),
-          x: margin + Math.random() * (canvasWidth - margin * 2),
-          y: margin + Math.random() * (canvasHeight - margin * 2), // Random position instead of top
-          type: types[Math.floor(Math.random() * types.length)],
-          scale: 0, // Start at 0 scale for expand animation
-          floatOffset: Math.random() * Math.PI * 2,
-          isCollected: false,
-        }
-
-        return [...prev, newTrash]
-      })
+  const endMission = useCallback((reason: MissionEndReason, opts?: { runError?: string; gameLost?: boolean }) => {
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current)
+      animationRef.current = null
     }
-
-    spawnTrash()
-    trashSpawnIntervalRef.current = setInterval(spawnTrash, 2000)
-  }, [playgroundState.isMaximized])
+    if (trashSpawnIntervalRef.current) {
+      clearInterval(trashSpawnIntervalRef.current)
+      trashSpawnIntervalRef.current = null
+    }
+    isRunningRef.current = false
+    setIsRunning(false)
+    setGameState((prev) => ({
+      ...prev,
+      isGameOver: true,
+      missionEndReason: reason,
+      gameLost: opts?.gameLost ?? reason === "coral",
+      runError: opts?.runError ?? (reason === "battery" ? "Solar battery depleted." : prev.runError),
+      showCelebration: reason === "complete",
+      isSpawningTrash: false,
+    }))
+  }, [])
 
   useEffect(() => {
     if (!gameState.isSpawningTrash) return
@@ -1522,17 +1615,12 @@ function BlocklyEditor() {
     }
 
     if (checkCoralCollision(robotState.x, robotState.y) && isRunning) {
-      setIsRunning(false)
-      setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: true }))
-      if (trashSpawnIntervalRef.current) {
-        clearInterval(trashSpawnIntervalRef.current)
-        trashSpawnIntervalRef.current = null
-      }
+      endMission("coral", { gameLost: true })
       if (floatAnimationRef.current) {
         cancelAnimationFrame(floatAnimationRef.current)
       }
     }
-  }, [robotState.x, robotState.y, checkTrashCollision, checkCoralCollision, isRunning])
+  }, [robotState.x, robotState.y, checkTrashCollision, checkCoralCollision, isRunning, endMission])
 
   // Redraw playground when state changes
   useEffect(() => {
@@ -1633,21 +1721,296 @@ function BlocklyEditor() {
     })
   }
 
+  const getPythonCode = useCallback(() => {
+    if (!workspace) return "# No code yet"
+    
+    // Recursively generate code for a statement input (DO, ELSE, etc.)
+    const generateStatements = (block: any, inputName: string, indent: string): string => {
+      const child = block.getInputTargetBlock(inputName)
+      if (!child) return `${indent}pass\n`
+      return generateSequence(child, indent)
+    }
+
+    // Walk a chain of next-connected blocks
+    const generateSequence = (block: any, indent: string): string => {
+      if (!block) return ""
+      return generatePythonFromBlock(block, indent) + generateSequence(block.getNextBlock(), indent)
+    }
+
+    // Custom Python code generator - traverse blocks and generate Python syntax
+    const generatePythonFromBlock = (block: any, indent: string = ""): string => {
+      if (!block) return ""
+      
+      const type = block.type
+      let code = ""
+      
+      switch (type) {
+        case "when_started":
+          code = "# When Started\ndef main():\n"
+          code += generateStatements(block, "DO", "    ")
+          code += "\nmain()"
+          break
+          
+        case "drive_simple": {
+          const dir = block.getFieldValue("DIRECTION") || "forward"
+          code = `${indent}drivetrain.drive(${dir.toUpperCase()})\n`
+          break
+        }
+          
+        case "drive_distance": {
+          const direction = block.getFieldValue("DIRECTION") || "forward"
+          const distance = block.getFieldValue("DISTANCE") || "200"
+          const unit = block.getFieldValue("UNIT") || "mm"
+          const unitPython = unit === "inches" ? "INCHES" : "MM"
+          code = `${indent}drivetrain.drive_for(${direction.toUpperCase()}, ${distance}, ${unitPython})\n`
+          break
+        }
+          
+        case "turn_simple": {
+          const dir = block.getFieldValue("DIRECTION") || "right"
+          code = `${indent}drivetrain.turn(${dir.toUpperCase()})\n`
+          break
+        }
+          
+        case "turn_degrees": {
+          const turnDir = block.getFieldValue("DIRECTION") || "right"
+          const degrees = block.getFieldValue("DEGREES") || "90"
+          code = `${indent}drivetrain.turn_for(${turnDir.toUpperCase()}, ${degrees}, DEGREES)\n`
+          break
+        }
+        
+        case "turn_to_heading": {
+          const heading = block.getFieldValue("HEADING") || "0"
+          code = `${indent}drivetrain.turn_to_heading(${heading}, DEGREES)\n`
+          break
+        }
+        
+        case "turn_to_rotation": {
+          const rotation = block.getFieldValue("ROTATION") || "0"
+          code = `${indent}drivetrain.turn_to_rotation(${rotation}, DEGREES)\n`
+          break
+        }
+          
+        case "set_drive_velocity": {
+          const velocity = block.getFieldValue("VELOCITY") || "50"
+          code = `${indent}drivetrain.set_drive_velocity(${velocity}, PERCENT)\n`
+          break
+        }
+          
+        case "set_turn_velocity": {
+          const turnVel = block.getFieldValue("VELOCITY") || "50"
+          code = `${indent}drivetrain.set_turn_velocity(${turnVel}, PERCENT)\n`
+          break
+        }
+          
+        case "set_drive_heading": {
+          const heading = block.getFieldValue("HEADING") || "0"
+          code = `${indent}drivetrain.set_heading(${heading}, DEGREES)\n`
+          break
+        }
+        
+        case "set_drive_rotation": {
+          const rotation = block.getFieldValue("ROTATION") || "0"
+          code = `${indent}drivetrain.set_rotation(${rotation}, DEGREES)\n`
+          break
+        }
+        
+        case "set_drive_timeout": {
+          const timeout = block.getFieldValue("TIMEOUT") || "1"
+          code = `${indent}drivetrain.set_timeout(${timeout}, SECONDS)\n`
+          break
+        }
+          
+        case "stop_driving":
+          code = `${indent}drivetrain.stop()\n`
+          break
+          
+        case "forever":
+        case "forever_loop": {
+          code = `${indent}while True:\n`
+          code += generateStatements(block, "DO", indent + "    ")
+          break
+        }
+
+        case "repeat":
+        case "repeat_times": {
+          const times = block.getFieldValue("TIMES") || "10"
+          code = `${indent}for i in range(${times}):\n`
+          code += generateStatements(block, "DO", indent + "    ")
+          break
+        }
+        
+        case "repeat_until": {
+          const cond = block.getInputTargetBlock("CONDITION")
+          const condStr = cond ? `not ${cond.type}()` : "not condition"
+          code = `${indent}while ${condStr}:\n`
+          code += generateStatements(block, "DO", indent + "    ")
+          break
+        }
+        
+        case "while_loop": {
+          code = `${indent}while condition:\n`
+          code += generateStatements(block, "DO", indent + "    ")
+          break
+        }
+          
+        case "wait_seconds": {
+          const waitTime = block.getFieldValue("SECONDS") || "1"
+          code = `${indent}wait(${waitTime}, SECONDS)\n`
+          break
+        }
+        
+        case "wait_until":
+          code = `${indent}wait_until(condition)\n`
+          break
+          
+        case "if_then": {
+          const ifCond = block.getInputTargetBlock("CONDITION")
+          const ifCondStr = ifCond ? generatePythonFromBlock(ifCond, "").trim() : "condition"
+          code = `${indent}if ${ifCondStr}:\n`
+          code += generateStatements(block, "DO", indent + "    ")
+          break
+        }
+        
+        case "if_then_else": {
+          const ifelseCond = block.getInputTargetBlock("CONDITION")
+          const ifelseCondStr = ifelseCond ? generatePythonFromBlock(ifelseCond, "").trim() : "condition"
+          code = `${indent}if ${ifelseCondStr}:\n`
+          code += generateStatements(block, "DO", indent + "    ")
+          code += `${indent}else:\n`
+          code += generateStatements(block, "ELSE", indent + "    ")
+          break
+        }
+        
+        case "break_block":
+          code = `${indent}break\n`
+          break
+        
+        case "stop_project":
+          code = `${indent}stop()\n`
+          break
+        
+        case "comment_block": {
+          const comment = block.getFieldValue("COMMENT") || ""
+          code = `${indent}# ${comment}\n`
+          break
+        }
+          
+        case "energize_magnet": {
+          const action = block.getFieldValue("ACTION") || "pick up"
+          code = action === "pick up" 
+            ? `${indent}electromagnet.pickup()\n`
+            : `${indent}electromagnet.drop()\n`
+          break
+        }
+          
+        case "move_pen": {
+          const penAction = block.getFieldValue("POSITION") || "down"
+          code = `${indent}pen.move(${penAction.toUpperCase()})\n`
+          break
+        }
+        
+        case "set_pen_width": {
+          const width = block.getFieldValue("WIDTH") || "1"
+          code = `${indent}pen.set_pen_width(${width})\n`
+          break
+        }
+          
+        case "set_pen_color": {
+          const color = block.getFieldValue("COLOR") || "red"
+          code = `${indent}pen.set_pen_color("${color}")\n`
+          break
+        }
+          
+        case "print_text": {
+          const text = block.getFieldValue("TEXT") || ""
+          code = `${indent}brain.print("${text}")\n`
+          break
+        }
+        
+        case "clear_all_rows":
+          code = `${indent}brain.clear()\n`
+          break
+        
+        case "set_cursor_next_row":
+          code = `${indent}brain.next_row()\n`
+          break
+        
+        // Sensing blocks
+        case "bumper_pressed":
+          code = `bumper.pressed()`
+          break
+        
+        case "eye_is_near": {
+          const nearObj = block.getFieldValue("OBJECT") || "any"
+          code = `eye.is_near_object()`
+          break
+        }
+        
+        case "eye_detects_color": {
+          const detColor = block.getFieldValue("COLOR") || "red"
+          code = `eye.detect("${detColor}")`
+          break
+        }
+        
+        // Operators
+        case "math_arithmetic": {
+          const op = block.getFieldValue("OP") || "ADD"
+          const opMap: { [key: string]: string } = { ADD: "+", MINUS: "-", MULTIPLY: "*", DIVIDE: "/" }
+          const a = block.getFieldValue("A") || "0"
+          const b = block.getFieldValue("B") || "0"
+          code = `(${a} ${opMap[op] || "+"} ${b})`
+          break
+        }
+        
+        case "random_int": {
+          const from = block.getFieldValue("FROM") || "1"
+          const to = block.getFieldValue("TO") || "10"
+          code = `random.randint(${from}, ${to})`
+          break
+        }
+          
+        default:
+          code = `${indent}# ${type}()\n`
+      }
+      
+      return code
+    }
+    
+    // Get top-level blocks and generate code
+    const topBlocks = workspace.getTopBlocks(true)
+    if (topBlocks.length === 0) return "# No code yet\n# Add blocks to see Python code"
+    
+    let pythonCode = "# VEXcode VR Python\nfrom vexcode import *\nimport random\n\n"
+    
+    for (const block of topBlocks) {
+      pythonCode += generatePythonFromBlock(block)
+    }
+    
+    return pythonCode
+  }, [workspace])
+
   const handleRun = async () => {
     if (!workspace || !window.Blockly || isRunning) return
 
     isRunningRef.current = true
     setIsRunning(true)
     coralGraceUntilRef.current = performance.now() + 400
-    setGameState((prev) => ({ ...prev, isGameOver: false, gameLost: false, runError: null }))
+    setGameState((prev) => ({
+      ...prev,
+      isGameOver: false,
+      gameLost: false,
+      runError: null,
+      missionEndReason: null,
+      showCelebration: false,
+    }))
     setConsoleLines([])
-    startSpawningTrash()
+    deployTrashField()
 
     const Blockly = window.Blockly
     const code = Blockly.JavaScript.workspaceToCode(workspace)
 
-    const canvasWidth = playgroundState.isMaximized ? 600 : 400
-    const canvasHeight = playgroundState.isMaximized ? 600 : 400
+    const { w: canvasWidth, h: canvasHeight } = getPlaygroundCanvasSize(playgroundState.isMaximized)
 
     runtimeRef.current = {
       driveVelocity: 50,
@@ -1663,9 +2026,10 @@ function BlocklyEditor() {
       lastPenPoint: null,
     }
 
+    const startPos = getDefaultRobotPixelPosition(playgroundState.isMaximized)
     setRobotState({
-      x: canvasWidth / 2,
-      y: canvasHeight / 2,
+      x: startPos.x,
+      y: startPos.y,
       rotation: 0,
       driveVelocity: 50,
       turnVelocity: 50,
@@ -1674,14 +2038,9 @@ function BlocklyEditor() {
 
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const startX = canvasWidth / 2
-    const startY = canvasHeight / 2
-    robotStateRef.current = { x: startX, y: startY, rotation: 0 }
+    robotStateRef.current = { x: startPos.x, y: startPos.y, rotation: 0 }
 
-    const getCanvasSize = () => ({
-      w: playgroundState.isMaximized ? 600 : 400,
-      h: playgroundState.isMaximized ? 600 : 400,
-    })
+    const getCanvasSize = () => getPlaygroundCanvasSize(playgroundState.isMaximized)
 
     const clampPosition = (x: number, y: number) => {
       const { w, h } = getCanvasSize()
@@ -1839,11 +2198,11 @@ function BlocklyEditor() {
           w,
           h,
           coralPieces,
-          300,
+          DISTANCE_SENSOR_MAX_MM,
         )
         const trashDist = nearestTrashDistanceMm(robotStateRef.current.x, robotStateRef.current.y, trashItems)
-        if (trashDist != null && trashDist < 150) return true
-        return dist < 200
+        if (trashDist != null && trashDist < DISTANCE_SENSOR_MAX_MM) return true
+        return dist < DISTANCE_SENSOR_MAX_MM
       },
       getDistance: (sensor: string, unit: string) => {
         const { w, h } = getCanvasSize()
@@ -1897,9 +2256,10 @@ function BlocklyEditor() {
         return 85
       },
       getPosition: (axis: string, unit: string) => {
-        const a = axis.toLowerCase()
-        const pixels = a === "x" ? robotStateRef.current.x : robotStateRef.current.y
-        return pixelsToDistance(pixels, unit.toLowerCase() === "inches" ? "inches" : "mm")
+        const { w, h } = getCanvasSize()
+        const field = pixelToFieldMm(robotStateRef.current.x, robotStateRef.current.y, w, h)
+        const mm = axis.toLowerCase() === "x" ? field.x : field.y
+        return unit.toLowerCase() === "inches" ? mm / 25.4 : mm
       },
       getPositionAngle: () => normalizeDegrees(robotStateRef.current.rotation),
       stop: () => {
@@ -1948,9 +2308,7 @@ function BlocklyEditor() {
     }
     setIsRunning(false)
     isRunningRef.current = false
-    const resetW = playgroundState.isMaximized ? 600 : 400
-    const resetH = playgroundState.isMaximized ? 600 : 400
-    const resetPos = clampRobotPosition(resetW / 2, resetH / 2, resetW, resetH)
+    const resetPos = getDefaultRobotPixelPosition(playgroundState.isMaximized)
     setRobotState({
       x: resetPos.x,
       y: resetPos.y,
@@ -1962,9 +2320,14 @@ function BlocklyEditor() {
     robotStateRef.current = { x: resetPos.x, y: resetPos.y, rotation: 0 }
     setGameState({
       trashCollected: 0,
+      trashTotal: 0,
+      batteryPercent: 100,
       gameLost: false,
       isGameOver: false,
       runError: null,
+      showCelebration: false,
+      missionEndReason: null,
+      isSpawningTrash: false,
     })
     setTrashItems([])
     setPenTrail([])
@@ -1975,22 +2338,25 @@ function BlocklyEditor() {
     if (workspace) {
       workspace.clear()
     }
-    const canvasWidth = playgroundState.isMaximized ? 600 : 400
-    const canvasHeight = playgroundState.isMaximized ? 600 : 400
+    const clearPos = getDefaultRobotPixelPosition(playgroundState.isMaximized)
     setRobotState({
-      x: canvasWidth / 2,
-      y: canvasHeight / 2,
+      x: clearPos.x,
+      y: clearPos.y,
       rotation: 0,
       driveVelocity: 50,
       turnVelocity: 50,
       heading: 0,
     })
-    // Clear game state on clear as well
     setGameState({
       trashCollected: 0,
+      trashTotal: 0,
+      batteryPercent: 100,
       gameLost: false,
       isGameOver: false,
       runError: null,
+      showCelebration: false,
+      missionEndReason: null,
+      isSpawningTrash: false,
     })
     setTrashItems([])
     setPenTrail([])
@@ -2017,9 +2383,14 @@ function BlocklyEditor() {
     }
     setGameState({
       trashCollected: 0,
+      trashTotal: 0,
+      batteryPercent: 100,
       gameLost: false,
       isGameOver: false,
       runError: null,
+      showCelebration: false,
+      missionEndReason: null,
+      isSpawningTrash: false,
     })
     setTrashItems([])
     if (trashSpawnIntervalRef.current) {
@@ -2466,15 +2837,59 @@ function BlocklyEditor() {
   }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiStep, drawPrediction])
 
   useEffect(() => {
-    const HIGH_SCORE_THRESHOLD = 10
-    if (gameState.trashCollected >= HIGH_SCORE_THRESHOLD && !gameState.showCelebration) {
-      setGameState((prev) => ({ ...prev, showCelebration: true }))
-      // Auto-hide celebration after 5 seconds
-      setTimeout(() => {
-        setGameState((prev) => ({ ...prev, showCelebration: false }))
-      }, 5000)
+    if (!gameState.showCelebration) return
+    const timer = setTimeout(() => {
+      setGameState((prev) => ({ ...prev, showCelebration: false }))
+    }, 5000)
+    return () => clearTimeout(timer)
+  }, [gameState.showCelebration])
+
+  useEffect(() => {
+    if (!isRunning || gameState.isGameOver) return
+    const tickMs = 250
+    const drainPerTick = (100 / CORAL_REEF_BATTERY_SEC) * (tickMs / 1000)
+    const id = setInterval(() => {
+      setGameState((prev) => {
+        const next = prev.batteryPercent - drainPerTick
+        if (next <= 0) {
+          endMission("battery")
+          return { ...prev, batteryPercent: 0 }
+        }
+        return { ...prev, batteryPercent: next }
+      })
+    }, tickMs)
+    return () => clearInterval(id)
+  }, [isRunning, gameState.isGameOver, endMission])
+
+  useEffect(() => {
+    if (!isRunning || gameState.isGameOver || gameState.trashTotal === 0) return
+    const remaining = trashItems.filter((t) => !t.isCollected).length
+    if (remaining === 0) {
+      endMission("complete")
     }
-  }, [gameState.trashCollected, gameState.showCelebration])
+  }, [trashItems, isRunning, gameState.isGameOver, gameState.trashTotal, endMission])
+
+  const liveSensors = useMemo(() => {
+    const { w, h } = getPlaygroundCanvasSize(playgroundState.isMaximized)
+    const field = pixelToFieldMm(robotState.x, robotState.y, w, h)
+    const borderMm = raycastToBorder(robotState.x, robotState.y, robotState.rotation, w, h, coralPieces, DISTANCE_SENSOR_MAX_MM)
+    const trashMm = nearestTrashDistanceMm(robotState.x, robotState.y, trashItems)
+    const frontDistanceMm = Math.round(trashMm != null && trashMm < borderMm ? trashMm : borderMm)
+    const angleRad = (robotState.rotation * Math.PI) / 180
+    const probeX = robotState.x + Math.sin(angleRad) * 30
+    const probeY = robotState.y - Math.cos(angleRad) * 30
+    const eyeTrashMm = nearestTrashDistanceMm(probeX, probeY, trashItems)
+    const eyeNear = robotCapabilities.eyeSensor && eyeTrashMm != null && eyeTrashMm < 80
+    const trashRemaining = trashItems.filter((t) => !t.isCollected).length
+    return {
+      field,
+      frontDistanceMm,
+      frontObjectDetected: frontDistanceMm < DISTANCE_SENSOR_MAX_MM,
+      eyeNear,
+      rotation: Math.round(normalizeDegrees(robotState.rotation)),
+      trashRemaining,
+    }
+  }, [robotState, trashItems, coralPieces, playgroundState.isMaximized, robotCapabilities.eyeSensor])
 
   useEffect(() => {
     if (gameState.isGameOver) {
@@ -2563,13 +2978,18 @@ function BlocklyEditor() {
     }))
   }, [gameState.showCelebration])
 
+  const rulerTicks = fieldRulerTicksMm()
+  const canvasSize = getPlaygroundCanvasSize(playgroundState.isMaximized)
+
   return (
-    <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
+    <div id="vex-app-root" className="h-screen flex flex-col bg-gray-100 overflow-hidden">
       {/* Header */}
-      <div className="h-14 bg-gradient-to-r from-[#1976D2] to-[#2196F3] flex items-center justify-between px-4 text-white shadow-md">
-        <div className="flex items-center gap-4">
-          <div className="bg-[#FF6B35] px-3 py-1.5 rounded font-bold text-xs">VEXcode VR Codesign Prototype</div>
-          <div className="flex items-center gap-2 text-sm">
+      <div id="vex-header" className="h-14 bg-gradient-to-r from-[#1976D2] to-[#2196F3] flex items-center justify-between px-4 text-white shadow-md">
+        <div id="vex-header-left" className="flex items-center gap-4">
+          <div id="vex-header-brand" className="bg-[#FF6B35] px-3 py-1.5 rounded font-bold text-xs">
+            VEXcode VR Codesign Prototype
+          </div>
+          <div id="vex-header-menu" className="flex items-center gap-2 text-sm">
             <Button
               variant="ghost"
               className="hover:bg-white/10 px-3 py-1.5 rounded transition-colors text-white"
@@ -2586,13 +3006,21 @@ function BlocklyEditor() {
             </Button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div id="vex-header-project-info" className="flex items-center gap-2">
           <span className="text-sm font-semibold">VEXcode Project</span>
+          <button
+            id="vex-btn-code-view-toggle"
+            onClick={() => setCodeView(codeView === "blocks" ? "python" : "blocks")}
+            className="text-xs bg-white/20 hover:bg-white/30 text-white px-2 py-1 rounded transition-colors"
+          >
+            {codeView === "blocks" ? "Show Python" : "Show Blocks"}
+          </button>
           <span className="text-xs text-white/70">Not Saving</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div id="vex-header-actions" className="flex items-center gap-2">
           {!playgroundState.isVisible && (
             <Button
+              id="vex-btn-open-playground"
               variant="secondary"
               size="sm"
               onClick={handleOpenPlayground}
@@ -2602,6 +3030,7 @@ function BlocklyEditor() {
             </Button>
           )}
           <Button
+            id="vex-btn-get-help"
             variant="secondary"
             size="sm"
             className="bg-pink-500 hover:bg-pink-600 text-white border-0 flex items-center gap-1"
@@ -2611,6 +3040,7 @@ function BlocklyEditor() {
             Get Help
           </Button>
           <Button
+            id="vex-btn-robot-config"
             variant="secondary"
             size="sm"
             className="bg-blue-500 hover:bg-blue-600 text-white border-0 flex items-center gap-1"
@@ -2620,6 +3050,7 @@ function BlocklyEditor() {
             Robot
           </Button>
           <Button
+            id="vex-btn-start"
             size="sm"
             className="bg-green-500 hover:bg-green-600 text-white border-0"
             onClick={handleRun}
@@ -2628,7 +3059,7 @@ function BlocklyEditor() {
             <Play className="h-4 w-4 mr-1" />
             START
           </Button>
-          <Button size="sm" className="bg-purple-500 hover:bg-purple-600 text-white border-0" onClick={handleReset}>
+          <Button id="vex-btn-reset" size="sm" className="bg-purple-500 hover:bg-purple-600 text-white border-0" onClick={handleReset}>
             <RotateCcw className="h-4 w-4 mr-1" />
             RESET
           </Button>
@@ -2636,10 +3067,11 @@ function BlocklyEditor() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div id="vex-main" className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Category Icons */}
-        <div className="w-20 bg-[#D6E4F5] border-r border-gray-300 flex flex-col items-center py-4 gap-1 relative">
+        <div id="vex-category-sidebar" className="w-20 bg-[#D6E4F5] border-r border-gray-300 flex flex-col items-center py-4 gap-1 relative">
           <Button
+            id="vex-category-drivetrain"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "drivetrain"
@@ -2652,6 +3084,7 @@ function BlocklyEditor() {
             <span className="text-[10px] font-medium">Drivetrain</span>
           </Button>
           <Button
+            id="vex-category-operators"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "operators"
@@ -2664,6 +3097,7 @@ function BlocklyEditor() {
             <span className="text-[10px] font-medium">Operators</span>
           </Button>
           <Button
+            id="vex-category-logic"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "logic"
@@ -2676,6 +3110,7 @@ function BlocklyEditor() {
             <span className="text-[10px] font-medium">Logic</span>
           </Button>
           <Button
+            id="vex-category-magnet"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "magnet"
@@ -2688,6 +3123,7 @@ function BlocklyEditor() {
             <span className="text-[10px] font-medium">Magnet</span>
           </Button>
           <Button
+            id="vex-category-drawing"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "drawing"
@@ -2700,6 +3136,7 @@ function BlocklyEditor() {
             <span className="text-[10px] font-medium">Drawing</span>
           </Button>
           <Button
+            id="vex-category-sensing"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "sensing"
@@ -2712,6 +3149,7 @@ function BlocklyEditor() {
             <span className="text-[10px] font-medium">Sensing</span>
           </Button>
           <Button
+            id="vex-category-console"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "console"
@@ -2724,6 +3162,7 @@ function BlocklyEditor() {
             <span className="text-[10px] font-medium">Console</span>
           </Button>
           <Button
+            id="vex-category-switch"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               selectedCategory === "loops"
@@ -2738,6 +3177,7 @@ function BlocklyEditor() {
 
           <div className="flex-1" />
           <Button
+            id="vex-category-trash"
             variant="ghost"
             className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
               deletedBlocks
@@ -2752,19 +3192,33 @@ function BlocklyEditor() {
         </div>
 
         {/* Blockly Workspace */}
-        <div className="flex-1 relative">
+        <div id="vex-blockly-workspace" className="flex-1 relative">
           {!blocklyLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div id="vex-blockly-loading" className="absolute inset-0 flex items-center justify-center">
               <p className="text-gray-600">Loading Blockly...</p>
             </div>
           )}
-          <div ref={blocklyDivRef} className="w-full h-full" />
+          {/* Always keep blocklyDiv mounted, just hide with CSS */}
+          <div
+            id="vex-blockly-canvas"
+            ref={blocklyDivRef}
+            className="w-full h-full"
+            style={{ display: codeView === "blocks" ? "block" : "none" }}
+          />
+          {codeView === "python" && (
+            <div id="vex-python-code-view" className="w-full h-full bg-gray-900 text-gray-100 font-mono text-sm overflow-auto p-4">
+              <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
+                <code>{getPythonCode()}</code>
+              </pre>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Playground Window */}
       {playgroundState.isVisible && (
         <div
+          id="vex-playground-window"
           ref={playgroundRef}
           onMouseDown={handlePlaygroundMouseDown}
           suppressHydrationWarning
@@ -2777,12 +3231,17 @@ function BlocklyEditor() {
             height: playgroundState.isMaximized ? "680px" : "auto", // Adjusted height for maximized state
           }}
         >
-          <div className="playground-header bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing">
-            <div className="flex items-center gap-2">
+          <div
+            id="vex-playground-header"
+            className="playground-header bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing"
+          >
+            <div id="vex-playground-title-row" className="flex items-center gap-2">
               <GripVertical className="h-4 w-4 text-white/70" />
-              <h3 className="font-semibold text-sm">Ocean Cleanup</h3>
+              <h3 id="vex-playground-title" className="font-semibold text-sm">
+                Coral Reef Cleanup
+              </h3>
             </div>
-            <div className="flex items-center gap-1">
+            <div id="vex-playground-window-controls" className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="icon"
@@ -2819,68 +3278,192 @@ function BlocklyEditor() {
             </div>
           </div>
           {!playgroundState.isMinimized && (
-            <div className="flex flex-col relative">
-              <div className="absolute top-2 left-2 z-10 bg-gradient-to-r from-[#FF8C00] to-[#FFA500] text-white px-3 py-1 rounded-full text-sm font-bold shadow-md">
-                Trash: {gameState.trashCollected}
+            <div id="vex-playground-body" className="flex flex-col relative">
+              <div id="vex-playground-hud" className="absolute top-2 left-2 right-2 z-10 flex flex-col gap-1 pointer-events-none">
+                <div className="flex flex-wrap gap-1">
+                  <div
+                    id="vex-playground-trash-score"
+                    className="bg-gradient-to-r from-[#FF8C00] to-[#FFA500] text-white px-3 py-1 rounded-full text-xs font-bold shadow-md"
+                  >
+                    Trash: {gameState.trashCollected}
+                    {gameState.trashTotal > 0 ? ` / ${gameState.trashTotal}` : ""}
+                    {liveSensors.trashRemaining > 0 && isRunning ? ` (${liveSensors.trashRemaining} left)` : ""}
+                  </div>
+                  <div
+                    id="vex-playground-battery"
+                    className="bg-white/95 text-gray-800 px-2 py-1 rounded-full text-xs font-medium shadow-md border border-gray-200 min-w-[120px]"
+                  >
+                    <span className="font-semibold">Battery</span>{" "}
+                    <span id="vex-playground-battery-value">{Math.round(gameState.batteryPercent)}%</span>
+                    <div className="mt-0.5 h-1.5 w-full rounded-full bg-gray-200 overflow-hidden">
+                      <div
+                        id="vex-playground-battery-bar"
+                        className={`h-full transition-all ${gameState.batteryPercent < 25 ? "bg-red-500" : "bg-green-500"}`}
+                        style={{ width: `${Math.max(0, gameState.batteryPercent)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div
+                  id="vex-playground-sensors"
+                  className="bg-slate-900/85 text-[10px] text-cyan-100 px-2 py-1 rounded-md font-mono shadow-md max-w-[280px]"
+                >
+                  <div>
+                    Location (mm): X {liveSensors.field.x}, Y {liveSensors.field.y} · Rot {liveSensors.rotation}°
+                  </div>
+                  <div>
+                    Front distance: {liveSensors.frontDistanceMm} mm
+                    {liveSensors.frontObjectDetected ? " · object" : ""}
+                    {liveSensors.eyeNear ? " · eye near trash" : ""}
+                  </div>
+                  <div className="text-slate-400">Field {CORAL_REEF_FIELD_MM}×{CORAL_REEF_FIELD_MM} mm · Start (0, -800)</div>
+                </div>
               </div>
 
               {consoleLines.length > 0 && (
-                <div className="absolute top-10 left-2 right-12 z-10 max-h-24 overflow-y-auto rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] text-green-300 shadow-md">
+                <div
+                  id="vex-playground-console"
+                  className="absolute top-[7.5rem] left-2 right-12 z-10 max-h-20 overflow-y-auto rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] text-green-300 shadow-md"
+                >
                   {consoleLines.map((line, i) => (
                     <div key={`${i}-${line}`}>{line || "\u00a0"}</div>
                   ))}
                 </div>
               )}
 
-              {/* Fixed layout with canvas, right ruler, and bottom ruler */}
-              <div className="flex">
+              <div id="vex-playground-canvas-row" className="flex">
                 <canvas
+                  id="vex-playground-canvas"
                   ref={canvasRef}
-                  width={playgroundState.isMaximized ? 600 : 400}
-                  height={playgroundState.isMaximized ? 600 : 400}
+                  width={canvasSize.w}
+                  height={canvasSize.h}
                 />
-                {/* Right ruler at far right edge */}
                 <div
-                  className="w-8 bg-gray-100 border-l border-gray-300 flex flex-col items-center justify-between py-1 text-[9px] text-gray-600"
-                  style={{ height: playgroundState.isMaximized ? 600 : 400 }}
+                  id="vex-playground-ruler-y"
+                  className="w-8 bg-gray-100 border-l border-gray-300 flex flex-col items-center justify-between py-1 text-[8px] text-gray-600"
+                  style={{ height: canvasSize.h }}
+                  aria-label="Y axis millimeters"
                 >
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <span key={i} className="transform -rotate-90 whitespace-nowrap">
-                      {playgroundState.isMaximized ? i * 150 : i * 100}
+                  {rulerTicks.map((mm) => (
+                    <span key={mm} className="transform -rotate-90 whitespace-nowrap">
+                      {mm}
                     </span>
                   ))}
                 </div>
               </div>
-              {/* Bottom ruler - width includes canvas + right ruler */}
               <div
-                className="h-8 bg-gray-100 border-t border-gray-300 flex items-center justify-between px-4 text-[9px] text-gray-600"
-                style={{ width: playgroundState.isMaximized ? 632 : 432 }}
+                id="vex-playground-ruler-x"
+                className="h-8 bg-gray-100 border-t border-gray-300 flex items-center justify-between px-2 text-[8px] text-gray-600"
+                style={{ width: canvasSize.w + 32 }}
+                aria-label="X axis millimeters"
               >
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <span key={i}>{playgroundState.isMaximized ? i * 150 : i * 100}</span>
+                {rulerTicks.map((mm) => (
+                  <span key={mm}>{mm}</span>
                 ))}
               </div>
 
               {gameState.isGameOver && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-b-lg">
-                  <div className="bg-white rounded-xl p-6 shadow-2xl text-center">
-                    {gameState.runError ? (
+                <div id="vex-playground-gameover" className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-b-lg">
+                  <div className="bg-white rounded-xl p-6 shadow-2xl text-center max-w-xs">
+                    {gameState.missionEndReason === "complete" ? (
+                      <>
+                        <h3 className="text-2xl font-bold text-green-600 mb-2">Mission complete!</h3>
+                        <p className="text-gray-600 mb-4">All trash collected before the battery ran out.</p>
+                      </>
+                    ) : gameState.missionEndReason === "battery" ? (
+                      <>
+                        <h3 className="text-2xl font-bold text-amber-600 mb-2">Battery depleted</h3>
+                        <p className="text-gray-600 mb-4">The underwater robot stopped. Collect more trash next run.</p>
+                      </>
+                    ) : gameState.runError ? (
                       <>
                         <h3 className="text-2xl font-bold text-amber-600 mb-2">Program stopped</h3>
                         <p className="text-gray-600 mb-4">{gameState.runError}</p>
                       </>
                     ) : (
                       <>
-                        <h3 className="text-2xl font-bold text-red-600 mb-2">You Lose!</h3>
-                        <p className="text-gray-600 mb-4">You hit the coral reef!</p>
+                        <h3 className="text-2xl font-bold text-red-600 mb-2">Mission ended</h3>
+                        <p className="text-gray-600 mb-4">The robot collided with the coral reef.</p>
                       </>
                     )}
-                    <p className="text-lg font-semibold text-orange-500 mb-4">
-                      Trash Collected: {gameState.trashCollected}
+                    <p id="vex-playground-gameover-score" className="text-lg font-semibold text-orange-500 mb-4">
+                      Trash collected: {gameState.trashCollected}
+                      {gameState.trashTotal > 0 ? ` / ${gameState.trashTotal}` : ""}
                     </p>
-                    <Button onClick={handleReset} className="bg-purple-500 hover:bg-purple-600 text-white">
+                    <Button id="vex-playground-gameover-retry" onClick={handleReset} className="bg-purple-500 hover:bg-purple-600 text-white">
                       Try Again
                     </Button>
+                  </div>
+                </div>
+              )}
+
+              {aiStep === "strategy-examples" && (
+                <div
+                  id="vex-playground-strategy-overlay"
+                  className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-b-lg p-4 z-40"
+                >
+                  <div id="vex-playground-strategy-panel" className="bg-white rounded-xl shadow-2xl max-w-3xl max-h-96 overflow-y-auto">
+                    <div className="p-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-t-xl flex justify-between items-center">
+                      <div>
+                        <h3 className="font-bold text-lg">Strategies to Collect More Trash</h3>
+                        <p className="text-sm text-blue-100">Try these approaches and compare the results</p>
+                      </div>
+                      <button
+                        onClick={() => setAiStep("strategy")}
+                        className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Approach 1 */}
+                        <div className="border-l-4 border-blue-500 bg-blue-50 p-3 rounded">
+                          <p className="font-bold text-blue-900 mb-2">Approach 1: Increase Velocity</p>
+                          
+                          {/* Movement visualization */}
+                          <svg width="100%" height="100" viewBox="0 0 150 100" className="border border-blue-200 rounded mb-2 bg-white">
+                            <rect x="10" y="10" width="130" height="80" fill="none" stroke="#d4d4d8" strokeDasharray="2" />
+                            <circle cx="75" cy="15" r="3" fill="#ff6b35" />
+                            <line x1="75" y1="15" x2="75" y2="55" stroke="#3b82f6" strokeWidth="2" strokeDasharray="4" />
+                            <circle cx="75" cy="55" r="6" fill="#3b82f6" opacity="0.3" />
+                            <text x="75" y="75" fontSize="10" textAnchor="middle" fill="#666">Straight line forward</text>
+                          </svg>
+
+                          <div className="bg-white p-2 rounded border border-blue-200 mb-2 font-mono text-xs text-gray-700">
+                            when started<br/>
+                            set drive velocity to 100<br/>
+                            drive forward 500 mm
+                          </div>
+                          <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Fast collection in one line. Good for quick focused movement.</p>
+                        </div>
+
+                        {/* Approach 2 */}
+                        <div className="border-l-4 border-green-500 bg-green-50 p-3 rounded">
+                          <p className="font-bold text-green-900 mb-2">Approach 2: Continuous Patrol Loop</p>
+                          
+                          {/* Movement visualization */}
+                          <svg width="100%" height="100" viewBox="0 0 150 100" className="border border-green-200 rounded mb-2 bg-white">
+                            <rect x="10" y="10" width="130" height="80" fill="none" stroke="#d4d4d8" strokeDasharray="2" />
+                            <circle cx="75" cy="15" r="3" fill="#ff6b35" />
+                            <polyline points="75,15 75,50 120,50 120,80 40,80 40,50 75,50" stroke="#16a34a" strokeWidth="2" fill="none" strokeDasharray="4" />
+                            <text x="75" y="95" fontSize="10" textAnchor="middle" fill="#666">Square patrol pattern</text>
+                          </svg>
+
+                          <div className="bg-white p-2 rounded border border-green-200 mb-2 font-mono text-xs text-gray-700">
+                            when started<br/>
+                            forever<br/>
+                            &nbsp;&nbsp;drive forward 300 mm<br/>
+                            &nbsp;&nbsp;turn right 90 degrees
+                          </div>
+                          <p className="text-xs text-gray-700"><span className="font-semibold">Result:</span> Covers large area continuously. Maximum trash collection.</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-yellow-50 border border-yellow-300 p-3 rounded">
+                        <p className="text-xs font-semibold text-yellow-900">Challenge: Try both approaches and see which collects more trash!</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2892,6 +3475,7 @@ function BlocklyEditor() {
       {/* AI Assistant Window */}
       {aiAssistantState.isVisible && (
         <div
+          id="vex-ai-assistant-window"
           ref={aiAssistantRef}
           onMouseDown={handleAIAssistantMouseDown}
           suppressHydrationWarning
@@ -2903,12 +3487,17 @@ function BlocklyEditor() {
             width: aiAssistantState.isMaximized ? "420px" : "320px",
           }}
         >
-          <div className="ai-assistant-header bg-gradient-to-r from-[#9B59B6] to-[#8E44AD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing">
+          <div
+            id="vex-ai-assistant-header"
+            className="ai-assistant-header bg-gradient-to-r from-[#9B59B6] to-[#8E44AD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing"
+          >
             <div className="flex items-center gap-2">
               <GripVertical className="h-4 w-4 text-white/70" />
-              <h3 className="font-semibold text-sm">AI Assistant</h3>
+              <h3 id="vex-ai-assistant-title" className="font-semibold text-sm">
+                AI Assistant
+              </h3>
             </div>
-            <div className="flex items-center gap-1">
+            <div id="vex-ai-assistant-window-controls" className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="icon"
@@ -2945,9 +3534,9 @@ function BlocklyEditor() {
             </div>
           </div>
           {!aiAssistantState.isMinimized && (
-            <div className="p-4">
+            <div id="vex-ai-assistant-body" className="p-4">
               {aiStep === "main" ? (
-                <div className="text-gray-700">
+                <div id="vex-ai-assistant-menu" className="text-gray-700">
                   <p className="mb-4 font-medium text-base">What sort of help do you want?</p>
                   <div className="flex flex-col gap-2">
                     <Button
@@ -3014,7 +3603,10 @@ function BlocklyEditor() {
                   </Button>
                   <p className="mb-4 font-medium text-base">What strategy would you like help with?</p>
                   <div className="flex flex-col gap-2">
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
+                    <Button 
+                      className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0"
+                      onClick={() => setAiStep("strategy-examples")}
+                    >
                       <Zap className="w-5 h-5 mr-3 text-white" />
                       <span className="mr-2 font-semibold">1.</span>
                       <span>Move faster (efficiently)</span>
@@ -3031,6 +3623,53 @@ function BlocklyEditor() {
                     </Button>
                   </div>
                 </div>
+              ) : aiStep === "strategy-examples" ? (
+                <div className="text-gray-700 text-sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
+                    onClick={() => setAiStep("strategy")}
+                  >
+                    ← Back
+                  </Button>
+                  <p className="mb-3 font-medium text-base">Two approaches to move efficiently:</p>
+                  
+                  {/* Approach 1 */}
+                  <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded">
+                    <p className="font-semibold text-blue-900 mb-2">Approach 1: Increase Velocity</p>
+                    <p className="text-xs text-gray-600 mb-2">Set drive velocity to 100 at the start, then drive forward.</p>
+                    <div className="bg-white p-2 rounded border border-blue-200 mb-2 font-mono text-xs">
+                      <div className="text-blue-700">when started</div>
+                      <div className="ml-4 text-green-700">set drive_velocity to 100</div>
+                      <div className="ml-4 text-purple-700">drive forward 500 mm</div>
+                    </div>
+                    <p className="text-xs text-gray-700"><span className="font-semibold">Why:</span> Higher velocity = faster movement. This approach is simple and direct.</p>
+                  </div>
+
+                  {/* Approach 2 */}
+                  <div className="mb-4 p-3 bg-green-50 border-l-4 border-green-500 rounded">
+                    <p className="font-semibold text-green-900 mb-2">Approach 2: Add Loop for Continuous Movement</p>
+                    <p className="text-xs text-gray-600 mb-2">Use a forever loop to keep collecting trash continuously without stopping.</p>
+                    <div className="bg-white p-2 rounded border border-green-200 mb-2 font-mono text-xs">
+                      <div className="text-blue-700">when started</div>
+                      <div className="ml-4 text-purple-700">forever</div>
+                      <div className="ml-8 text-green-700">drive forward 300 mm</div>
+                      <div className="ml-8 text-blue-700">turn right 90 degrees</div>
+                    </div>
+                    <p className="text-xs text-gray-700"><span className="font-semibold">Why:</span> Loops allow the robot to patrol continuously, covering more area and collecting more trash automatically.</p>
+                  </div>
+
+                  {/* Comparison */}
+                  <div className="p-3 bg-gray-50 border border-gray-300 rounded">
+                    <p className="font-semibold text-gray-900 mb-2">Comparison:</p>
+                    <div className="text-xs space-y-1">
+                      <div><span className="font-semibold text-blue-700">Approach 1:</span> Best for collecting one area quickly. Limited trash collection.</div>
+                      <div><span className="font-semibold text-green-700">Approach 2:</span> Best for collecting more trash over time. Continuously patrols the area.</div>
+                      <div className="mt-2 text-gray-600">Try both approaches and see which gets you more trash!</div>
+                    </div>
+                  </div>
+                </div>
               ) : aiStep === "predict" ? (
                 <div className="space-y-4">
                   <Button variant="outline" onClick={() => setAiStep("main")} className="mb-2">
@@ -3039,7 +3678,7 @@ function BlocklyEditor() {
                   </Button>
                   <p className="text-purple-600 font-semibold">Predict and Plan - Preview your robot&apos;s path:</p>
                   <div className="border-4 border-purple-300 rounded-lg overflow-hidden">
-                    <canvas ref={predictCanvasRef} width={300} height={300} className="w-full" />
+                    <canvas id="vex-ai-predict-canvas" ref={predictCanvasRef} width={300} height={300} className="w-full" />
                   </div>
                   <Button
                     onClick={() => {
@@ -3187,6 +3826,7 @@ function BlocklyEditor() {
       {/* Robot Config Window */}
       {robotConfigState.isVisible && (
         <div
+          id="vex-robot-config-window"
           className="fixed bg-white border-2 border-gray-300 shadow-xl z-50"
           style={{
             left: `${robotConfigState.x}px`,
@@ -3196,12 +3836,17 @@ function BlocklyEditor() {
           }}
           onMouseDown={handleRobotConfigMouseDown}
         >
-          <div className="robot-config-header bg-gradient-to-r from-blue-600 to-blue-500 text-white p-3 rounded-t-lg flex items-center justify-between cursor-move">
+          <div
+            id="vex-robot-config-header"
+            className="robot-config-header bg-gradient-to-r from-blue-600 to-blue-500 text-white p-3 rounded-t-lg flex items-center justify-between cursor-move"
+          >
             <div className="flex items-center gap-2">
               <GripVertical className="h-5 w-5" />
-              <span className="font-bold text-lg">Devices</span>
+              <span id="vex-robot-config-title" className="font-bold text-lg">
+                Devices
+              </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div id="vex-robot-config-window-controls" className="flex items-center gap-1">
               <Button
                 size="sm"
                 variant="ghost"
@@ -3230,7 +3875,7 @@ function BlocklyEditor() {
           </div>
 
           {!robotConfigState.isMinimized && (
-            <div className="p-5">
+            <div id="vex-robot-config-body" className="p-5">
               {/* Grid of device cards matching VEX VR style */}
               <div className="grid grid-cols-3 gap-3 mb-4">
                 {/* Controller - always enabled */}
@@ -3407,7 +4052,7 @@ function BlocklyEditor() {
                   onClick={() => {
                     setRobotCapabilities({
                       eyeSensor: true,
-                      bumperSensor: false,
+                      bumperSensor: true,
                       arm: false,
                       gyro: false,
                       gps: false,
@@ -3431,6 +4076,7 @@ function BlocklyEditor() {
 
       {showDeletedBlocks && deletedBlocks && (
         <div
+          id="vex-deleted-blocks-modal"
           className="fixed bg-white rounded-lg shadow-2xl border border-gray-300 overflow-hidden"
           style={{
             left: "50%",
@@ -3477,7 +4123,7 @@ function BlocklyEditor() {
       )}
 
       {gameState.showCelebration && confettiParticles.length > 0 && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
+        <div id="vex-celebration-overlay" className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
           {confettiParticles.map((particle) => (
             <div key={particle.id} className="absolute animate-confetti" style={particle.style} />
           ))}
