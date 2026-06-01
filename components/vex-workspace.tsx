@@ -2,6 +2,7 @@
 
 import type React from "react"
 
+import dynamic from "next/dynamic"
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -76,6 +77,13 @@ declare global {
     Blockly: any
   }
 }
+
+const UnitySidebar = dynamic(() => import("@/components/unity-sidebar"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center p-4 text-sm text-slate-400">Loading Unity agent…</div>
+  ),
+})
 
 /** Close any active Blockly inline editor so it cannot overwrite picker values on Apply. */
 function dismissBlocklyFieldEditors() {
@@ -3073,8 +3081,9 @@ function BlocklyEditor() {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div id="vex-main" className="flex-1 flex overflow-hidden">
+      {/* Main content + Unity agent */}
+      <div id="vex-workspace-body" className="flex min-h-0 flex-1 overflow-hidden">
+        <div id="vex-main" className="flex min-w-0 flex-1 overflow-hidden">
         {/* Left Sidebar - Category Icons */}
         <div id="vex-category-sidebar" className="w-20 bg-[#D6E4F5] border-r border-gray-300 flex flex-col items-center py-4 gap-1 relative">
           <Button
@@ -3220,6 +3229,23 @@ function BlocklyEditor() {
             </div>
           )}
         </div>
+        </div>
+
+        <aside
+          id="vex-unity-agent-panel"
+          className="flex w-[400px] shrink-0 flex-col border-l border-gray-300 bg-slate-900 min-h-0"
+          aria-label="Unity agent panel"
+        >
+          <div
+            id="vex-unity-agent-panel-header"
+            className="border-b border-gray-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300"
+          >
+            Unity Agent
+          </div>
+          <div id="vex-unity-agent-panel-body" className="min-h-0 flex-1">
+            <UnitySidebar />
+          </div>
+        </aside>
       </div>
 
       {/* Playground Window */}
