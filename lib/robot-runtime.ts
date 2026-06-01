@@ -3,7 +3,7 @@
 /** Coral Reef Cleanup playground (VEXcode VR docs). */
 export const CORAL_REEF_FIELD_MM = 2000
 export const CORAL_REEF_START_MM = { x: 0, y: -800 }
-/** Solar battery lasts a few minutes in the official challenge (~3 min). */
+/** Battery lasts a few minutes in the official challenge (~3 min). */
 export const CORAL_REEF_BATTERY_SEC = 180
 export const CORAL_REEF_TRASH_COUNT = 12
 /** Front distance sensor range (VEXcode VR). */

@@ -1577,7 +1577,7 @@ function BlocklyEditor() {
       isGameOver: true,
       missionEndReason: reason,
       gameLost: opts?.gameLost ?? reason === "coral",
-      runError: opts?.runError ?? (reason === "battery" ? "Solar battery depleted." : prev.runError),
+      runError: opts?.runError ?? (reason === "battery" ? "Battery depleted." : prev.runError),
       showCelebration: reason === "complete",
       isSpawningTrash: false,
     }))
@@ -3228,7 +3228,7 @@ function BlocklyEditor() {
             top: `${playgroundState.y}px`,
             cursor: playgroundState.isDragging ? "grabbing" : "auto",
             width: playgroundState.isMaximized ? "640px" : "440px",
-            height: playgroundState.isMaximized ? "680px" : "auto", // Adjusted height for maximized state
+            height: "auto",
           }}
         >
           <div
@@ -3279,51 +3279,10 @@ function BlocklyEditor() {
           </div>
           {!playgroundState.isMinimized && (
             <div id="vex-playground-body" className="flex flex-col relative">
-              <div id="vex-playground-hud" className="absolute top-2 left-2 right-2 z-10 flex flex-col gap-1 pointer-events-none">
-                <div className="flex flex-wrap gap-1">
-                  <div
-                    id="vex-playground-trash-score"
-                    className="bg-gradient-to-r from-[#FF8C00] to-[#FFA500] text-white px-3 py-1 rounded-full text-xs font-bold shadow-md"
-                  >
-                    Trash: {gameState.trashCollected}
-                    {gameState.trashTotal > 0 ? ` / ${gameState.trashTotal}` : ""}
-                    {liveSensors.trashRemaining > 0 && isRunning ? ` (${liveSensors.trashRemaining} left)` : ""}
-                  </div>
-                  <div
-                    id="vex-playground-battery"
-                    className="bg-white/95 text-gray-800 px-2 py-1 rounded-full text-xs font-medium shadow-md border border-gray-200 min-w-[120px]"
-                  >
-                    <span className="font-semibold">Battery</span>{" "}
-                    <span id="vex-playground-battery-value">{Math.round(gameState.batteryPercent)}%</span>
-                    <div className="mt-0.5 h-1.5 w-full rounded-full bg-gray-200 overflow-hidden">
-                      <div
-                        id="vex-playground-battery-bar"
-                        className={`h-full transition-all ${gameState.batteryPercent < 25 ? "bg-red-500" : "bg-green-500"}`}
-                        style={{ width: `${Math.max(0, gameState.batteryPercent)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div
-                  id="vex-playground-sensors"
-                  className="bg-slate-900/85 text-[10px] text-cyan-100 px-2 py-1 rounded-md font-mono shadow-md max-w-[280px]"
-                >
-                  <div>
-                    Location (mm): X {liveSensors.field.x}, Y {liveSensors.field.y} · Rot {liveSensors.rotation}°
-                  </div>
-                  <div>
-                    Front distance: {liveSensors.frontDistanceMm} mm
-                    {liveSensors.frontObjectDetected ? " · object" : ""}
-                    {liveSensors.eyeNear ? " · eye near trash" : ""}
-                  </div>
-                  <div className="text-slate-400">Field {CORAL_REEF_FIELD_MM}×{CORAL_REEF_FIELD_MM} mm · Start (0, -800)</div>
-                </div>
-              </div>
-
               {consoleLines.length > 0 && (
                 <div
                   id="vex-playground-console"
-                  className="absolute top-[7.5rem] left-2 right-12 z-10 max-h-20 overflow-y-auto rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] text-green-300 shadow-md"
+                  className="absolute top-2 left-2 right-12 z-10 max-h-20 overflow-y-auto rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] text-green-300 shadow-md"
                 >
                   {consoleLines.map((line, i) => (
                     <div key={`${i}-${line}`}>{line || "\u00a0"}</div>
@@ -3360,6 +3319,66 @@ function BlocklyEditor() {
                 {rulerTicks.map((mm) => (
                   <span key={mm}>{mm}</span>
                 ))}
+              </div>
+
+              <div
+                id="vex-playground-status-bar"
+                className="border-t-2 border-[#357ABD]/20 bg-gradient-to-b from-slate-50 to-slate-100 px-3 py-3 space-y-2.5"
+                style={{ width: canvasSize.w + 32 }}
+              >
+                <div className="flex flex-wrap items-end gap-4">
+                  <div
+                    id="vex-playground-trash-score"
+                    className="bg-gradient-to-r from-[#FF8C00] to-[#FFA500] text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm min-w-[120px]"
+                  >
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-orange-100">Trash collected</div>
+                    <div className="text-lg leading-tight mt-0.5">
+                      {gameState.trashCollected}
+                      {gameState.trashTotal > 0 ? ` / ${gameState.trashTotal}` : ""}
+                    </div>
+                    {liveSensors.trashRemaining > 0 && isRunning && (
+                      <div className="text-[10px] font-normal text-orange-100 mt-0.5">
+                        {liveSensors.trashRemaining} remaining on field
+                      </div>
+                    )}
+                  </div>
+                  <div id="vex-playground-battery" className="flex-1 min-w-[160px] max-w-[220px]">
+                    <div className="flex items-baseline justify-between text-xs text-gray-600 mb-1">
+                      <span className="font-semibold text-gray-800">Battery</span>
+                      <span id="vex-playground-battery-value" className="font-mono font-semibold text-gray-900">
+                        {Math.round(gameState.batteryPercent)}%
+                      </span>
+                    </div>
+                    <div className="h-2.5 w-full rounded-full bg-gray-200 overflow-hidden shadow-inner">
+                      <div
+                        id="vex-playground-battery-bar"
+                        className={`h-full transition-all duration-300 ${gameState.batteryPercent < 25 ? "bg-red-500" : gameState.batteryPercent < 50 ? "bg-amber-400" : "bg-green-500"}`}
+                        style={{ width: `${Math.max(0, gameState.batteryPercent)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div
+                  id="vex-playground-sensors"
+                  className="rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-[11px] font-mono text-slate-700 space-y-1"
+                >
+                  <div className="font-sans text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                    Robot sensors
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Location (mm)</span> X {liveSensors.field.x}, Y {liveSensors.field.y}
+                    <span className="text-slate-400 mx-1">·</span>
+                    <span className="text-slate-500">Rotation</span> {liveSensors.rotation}°
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Front distance</span> {liveSensors.frontDistanceMm} mm
+                    {liveSensors.frontObjectDetected && <span className="text-cyan-700"> · object detected</span>}
+                    {liveSensors.eyeNear && <span className="text-cyan-700"> · eye near trash</span>}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Field {CORAL_REEF_FIELD_MM}×{CORAL_REEF_FIELD_MM} mm · Start position (0, -800)
+                  </div>
+                </div>
               </div>
 
               {gameState.isGameOver && (
