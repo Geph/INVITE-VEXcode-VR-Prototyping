@@ -131,10 +131,20 @@
 
 /* Removed all block transform CSS - let Blockly handle sizing natively via zoom */
 
-/* Ensure custom pickers appear above Blockly's field editors */
+/* Blockly inline editors must sit above floating panels and accept pointer/keyboard input */
 .blocklyWidgetDiv,
 .blocklyDropDownDiv {
-  z-index: 50 !important;
+  position: fixed !important;
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+}
+
+.blocklyWidgetDiv input,
+.blocklyWidgetDiv textarea,
+.blocklyHtmlInput {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 /* Added confetti and celebration animations */

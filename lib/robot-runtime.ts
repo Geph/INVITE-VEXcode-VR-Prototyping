@@ -8,6 +8,12 @@ export const CORAL_REEF_BATTERY_SEC = 180
 export const CORAL_REEF_TRASH_COUNT = 12
 /** Front distance sensor range (VEXcode VR). */
 export const DISTANCE_SENSOR_MAX_MM = 3000
+/** Eye “near object” range (mm) — tuned for playground scale. */
+export const EYE_NEAR_MM = 250
+/** Approximate trash sprite radius on the playground (px). */
+export const TRASH_HIT_RADIUS_PX = 20
+/** Front eye offset from robot center (px). */
+export const EYE_FORWARD_OFFSET_PX = 22
 
 /** ~13.33 playground pixels per 100 mm (7.5 mm per pixel). */
 export const MM_PER_PIXEL = 7.5
@@ -166,10 +172,55 @@ export function nearestTrashDistanceMm(
   for (const t of trashItems) {
     if (t.isCollected) continue
     const px = Math.hypot(x - t.x, y - t.y)
-    const mm = pixelsToDistance(px, "mm")
+    const mm = pixelsToDistance(Math.max(0, px - TRASH_HIT_RADIUS_PX), "mm")
     if (best === null || mm < best) best = mm
   }
   return best
+}
+
+/** Nearest uncollected trash in front of the robot within maxMm (edge-to-edge). */
+export function nearestTrashInFrontMm(
+  x: number,
+  y: number,
+  rotationDeg: number,
+  trashItems: TrashSim[],
+  maxMm: number = DISTANCE_SENSOR_MAX_MM,
+  eyeOffsetPx: number = EYE_FORWARD_OFFSET_PX,
+): number | null {
+  const angleRad = (rotationDeg * Math.PI) / 180
+  const eyeX = x + Math.sin(angleRad) * eyeOffsetPx
+  const eyeY = y - Math.cos(angleRad) * eyeOffsetPx
+  const forwardX = Math.sin(angleRad)
+  const forwardY = -Math.cos(angleRad)
+
+  let best: number | null = null
+  for (const t of trashItems) {
+    if (t.isCollected) continue
+    const dx = t.x - eyeX
+    const dy = t.y - eyeY
+    if (dx * forwardX + dy * forwardY < 0) continue
+    const px = Math.hypot(dx, dy)
+    const mm = pixelsToDistance(Math.max(0, px - TRASH_HIT_RADIUS_PX), "mm")
+    if (mm > maxMm) continue
+    if (best === null || mm < best) best = mm
+  }
+  return best
+}
+
+export function isTrashNearEye(
+  x: number,
+  y: number,
+  rotationDeg: number,
+  trashItems: TrashSim[],
+  sensor: "front" | "down",
+  maxMm: number = EYE_NEAR_MM,
+): boolean {
+  if (sensor === "down") {
+    const mm = nearestTrashDistanceMm(x, y, trashItems)
+    return mm !== null && mm <= maxMm
+  }
+  const frontMm = nearestTrashInFrontMm(x, y, rotationDeg, trashItems, maxMm)
+  return frontMm !== null
 }
 
 /** Walk statement chain inside when_started (and nested C-blocks). */
@@ -209,8 +260,67 @@ export function forEachProgramBlock(
   }
 }
 
+/** JavaScript for the when_started stack only (ignores other top-level stacks). */
+export function generateWhenStartedJavaScript(
+  workspace: { getAllBlocks: (ordered: boolean) => { type: string }[] } | null,
+  js: { blockToCode: (block: { type: string }) => string | [string, number] },
+): string {
+  if (!workspace) return ""
+  const whenStarted = workspace.getAllBlocks(false).find((b) => b.type === "when_started")
+  if (!whenStarted) return ""
+  const result = js.blockToCode(whenStarted)
+  return Array.isArray(result) ? result[0] : result
+}
+
 export function registerBlockGenerator(Blockly: { JavaScript: { forBlock: Record<string, unknown> } }, type: string, fn: (block: unknown) => string | [string, number]) {
   Blockly.JavaScript.forBlock[type] = fn
+}
+
+type BlocklyXmlUtils = {
+  utils: {
+    xml: {
+      createElement: (name: string) => Element
+    }
+  }
+}
+
+/** Shadow XML for a default number literal block in value inputs. */
+export function createNumberShadowDom(Blockly: BlocklyXmlUtils, value = 0): Element {
+  const shadow = Blockly.utils.xml.createElement("shadow")
+  shadow.setAttribute("type", "math_number")
+  const field = Blockly.utils.xml.createElement("field")
+  field.setAttribute("name", "NUM")
+  field.textContent = String(value)
+  shadow.appendChild(field)
+  return shadow
+}
+
+export function attachNumberShadow(
+  block: { getInput: (name: string) => { setShadowDom: (dom: Element) => unknown } | null },
+  Blockly: BlocklyXmlUtils,
+  inputName: string,
+  value = 0,
+): void {
+  const input = block.getInput(inputName)
+  if (!input) return
+  input.setShadowDom(createNumberShadowDom(Blockly, value))
+}
+
+/** Flyout/toolbox block JSON with default number shadows on value inputs. */
+export function flyoutBlockWithNumberShadows(
+  type: string,
+  inputNames: string[],
+  defaults: Record<string, number> = {},
+): {
+  kind: "block"
+  type: string
+  inputs: Record<string, { shadow: { type: string; fields: { NUM: number } } }>
+} {
+  const inputs: Record<string, { shadow: { type: string; fields: { NUM: number } } }> = {}
+  for (const name of inputNames) {
+    inputs[name] = { shadow: { type: "math_number", fields: { NUM: defaults[name] ?? 0 } } }
+  }
+  return { kind: "block", type, inputs }
 }
 
 export function getPlaygroundCanvasSize(isMaximized: boolean): { w: number; h: number } {

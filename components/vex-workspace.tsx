@@ -17,21 +17,32 @@ import {
   fieldMmToPixel,
   fieldRulerTicksMm,
   forEachProgramBlock,
+  generateWhenStartedJavaScript,
   getDefaultRobotPixelPosition,
   getPlaygroundCanvasSize,
   maxDriveDistanceMm,
+  EYE_NEAR_MM,
+  isTrashNearEye,
   nearestTrashDistanceMm,
+  nearestTrashInFrontMm,
   normalizeDegrees,
   pixelToFieldMm,
   pixelsToDistance,
   pointHitsCoral,
   raycastToBorder,
+  attachNumberShadow,
+  flyoutBlockWithNumberShadows,
   registerBlockGenerator,
   seededRandom,
   shortestRotationDelta,
   turnDurationMs,
   type CoralPiece,
 } from "@/lib/robot-runtime"
+import {
+  ensureBlocklyWidgetDivReady,
+  isBlocklyFieldEditorTarget,
+  isTypingInFormField,
+} from "@/lib/blockly-widget-fix"
 import {
   Play,
   GripVertical,
@@ -78,7 +89,7 @@ declare global {
   }
 }
 
-const UnitySidebar = dynamic(() => import("@/components/unity-sidebar"), {
+const UnityAgentPanel = dynamic(() => import("@/components/unity-agent-panel"), {
   ssr: false,
   loading: () => (
     <div className="flex h-full items-center justify-center p-4 text-sm text-slate-400">Loading Unity agent…</div>
@@ -161,6 +172,17 @@ interface PlaygroundState {
 }
 
 interface RobotConfigState {
+  x: number
+  y: number
+  isDragging: boolean
+  dragStartX: number
+  dragStartY: number
+  isVisible: boolean
+  isMinimized: boolean
+  isMaximized: boolean
+}
+
+interface UnityAgentState {
   x: number
   y: number
   isDragging: boolean
@@ -725,6 +747,7 @@ function DistanceSliderPicker({
 function BlocklyEditor() {
   const blocklyDivRef = useRef<HTMLDivElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
+  const unityAgentRef = useRef<HTMLDivElement>(null)
   const aiAssistantRef = useRef<HTMLDivElement>(null)
   const predictCanvasRef = useRef<HTMLCanvasElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -761,8 +784,10 @@ function BlocklyEditor() {
   useEffect(() => {
     setIsMounted(true)
     const playgroundX = Math.max(16, window.innerWidth - 520)
+    const unityX = Math.max(16, window.innerWidth - 460)
     const aiX = Math.max(16, window.innerWidth - 420)
     setPlaygroundState((prev) => ({ ...prev, x: playgroundX }))
+    setUnityAgentState((prev) => ({ ...prev, x: unityX, y: 80 }))
     setAiAssistantState((prev) => ({ ...prev, x: aiX }))
     setRobotConfigState((prev) => ({ ...prev, x: Math.max(16, window.innerWidth / 2 - 200) }))
   }, [])
@@ -809,6 +834,17 @@ function BlocklyEditor() {
   const [playgroundState, setPlaygroundState] = useState<PlaygroundState>({
     x: 400,
     y: 100,
+    isDragging: false,
+    dragStartX: 0,
+    dragStartY: 0,
+    isVisible: true,
+    isMinimized: false,
+    isMaximized: false,
+  })
+
+  const [unityAgentState, setUnityAgentState] = useState<UnityAgentState>({
+    x: 400,
+    y: 80,
     isDragging: false,
     dragStartX: 0,
     dragStartY: 0,
@@ -868,6 +904,7 @@ function BlocklyEditor() {
   })
 
   const [trashItems, setTrashItems] = useState<TrashItem[]>([])
+  const trashItemsRef = useRef<TrashItem[]>([])
   const [gameState, setGameState] = useState<GameState>({
     trashCollected: 0,
     trashTotal: 0,
@@ -881,6 +918,15 @@ function BlocklyEditor() {
   })
   const [codeView, setCodeView] = useState<"blocks" | "python">("blocks")
   const coralGraceUntilRef = useRef(0)
+
+  const syncTrashItems = useCallback((items: TrashItem[]) => {
+    trashItemsRef.current = items
+    setTrashItems(items)
+  }, [])
+
+  useEffect(() => {
+    trashItemsRef.current = trashItems
+  }, [trashItems])
   const blocklyPickerRef = useRef<{ blockId: string; fieldName: string } | null>(null)
 
   const applyPickerValue = useCallback(
@@ -1131,8 +1177,17 @@ function BlocklyEditor() {
       whenStartedBlock.moveBy(50, 50)
       whenStartedBlock.setDeletable(false) // Can't be deleted
       whenStartedBlock.setMovable(true) // Can be moved
+      ensureBlocklyWidgetDivReady()
     }, 100)
   }, [blocklyLoaded, workspace])
+
+  useEffect(() => {
+    if (!blocklyLoaded) return
+    ensureBlocklyWidgetDivReady()
+    const observer = new MutationObserver(() => ensureBlocklyWidgetDivReady())
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [blocklyLoaded])
 
   // Combined effect for handling field clicks across all relevant blocks
   useEffect(() => {
@@ -1140,8 +1195,31 @@ function BlocklyEditor() {
 
     const Blockly = window.Blockly
 
+    /** Only these fields open custom angle/distance pickers; all other fields use Blockly's inline editor. */
+    const PICKER_FIELDS: Record<string, string> = {
+      turn_degrees: "DEGREES",
+      turn_to_rotation: "ROTATION",
+      set_drive_rotation: "ROTATION",
+      turn_to_heading: "HEADING",
+      set_drive_heading: "HEADING",
+      drive_distance: "DISTANCE",
+    }
+
     const openCustomPicker = (e: PointerEvent) => {
       const target = e.target as Element
+      if (isBlocklyFieldEditorTarget(target)) return
+
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const fieldName = PICKER_FIELDS[block.type]
+      if (!fieldName) return
 
       const fieldGroup = target.closest(".blocklyEditableText")
       if (!fieldGroup) return
@@ -1154,30 +1232,6 @@ function BlocklyEditor() {
 
       if (hasDropdown || !isNumberField) return
 
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const blockType = block.type
-      let fieldName: string | null = null
-
-      if (blockType === "turn_degrees") {
-        fieldName = "DEGREES"
-      } else if (blockType === "turn_to_rotation" || blockType === "set_drive_rotation") {
-        fieldName = "ROTATION"
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        fieldName = "HEADING"
-      } else if (blockType === "drive_distance") {
-        fieldName = "DISTANCE"
-      }
-
-      if (!fieldName) return
-
       const currentVal = block.getFieldValue(fieldName)
       if (fieldValue.trim() !== String(currentVal).trim()) return
 
@@ -1188,6 +1242,7 @@ function BlocklyEditor() {
 
       blocklyPickerRef.current = { blockId: block.id, fieldName }
 
+      const blockType = block.type
       if (blockType === "turn_degrees" || blockType === "turn_to_rotation" || blockType === "set_drive_rotation") {
         setAnglePickerState({
           isOpen: true,
@@ -1252,18 +1307,19 @@ function BlocklyEditor() {
         break
       case "operators":
         blocks = [
-          { kind: "block", type: "math_arithmetic" },
-          { kind: "block", type: "compare" },
+          { kind: "block", type: "math_number" },
+          flyoutBlockWithNumberShadows("math_arithmetic", ["A", "B"]),
+          flyoutBlockWithNumberShadows("compare", ["A", "B"]),
           { kind: "block", type: "boolean_and" },
           { kind: "block", type: "boolean_or" },
           { kind: "block", type: "boolean_not" },
           { kind: "block", type: "text_string" },
-          { kind: "block", type: "range_compare" },
+          flyoutBlockWithNumberShadows("range_compare", ["A", "B", "C"]),
           { kind: "block", type: "random_int" },
-          { kind: "block", type: "round_number" },
-          { kind: "block", type: "math_function" },
-          { kind: "block", type: "atan2_function" },
-          { kind: "block", type: "modulo" },
+          flyoutBlockWithNumberShadows("round_number", ["NUM", "PLACES"], { PLACES: 0 }),
+          flyoutBlockWithNumberShadows("math_function", ["NUM"]),
+          flyoutBlockWithNumberShadows("atan2_function", ["X", "Y"], { X: 1, Y: 1 }),
+          flyoutBlockWithNumberShadows("modulo", ["A", "B"], { A: 1, B: 1 }),
           { kind: "block", type: "text_join" },
           { kind: "block", type: "text_letter_at" },
           { kind: "block", type: "text_length" },
@@ -1472,7 +1528,8 @@ function BlocklyEditor() {
         coralPieces,
         DISTANCE_SENSOR_MAX_MM,
       )
-      const trashMm = nearestTrashDistanceMm(robotState.x, robotState.y, trashItems)
+      const { x: rx, y: ry, rotation: rrot } = robotState
+      const trashMm = nearestTrashInFrontMm(rx, ry, rrot, trashItems, DISTANCE_SENSOR_MAX_MM)
       const frontMm = trashMm != null && trashMm < borderMm ? trashMm : borderMm
       const rayPx = distanceToPixels(Math.min(frontMm, DISTANCE_SENSOR_MAX_MM), "mm")
       const angleRad = (robotState.rotation * Math.PI) / 180
@@ -1528,13 +1585,13 @@ function BlocklyEditor() {
     })
 
     if (collectedCount > 0) {
-      setTrashItems(updatedTrash)
+      syncTrashItems(updatedTrash)
       setGameState((prev) => ({
         ...prev,
         trashCollected: prev.trashCollected + collectedCount,
       }))
     }
-  }, [robotState.x, robotState.y, playgroundState.isMaximized, trashItems])
+  }, [robotState.x, robotState.y, playgroundState.isMaximized, trashItems, syncTrashItems])
 
   const deployTrashField = useCallback(() => {
     if (trashSpawnIntervalRef.current) {
@@ -1554,7 +1611,7 @@ function BlocklyEditor() {
       isCollected: false,
     }))
 
-    setTrashItems(items)
+    syncTrashItems(items)
     setGameState((prev) => ({
       ...prev,
       trashTotal: items.length,
@@ -1567,7 +1624,7 @@ function BlocklyEditor() {
       gameLost: false,
       runError: null,
     }))
-  }, [playgroundState.isMaximized, coralPieces])
+  }, [playgroundState.isMaximized, coralPieces, syncTrashItems])
 
   const endMission = useCallback((reason: MissionEndReason, opts?: { runError?: string; gameLost?: boolean }) => {
     if (animationRef.current) {
@@ -1986,17 +2043,13 @@ function BlocklyEditor() {
       return code
     }
     
-    // Get top-level blocks and generate code
-    const topBlocks = workspace.getTopBlocks(true)
-    if (topBlocks.length === 0) return "# No code yet\n# Add blocks to see Python code"
-    
-    let pythonCode = "# VEXcode VR Python\nfrom vexcode import *\nimport random\n\n"
-    
-    for (const block of topBlocks) {
-      pythonCode += generatePythonFromBlock(block)
-    }
-    
-    return pythonCode
+    const whenStarted = workspace.getAllBlocks(false).find((b: { type: string }) => b.type === "when_started")
+    if (!whenStarted) return "# No code yet\n# Add blocks inside when started to see Python code"
+
+    return (
+      "# VEXcode VR Python\nfrom vexcode import *\nimport random\n\n" +
+      generatePythonFromBlock(whenStarted)
+    )
   }, [workspace])
 
   const handleRun = async () => {
@@ -2017,7 +2070,14 @@ function BlocklyEditor() {
     deployTrashField()
 
     const Blockly = window.Blockly
-    const code = Blockly.JavaScript.workspaceToCode(workspace)
+    const jsGen = Blockly.JavaScript
+    if (typeof jsGen.init === "function") {
+      jsGen.init(workspace)
+    }
+    const code = generateWhenStartedJavaScript(workspace, jsGen)
+    if (typeof jsGen.finish === "function") {
+      jsGen.finish(workspace)
+    }
 
     const { w: canvasWidth, h: canvasHeight } = getPlaygroundCanvasSize(playgroundState.isMaximized)
 
@@ -2199,46 +2259,42 @@ function BlocklyEditor() {
         return pointHitsCoral(probeX, probeY, coralPieces, 4)
       },
       distanceFoundObject: (sensor: string) => {
+        const trash = trashItemsRef.current
+        const { x, y, rotation } = robotStateRef.current
+        if (sensor === "down") {
+          const mm = nearestTrashDistanceMm(x, y, trash)
+          if (mm != null && mm < EYE_NEAR_MM) return true
+        } else {
+          const frontMm = nearestTrashInFrontMm(x, y, rotation, trash, DISTANCE_SENSOR_MAX_MM)
+          if (frontMm != null) return true
+        }
         const { w, h } = getCanvasSize()
-        const dist = raycastToBorder(
-          robotStateRef.current.x,
-          robotStateRef.current.y,
-          robotStateRef.current.rotation + (sensor === "down" ? 0 : 0),
-          w,
-          h,
-          coralPieces,
-          DISTANCE_SENSOR_MAX_MM,
-        )
-        const trashDist = nearestTrashDistanceMm(robotStateRef.current.x, robotStateRef.current.y, trashItems)
-        if (trashDist != null && trashDist < DISTANCE_SENSOR_MAX_MM) return true
+        const dist = raycastToBorder(x, y, rotation, w, h, coralPieces, DISTANCE_SENSOR_MAX_MM)
         return dist < DISTANCE_SENSOR_MAX_MM
       },
       getDistance: (sensor: string, unit: string) => {
+        const trash = trashItemsRef.current
+        const { x, y, rotation } = robotStateRef.current
         const { w, h } = getCanvasSize()
-        const mm = raycastToBorder(
-          robotStateRef.current.x,
-          robotStateRef.current.y,
-          robotStateRef.current.rotation,
-          w,
-          h,
-          coralPieces,
-        )
-        const trashDist = nearestTrashDistanceMm(robotStateRef.current.x, robotStateRef.current.y, trashItems)
-        const valueMm = trashDist != null && trashDist < mm ? trashDist : mm
+        const borderMm = raycastToBorder(x, y, rotation, w, h, coralPieces, DISTANCE_SENSOR_MAX_MM)
+        const trashMm =
+          sensor === "down"
+            ? nearestTrashDistanceMm(x, y, trash)
+            : nearestTrashInFrontMm(x, y, rotation, trash, DISTANCE_SENSOR_MAX_MM)
+        const valueMm = trashMm != null && trashMm < borderMm ? trashMm : borderMm
         return unit === "inches" ? valueMm / 25.4 : valueMm
       },
       eyeIsNear: (sensor: string) => {
         if (!robotCapabilities.eyeSensor) return false
-        const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
-        const probeX = robotStateRef.current.x + Math.sin(angleRad) * 30
-        const probeY = robotStateRef.current.y - Math.cos(angleRad) * 30
-        const trashDist = nearestTrashDistanceMm(probeX, probeY, trashItems)
-        return trashDist != null && trashDist < 80
+        const { x, y, rotation } = robotStateRef.current
+        const eye = sensor === "down" ? "down" : "front"
+        return isTrashNearEye(x, y, rotation, trashItemsRef.current, eye, EYE_NEAR_MM)
       },
       eyeDetectsColor: (_sensor: string, color: string) => {
         if (!robotCapabilities.eyeSensor) return false
         const { x, y } = robotStateRef.current
-        for (const t of trashItems) {
+        const trash = trashItemsRef.current
+        for (const t of trash) {
           if (t.isCollected) continue
           if (Math.hypot(x - t.x, y - t.y) > 40) continue
           const trashColors: Record<string, string[]> = {
@@ -2260,8 +2316,8 @@ function BlocklyEditor() {
         if (!robotCapabilities.eyeSensor) return 0
         const { x, y } = robotStateRef.current
         if (pointHitsCoral(x, y, coralPieces, 15)) return 25
-        const nearTrash = nearestTrashDistanceMm(x, y, trashItems)
-        if (nearTrash != null && nearTrash < 60) return 40
+        const nearTrash = nearestTrashDistanceMm(x, y, trashItemsRef.current)
+        if (nearTrash != null && nearTrash < EYE_NEAR_MM) return 40
         return 85
       },
       getPosition: (axis: string, unit: string) => {
@@ -2338,7 +2394,7 @@ function BlocklyEditor() {
       missionEndReason: null,
       isSpawningTrash: false,
     })
-    setTrashItems([])
+    syncTrashItems([])
     setPenTrail([])
     setConsoleLines([])
   }
@@ -2367,7 +2423,7 @@ function BlocklyEditor() {
       missionEndReason: null,
       isSpawningTrash: false,
     })
-    setTrashItems([])
+    syncTrashItems([])
     setPenTrail([])
     setConsoleLines([])
     if (trashSpawnIntervalRef.current) {
@@ -2401,7 +2457,7 @@ function BlocklyEditor() {
       missionEndReason: null,
       isSpawningTrash: false,
     })
-    setTrashItems([])
+    syncTrashItems([])
     if (trashSpawnIntervalRef.current) {
       clearInterval(trashSpawnIntervalRef.current)
       trashSpawnIntervalRef.current = null
@@ -2478,18 +2534,19 @@ function BlocklyEditor() {
       ]
     } else if (category === "operators") {
       blocks = [
-        { kind: "block", type: "math_arithmetic" },
-          { kind: "block", type: "compare" },
-          { kind: "block", type: "boolean_and" },
-          { kind: "block", type: "boolean_or" },
-          { kind: "block", type: "boolean_not" },
-          { kind: "block", type: "text_string" },
-          { kind: "block", type: "range_compare" },
+        { kind: "block", type: "math_number" },
+        flyoutBlockWithNumberShadows("math_arithmetic", ["A", "B"]),
+        flyoutBlockWithNumberShadows("compare", ["A", "B"]),
+        { kind: "block", type: "boolean_and" },
+        { kind: "block", type: "boolean_or" },
+        { kind: "block", type: "boolean_not" },
+        { kind: "block", type: "text_string" },
+        flyoutBlockWithNumberShadows("range_compare", ["A", "B", "C"]),
         { kind: "block", type: "random_int" },
-        { kind: "block", type: "round_number" },
-        { kind: "block", type: "math_function" },
-        { kind: "block", type: "atan2_function" },
-        { kind: "block", type: "modulo" },
+        flyoutBlockWithNumberShadows("round_number", ["NUM", "PLACES"], { PLACES: 0 }),
+        flyoutBlockWithNumberShadows("math_function", ["NUM"]),
+        flyoutBlockWithNumberShadows("atan2_function", ["X", "Y"], { X: 1, Y: 1 }),
+        flyoutBlockWithNumberShadows("modulo", ["A", "B"], { A: 1, B: 1 }),
         { kind: "block", type: "text_join" },
         { kind: "block", type: "text_letter_at" },
         { kind: "block", type: "text_length" },
@@ -2575,6 +2632,60 @@ function BlocklyEditor() {
   const handleMaximizePlayground = () => {
     setPlaygroundState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
   }
+
+  const handleOpenUnityAgent = () => {
+    setUnityAgentState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
+  }
+
+  const handleCloseUnityAgent = () => {
+    setUnityAgentState((prev) => ({ ...prev, isVisible: false }))
+  }
+
+  const handleMinimizeUnityAgent = () => {
+    setUnityAgentState((prev) => ({ ...prev, isMinimized: !prev.isMinimized }))
+  }
+
+  const handleMaximizeUnityAgent = () => {
+    setUnityAgentState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
+  }
+
+  const handleUnityAgentMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return
+    if (!(e.target as HTMLElement).closest(".unity-agent-header")) return
+
+    setUnityAgentState((prev) => ({
+      ...prev,
+      isDragging: true,
+      dragStartX: e.clientX - prev.x,
+      dragStartY: e.clientY - prev.y,
+    }))
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (unityAgentState.isDragging) {
+        setUnityAgentState((prev) => ({
+          ...prev,
+          x: e.clientX - prev.dragStartX,
+          y: e.clientY - prev.dragStartY,
+        }))
+      }
+    }
+
+    const handleMouseUp = () => {
+      setUnityAgentState((prev) => ({ ...prev, isDragging: false }))
+    }
+
+    if (unityAgentState.isDragging) {
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [unityAgentState.isDragging])
 
   const handleOpenAIAssistant = () => {
     setAiAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
@@ -2803,6 +2914,8 @@ function BlocklyEditor() {
   }, [workspace]) // Removed drawPrediction from dependency array to fix circular dependency
 
   const handleKeyPress = (e: KeyboardEvent) => {
+    if (isTypingInFormField()) return
+
     const key = e.key
 
     if (aiAssistantState.surveyStep === "main") {
@@ -2886,13 +2999,17 @@ function BlocklyEditor() {
     const { w, h } = getPlaygroundCanvasSize(playgroundState.isMaximized)
     const field = pixelToFieldMm(robotState.x, robotState.y, w, h)
     const borderMm = raycastToBorder(robotState.x, robotState.y, robotState.rotation, w, h, coralPieces, DISTANCE_SENSOR_MAX_MM)
-    const trashMm = nearestTrashDistanceMm(robotState.x, robotState.y, trashItems)
+    const trashMm = nearestTrashInFrontMm(
+      robotState.x,
+      robotState.y,
+      robotState.rotation,
+      trashItems,
+      DISTANCE_SENSOR_MAX_MM,
+    )
     const frontDistanceMm = Math.round(trashMm != null && trashMm < borderMm ? trashMm : borderMm)
-    const angleRad = (robotState.rotation * Math.PI) / 180
-    const probeX = robotState.x + Math.sin(angleRad) * 30
-    const probeY = robotState.y - Math.cos(angleRad) * 30
-    const eyeTrashMm = nearestTrashDistanceMm(probeX, probeY, trashItems)
-    const eyeNear = robotCapabilities.eyeSensor && eyeTrashMm != null && eyeTrashMm < 80
+    const eyeNear =
+      robotCapabilities.eyeSensor &&
+      isTrashNearEye(robotState.x, robotState.y, robotState.rotation, trashItems, "front", EYE_NEAR_MM)
     const trashRemaining = trashItems.filter((t) => !t.isCollected).length
     return {
       field,
@@ -3031,6 +3148,17 @@ function BlocklyEditor() {
           <span className="text-xs text-white/70">Not Saving</span>
         </div>
         <div id="vex-header-actions" className="flex items-center gap-2">
+          {!unityAgentState.isVisible && (
+            <Button
+              id="vex-btn-open-unity-agent"
+              variant="secondary"
+              size="sm"
+              onClick={handleOpenUnityAgent}
+              className="bg-slate-600 hover:bg-slate-700 text-white border-0"
+            >
+              Open Unity Agent
+            </Button>
+          )}
           {!playgroundState.isVisible && (
             <Button
               id="vex-btn-open-playground"
@@ -3081,9 +3209,8 @@ function BlocklyEditor() {
         </div>
       </div>
 
-      {/* Main content + Unity agent */}
-      <div id="vex-workspace-body" className="flex min-h-0 flex-1 overflow-hidden">
-        <div id="vex-main" className="flex min-w-0 flex-1 overflow-hidden">
+      {/* Main Content */}
+      <div id="vex-main" className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Category Icons */}
         <div id="vex-category-sidebar" className="w-20 bg-[#D6E4F5] border-r border-gray-300 flex flex-col items-center py-4 gap-1 relative">
           <Button
@@ -3229,24 +3356,86 @@ function BlocklyEditor() {
             </div>
           )}
         </div>
-        </div>
+      </div>
 
-        <aside
-          id="vex-unity-agent-panel"
-          className="flex w-[400px] shrink-0 flex-col border-l border-gray-300 bg-slate-900 min-h-0"
-          aria-label="Unity agent panel"
+      {/* Unity Agent floating window */}
+      {unityAgentState.isVisible && (
+        <div
+          id="vex-unity-agent-window"
+          ref={unityAgentRef}
+          onMouseDown={handleUnityAgentMouseDown}
+          suppressHydrationWarning
+          className="fixed z-50 rounded-lg border-2 border-gray-600 bg-slate-900 shadow-2xl transition-all duration-200"
+          style={{
+            left: `${unityAgentState.x}px`,
+            top: `${unityAgentState.y}px`,
+            cursor: unityAgentState.isDragging ? "grabbing" : "auto",
+            width: unityAgentState.isMaximized ? "640px" : "420px",
+            height: "auto",
+          }}
         >
           <div
-            id="vex-unity-agent-panel-header"
-            className="border-b border-gray-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300"
+            id="vex-unity-agent-header"
+            className="unity-agent-header flex cursor-grab items-center justify-between rounded-t-lg bg-gradient-to-r from-slate-700 to-slate-800 px-4 py-2 text-white active:cursor-grabbing"
           >
-            Unity Agent
+            <div id="vex-unity-agent-title-row" className="flex items-center gap-2">
+              <GripVertical className="h-4 w-4 text-white/70" />
+              <h3 id="vex-unity-agent-title" className="text-sm font-semibold">
+                Unity Agent
+              </h3>
+            </div>
+            <div id="vex-unity-agent-window-controls" className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-white hover:bg-white/20"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleMinimizeUnityAgent()
+                }}
+              >
+                {unityAgentState.isMinimized ? <Maximize className="h-4 w-4" /> : <Minimize className="h-4 w-4" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-white hover:bg-white/20"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleMaximizeUnityAgent()
+                }}
+              >
+                {unityAgentState.isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-white hover:bg-white/20"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCloseUnityAgent()
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <div id="vex-unity-agent-panel-body" className="min-h-0 flex-1">
-            <UnitySidebar />
-          </div>
-        </aside>
-      </div>
+          {!unityAgentState.isMinimized && (
+            <div
+              id="vex-unity-agent-window-body"
+              className="overflow-hidden rounded-b-lg"
+              style={{ height: unityAgentState.isMaximized ? 780 : 540 }}
+            >
+              <UnityAgentPanel
+                workspace={workspace}
+                consoleLines={consoleLines}
+                runError={gameState.runError}
+                isRunning={isRunning}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Playground Window */}
       {playgroundState.isVisible && (
@@ -4942,6 +5131,9 @@ function defineConsoleBlocks(Blockly: any) {
 
 // Logic Blocks
 function defineLogicBlocks(Blockly: any) {
+  /** Yield in tight loops so awaits inside the body can run. */
+  const LOOP_YIELD = "await robot.wait(0.01);\n"
+
   Blockly.Blocks["wait_seconds"] = {
     init: function () {
       this.appendDummyInput()
@@ -4960,7 +5152,7 @@ function defineLogicBlocks(Blockly: any) {
 
   Blockly.Blocks["wait_until"] = {
     init: function () {
-      this.appendValueInput("CONDITION").appendField("wait until")
+      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("wait until")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
@@ -4974,24 +5166,27 @@ function defineLogicBlocks(Blockly: any) {
   Blockly.Blocks["repeat_times"] = {
     init: function () {
       this.appendDummyInput().appendField("repeat").appendField(new Blockly.FieldNumber(10, 1), "TIMES")
-      this.appendStatementInput("DO")
+      this.appendStatementInput("DO").setCheck(null)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
+      this.setTooltip("Snap blocks inside the mouth under repeat — not below the block.")
     },
   }
   Blockly.JavaScript.forBlock["repeat_times"] = (block: any) => {
     const times = block.getFieldValue("TIMES")
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `for(let i = 0; i < ${times}; i++) {\n${statements}}\n`
+    return `for(let i = 0; i < ${times}; i++) {\n${statements}${LOOP_YIELD}}\n`
   }
 
   Blockly.Blocks["forever_loop"] = {
     init: function () {
       this.appendDummyInput().appendField("forever")
-      this.appendStatementInput("DO")
+      this.appendStatementInput("DO").setCheck(null)
       this.setPreviousStatement(true, null)
+      this.setNextStatement(true, null)
       this.setColour("#F5A623")
+      this.setTooltip("Snap blocks inside the forever mouth — not below the block.")
     },
   }
   Blockly.JavaScript.forBlock["forever_loop"] = (block: any) => {
@@ -5001,42 +5196,44 @@ function defineLogicBlocks(Blockly: any) {
 
   Blockly.Blocks["repeat_until"] = {
     init: function () {
-      this.appendValueInput("CONDITION").appendField("repeat until")
-      this.appendStatementInput("DO")
+      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("repeat until")
+      this.appendStatementInput("DO").setCheck(null)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
+      this.setTooltip("Runs the mouth blocks until the condition is true. Put blocks inside the mouth.")
     },
   }
   Blockly.JavaScript.forBlock["repeat_until"] = (block: any) => {
     const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "false"
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while(!(${condition})) {\n${statements}}\n`
+    return `while(!(${condition})) {\n${statements}${LOOP_YIELD}}\n`
   }
 
   Blockly.Blocks["while_loop"] = {
     init: function () {
-      this.appendValueInput("CONDITION").appendField("while")
-      this.appendStatementInput("DO")
+      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("while")
+      this.appendStatementInput("DO").setCheck(null)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
+      this.setTooltip("Repeats the mouth blocks while the condition is true.")
     },
   }
   Blockly.JavaScript.forBlock["while_loop"] = (block: any) => {
     const condition = Blockly.JavaScript.valueToCode(block, "CONDITION", Blockly.JavaScript.ORDER_NONE) || "true"
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while(${condition}) {\n${statements}}\n`
+    return `while(${condition}) {\n${statements}${LOOP_YIELD}}\n`
   }
 
   Blockly.Blocks["if_then"] = {
     init: function () {
-      this.appendValueInput("CONDITION").appendField("if")
-      this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO")
+      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("if")
+      this.appendStatementInput("DO").appendField("then").setCheck(null)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
+      this.setTooltip("Runs the blocks inside then when the condition is true — not blocks snapped below.")
     },
   }
   Blockly.JavaScript.forBlock["if_then"] = (block: any) => {
@@ -5047,14 +5244,13 @@ function defineLogicBlocks(Blockly: any) {
 
   Blockly.Blocks["if_then_else"] = {
     init: function () {
-      this.appendValueInput("CONDITION").appendField("if")
-      this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO")
-      this.appendDummyInput().appendField("else")
-      this.appendStatementInput("ELSE")
+      this.appendValueInput("CONDITION").setCheck("Boolean").appendField("if")
+      this.appendStatementInput("DO").appendField("then").setCheck(null)
+      this.appendStatementInput("ELSE").appendField("else").setCheck(null)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
+      this.setTooltip("Use the then and else mouths for each branch — not the notch below the block.")
     },
   }
   Blockly.JavaScript.forBlock["if_then_else"] = (block: any) => {
@@ -5066,17 +5262,15 @@ function defineLogicBlocks(Blockly: any) {
 
   Blockly.Blocks["if_elseif_else"] = {
     init: function () {
-      this.appendValueInput("CONDITION1").appendField("if")
-      this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO1")
-      this.appendValueInput("CONDITION2").appendField("else if")
-      this.appendDummyInput().appendField("then")
-      this.appendStatementInput("DO2")
-      this.appendDummyInput().appendField("else")
-      this.appendStatementInput("ELSE")
+      this.appendValueInput("CONDITION1").setCheck("Boolean").appendField("if")
+      this.appendStatementInput("DO1").appendField("then").setCheck(null)
+      this.appendValueInput("CONDITION2").setCheck("Boolean").appendField("else if")
+      this.appendStatementInput("DO2").appendField("then").setCheck(null)
+      this.appendStatementInput("ELSE").appendField("else").setCheck(null)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#F5A623")
+      this.setTooltip("Snap each branch into its then / else mouth.")
     },
   }
   Blockly.JavaScript.forBlock["if_elseif_else"] = (block: any) => {
@@ -5122,6 +5316,21 @@ function defineLogicBlocks(Blockly: any) {
 
 // Operators Blocks
 function defineOperatorsBlocks(Blockly: any) {
+  Blockly.Blocks["math_number"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField(new Blockly.FieldNumber(0), "NUM")
+      this.setOutput(true, "Number")
+      this.setColour("#4CAF50")
+      this.setTooltip("Click the number to type a value")
+    },
+  }
+  Blockly.JavaScript.forBlock["math_number"] = (block: any) => {
+    const num = Number(block.getFieldValue("NUM"))
+    const safe = Number.isFinite(num) ? num : 0
+    return [String(safe), Blockly.JavaScript.ORDER_ATOMIC]
+  }
+
   // Math Arithmetic
   Blockly.Blocks["math_arithmetic"] = {
     init: function () {
@@ -5139,6 +5348,8 @@ function defineOperatorsBlocks(Blockly: any) {
       this.setInputsInline(true)
       this.setOutput(true, "Number")
       this.setColour("#4CAF50")
+      attachNumberShadow(this, Blockly, "A", 0)
+      attachNumberShadow(this, Blockly, "B", 0)
     },
   }
   Blockly.JavaScript.forBlock["math_arithmetic"] = (block: any) => {
@@ -5168,6 +5379,8 @@ function defineOperatorsBlocks(Blockly: any) {
       this.setInputsInline(true)
       this.setOutput(true, "Boolean")
       this.setColour("#4CAF50")
+      attachNumberShadow(this, Blockly, "A", 0)
+      attachNumberShadow(this, Blockly, "B", 0)
     },
   }
   Blockly.JavaScript.forBlock["compare"] = (block: any) => {
@@ -5262,6 +5475,9 @@ function defineOperatorsBlocks(Blockly: any) {
       this.setInputsInline(true)
       this.setOutput(true, "Boolean")
       this.setColour("#4CAF50")
+      attachNumberShadow(this, Blockly, "A", 0)
+      attachNumberShadow(this, Blockly, "B", 0)
+      attachNumberShadow(this, Blockly, "C", 10)
     },
   }
   Blockly.JavaScript.forBlock["range_compare"] = (block: any) => {
@@ -5304,6 +5520,8 @@ function defineOperatorsBlocks(Blockly: any) {
       this.setInputsInline(true)
       this.setOutput(true, "Number")
       this.setColour("#4CAF50")
+      attachNumberShadow(this, Blockly, "NUM", 0)
+      attachNumberShadow(this, Blockly, "PLACES", 0)
     },
   }
   Blockly.JavaScript.forBlock["round_number"] = (block: any) => {
@@ -5330,6 +5548,7 @@ function defineOperatorsBlocks(Blockly: any) {
       this.setInputsInline(true)
       this.setOutput(true, "Number")
       this.setColour("#4CAF50")
+      attachNumberShadow(this, Blockly, "NUM", 0)
     },
   }
   Blockly.JavaScript.forBlock["math_function"] = (block: any) => {
@@ -5349,6 +5568,8 @@ function defineOperatorsBlocks(Blockly: any) {
       this.setInputsInline(true)
       this.setOutput(true, "Number")
       this.setColour("#4CAF50")
+      attachNumberShadow(this, Blockly, "X", 1)
+      attachNumberShadow(this, Blockly, "Y", 1)
     },
   }
   Blockly.JavaScript.forBlock["atan2_function"] = (block: any) => {
@@ -5367,6 +5588,8 @@ function defineOperatorsBlocks(Blockly: any) {
       this.setInputsInline(true)
       this.setOutput(true, "Number")
       this.setColour("#4CAF50")
+      attachNumberShadow(this, Blockly, "A", 1)
+      attachNumberShadow(this, Blockly, "B", 1)
     },
   }
   Blockly.JavaScript.forBlock["modulo"] = (block: any) => {
@@ -5519,6 +5742,7 @@ function defineSwitchBlocks(Blockly: any) {
       this.setColour("#FFB300")
       this.setTooltip("Repeats the blocks inside N times")
       this.setHelpUrl("")
+      attachNumberShadow(this, Blockly, "TIMES", 10)
     },
   }
 
@@ -5538,6 +5762,7 @@ function defineSwitchBlocks(Blockly: any) {
       this.setColour("#FFB300")
       this.setTooltip("Waits for the specified number of seconds")
       this.setHelpUrl("")
+      attachNumberShadow(this, Blockly, "SECONDS", 1)
     },
   }
 
