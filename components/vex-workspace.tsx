@@ -43,6 +43,8 @@ import {
   isBlocklyFieldEditorTarget,
   isTypingInFormField,
 } from "@/lib/blockly-widget-fix"
+import { useBlocklyCollab } from "@/lib/use-blockly-collab"
+import BlocklyCollabOverlay from "@/components/blockly-collab-overlay"
 import {
   Play,
   GripVertical,
@@ -746,6 +748,7 @@ function DistanceSliderPicker({
 
 function BlocklyEditor() {
   const blocklyDivRef = useRef<HTMLDivElement>(null)
+  const blocklyWorkspaceContainerRef = useRef<HTMLDivElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
   const unityAgentRef = useRef<HTMLDivElement>(null)
   const aiAssistantRef = useRef<HTMLDivElement>(null)
@@ -753,6 +756,7 @@ function BlocklyEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [workspace, setWorkspace] = useState<any>(null)
   const [blocklyLoaded, setBlocklyLoaded] = useState(false)
+  const collab = useBlocklyCollab(workspace, blocklyLoaded, blocklyWorkspaceContainerRef)
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
   const [isRunning, setIsRunning] = useState<boolean>(false)
   const animationRef = useRef<number | null>(null)
@@ -3147,6 +3151,51 @@ function BlocklyEditor() {
           </button>
           <span className="text-xs text-white/70">Not Saving</span>
         </div>
+        <div
+          id="vex-collab-status"
+          className="flex items-center gap-2 rounded-md bg-white/15 px-3 py-1 text-xs"
+          title="Everyone on this URL with the same room edits the same blocks in real time."
+        >
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              collab.connected ? "bg-green-300" : "bg-amber-300"
+            }`}
+            aria-hidden
+          />
+          <span>
+            {collab.connected ? (collab.synced ? "Synced" : "Live collab") : "Connecting…"}
+            {" · "}
+            Room <span className="font-mono font-semibold">{collab.roomId}</span>
+            {" · "}
+            {1 + collab.peers.length} here
+          </span>
+          {collab.localName && (
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+              style={{ backgroundColor: collab.localColor }}
+            >
+              {collab.localName} (you)
+            </span>
+          )}
+          {collab.peers.length > 0 && (
+            <span className="flex items-center gap-1">
+              {collab.peers.map((p) => (
+                <span
+                  key={p.id}
+                  className="rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+                  style={{ backgroundColor: p.color }}
+                >
+                  {p.name}
+                </span>
+              ))}
+            </span>
+          )}
+          {collab.error && (
+            <span className="text-amber-200" title={collab.error}>
+              — run <span className="font-mono">npm run dev:all</span>
+            </span>
+          )}
+        </div>
         <div id="vex-header-actions" className="flex items-center gap-2">
           {!unityAgentState.isVisible && (
             <Button
@@ -3335,7 +3384,7 @@ function BlocklyEditor() {
         </div>
 
         {/* Blockly Workspace */}
-        <div id="vex-blockly-workspace" className="flex-1 relative">
+        <div id="vex-blockly-workspace" ref={blocklyWorkspaceContainerRef} className="flex-1 relative">
           {!blocklyLoaded && (
             <div id="vex-blockly-loading" className="absolute inset-0 flex items-center justify-center">
               <p className="text-gray-600">Loading Blockly...</p>
@@ -3348,6 +3397,9 @@ function BlocklyEditor() {
             className="w-full h-full"
             style={{ display: codeView === "blocks" ? "block" : "none" }}
           />
+          {codeView === "blocks" && blocklyLoaded && (
+            <BlocklyCollabOverlay peers={collab.peers} workspace={workspace} />
+          )}
           {codeView === "python" && (
             <div id="vex-python-code-view" className="w-full h-full bg-gray-900 text-gray-100 font-mono text-sm overflow-auto p-4">
               <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
