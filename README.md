@@ -173,7 +173,6 @@ Three GitHub Actions workflows drive the repository:
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
 - **Language**: TypeScript
-- **3D Agent**: Unity WebGL via `react-unity-webgl`
 
 ## Project Structure
 
@@ -185,7 +184,6 @@ Three GitHub Actions workflows drive the repository:
 │   └── globals.css       # Global styles
 ├── components/
 │   ├── vex-workspace.tsx # Blockly editor, block definitions, robot runtime
-│   ├── unity-sidebar.tsx # Unity WebGL agent panel
 │   └── ui/               # Reusable UI components
 ├── lib/
 │   ├── robot-runtime.ts     # Units, angles, collision and sensor geometry
@@ -193,7 +191,7 @@ Three GitHub Actions workflows drive the repository:
 │   ├── python-generator.ts  # Blockly -> Python for the "Show Python" view
 │   └── utils.ts             # Utility functions
 ├── scripts/              # Collab server and simulation checks
-└── public/               # Static assets, including the Unity build
+└── public/               # Static assets
 ```
 
 ## Contributing

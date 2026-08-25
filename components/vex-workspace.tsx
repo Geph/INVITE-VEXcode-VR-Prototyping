@@ -2,7 +2,6 @@
 
 import type React from "react"
 
-import dynamic from "next/dynamic"
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -99,6 +98,10 @@ import {
   Minus,
   Square,
   Bot,
+  FolderOpen,
+  Save,
+  FilePlus,
+  ChevronDown,
 } from "lucide-react"
 
 declare global {
@@ -106,13 +109,6 @@ declare global {
     Blockly: any
   }
 }
-
-const UnityAgentPanel = dynamic(() => import("@/components/unity-agent-panel"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full items-center justify-center p-4 text-sm text-slate-400">Loading Unity agent…</div>
-  ),
-})
 
 /** Close any active Blockly inline editor so it cannot overwrite picker values on Apply. */
 function dismissBlocklyFieldEditors() {
@@ -190,17 +186,6 @@ interface PlaygroundState {
 }
 
 interface RobotConfigState {
-  x: number
-  y: number
-  isDragging: boolean
-  dragStartX: number
-  dragStartY: number
-  isVisible: boolean
-  isMinimized: boolean
-  isMaximized: boolean
-}
-
-interface UnityAgentState {
   x: number
   y: number
   isDragging: boolean
@@ -803,7 +788,6 @@ function BlocklyEditor() {
   const blocklyDivRef = useRef<HTMLDivElement>(null)
   const blocklyWorkspaceContainerRef = useRef<HTMLDivElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
-  const unityAgentRef = useRef<HTMLDivElement>(null)
   const aiAssistantRef = useRef<HTMLDivElement>(null)
   const predictCanvasRef = useRef<HTMLCanvasElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -860,10 +844,8 @@ function BlocklyEditor() {
   useEffect(() => {
     setIsMounted(true)
     const playgroundX = Math.max(16, window.innerWidth - 520)
-    const unityX = Math.max(16, window.innerWidth - 460)
     const aiX = Math.max(16, window.innerWidth - 420)
     setPlaygroundState((prev) => ({ ...prev, x: playgroundX }))
-    setUnityAgentState((prev) => ({ ...prev, x: unityX, y: 80 }))
     setAiAssistantState((prev) => ({ ...prev, x: aiX }))
     setRobotConfigState((prev) => ({ ...prev, x: Math.max(16, window.innerWidth / 2 - 200) }))
   }, [])
@@ -919,20 +901,28 @@ function BlocklyEditor() {
   })
   const [showRuler, setShowRuler] = useState(false)
   const [showSensors, setShowSensors] = useState(true)
+  const [fileMenuOpen, setFileMenuOpen] = useState(false)
+  const fileMenuRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [unityAgentState, setUnityAgentState] = useState<UnityAgentState>({
-    x: 400,
-    y: 80,
-    isDragging: false,
-    dragStartX: 0,
-    dragStartY: 0,
-    isVisible: true,
-    isMinimized: false,
-    isMaximized: false,
-  })
-  // Keep the WebGL player mounted after first open so minimize/close cannot
-  // stack a second WASM heap on top of a half-quit instance.
-  const [unityPlayerMounted, setUnityPlayerMounted] = useState(true)
+  useEffect(() => {
+    if (!fileMenuOpen) return
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (fileMenuRef.current && target && !fileMenuRef.current.contains(target)) {
+        setFileMenuOpen(false)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFileMenuOpen(false)
+    }
+    document.addEventListener("mousedown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [fileMenuOpen])
 
   const [aiAssistantState, setAiAssistantState] = useState<AIAssistantState>({
     x: 400,
@@ -2318,41 +2308,68 @@ function BlocklyEditor() {
 
   const handleSave = () => {
     if (!workspace || !window.Blockly) return
+    setFileMenuOpen(false)
 
     const Blockly = window.Blockly
     const xml = Blockly.Xml.workspaceToDom(workspace)
     const xmlText = Blockly.Xml.domToText(xml)
 
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
     const blob = new Blob([xmlText], { type: "text/xml" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = "robot-program.xml"
+    a.download = `vexcode-project-${stamp}.xml`
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  const handleOpen = () => {
+  const loadWorkspaceFromXmlText = (xmlText: string) => {
     if (!workspace || !window.Blockly) return
+    const Blockly = window.Blockly
+    const xml = Blockly.utils.xml.textToDom(xmlText)
+    workspace.clear()
+    Blockly.Xml.domToWorkspace(xml, workspace)
+  }
 
-    const input = document.createElement("input")
-    input.type = "file"
-    input.accept = ".xml"
-    input.onchange = (e: any) => {
-      const file = e.target.files[0]
-      if (!file) return
+  const handleLoadProject = () => {
+    setFileMenuOpen(false)
+    fileInputRef.current?.click()
+  }
 
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const xmlText = event.target?.result as string
-        const Blockly = window.Blockly
-        const xml = Blockly.utils.xml.textToDom(xmlText)
-        workspace.clear()
-        Blockly.Xml.domToWorkspace(xml, workspace)
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file || !workspace || !window.Blockly) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        loadWorkspaceFromXmlText(String(event.target?.result ?? ""))
+      } catch (error) {
+        console.error("Failed to load project:", error)
+        window.alert("Could not load that project file. Make sure it is a VEXcode XML export.")
       }
-      reader.readAsText(file)
     }
-    input.click()
+    reader.readAsText(file)
+  }
+
+  const handleNewProject = () => {
+    if (!workspace || !window.Blockly) return
+    setFileMenuOpen(false)
+
+    const confirmed = window.confirm(
+      "Start a new blank project? Unsaved blocks on this workspace will be cleared.",
+    )
+    if (!confirmed) return
+
+    workspace.clear()
+    const whenStartedBlock = workspace.newBlock("when_started")
+    whenStartedBlock.initSvg()
+    whenStartedBlock.render()
+    whenStartedBlock.moveBy(50, 50)
+    whenStartedBlock.setDeletable(true)
+    whenStartedBlock.setMovable(true)
   }
 
   const handleSelectCategory = (category: string) => {
@@ -2519,61 +2536,6 @@ function BlocklyEditor() {
 
     setPlaygroundState((prev) => ({ ...prev, isMaximized: toMaximized }))
   }
-
-  const handleOpenUnityAgent = () => {
-    setUnityPlayerMounted(true)
-    setUnityAgentState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
-  }
-
-  const handleCloseUnityAgent = () => {
-    setUnityAgentState((prev) => ({ ...prev, isVisible: false }))
-  }
-
-  const handleMinimizeUnityAgent = () => {
-    setUnityAgentState((prev) => ({ ...prev, isMinimized: !prev.isMinimized }))
-  }
-
-  const handleMaximizeUnityAgent = () => {
-    setUnityAgentState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
-  }
-
-  const handleUnityAgentMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("button")) return
-    if (!(e.target as HTMLElement).closest(".unity-agent-header")) return
-
-    setUnityAgentState((prev) => ({
-      ...prev,
-      isDragging: true,
-      dragStartX: e.clientX - prev.x,
-      dragStartY: e.clientY - prev.y,
-    }))
-  }
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (unityAgentState.isDragging) {
-        setUnityAgentState((prev) => ({
-          ...prev,
-          x: e.clientX - prev.dragStartX,
-          y: e.clientY - prev.dragStartY,
-        }))
-      }
-    }
-
-    const handleMouseUp = () => {
-      setUnityAgentState((prev) => ({ ...prev, isDragging: false }))
-    }
-
-    if (unityAgentState.isDragging) {
-      document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleMouseUp)
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-    }
-  }, [unityAgentState.isDragging])
 
   const handleOpenAIAssistant = () => {
     setAiAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
@@ -2969,21 +2931,65 @@ function BlocklyEditor() {
           >
             <Bot className="h-5 w-5 text-white" strokeWidth={2.25} aria-hidden />
           </div>
-          <div id="vex-header-menu" className="flex items-center gap-2 text-sm">
+          <div id="vex-header-menu" className="relative flex items-center gap-2 text-sm" ref={fileMenuRef}>
+            <input
+              ref={fileInputRef}
+              id="vex-file-input"
+              type="file"
+              accept=".xml,text/xml,application/xml"
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
             <Button
+              id="vex-btn-file-menu"
+              type="button"
               variant="ghost"
               className="hover:bg-white/10 px-3 py-1.5 rounded transition-colors text-white"
-              onClick={handleSave}
+              aria-haspopup="menu"
+              aria-expanded={fileMenuOpen}
+              onClick={() => setFileMenuOpen((open) => !open)}
             >
               File
+              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-80" />
             </Button>
-            <Button
-              variant="ghost"
-              className="hover:bg-white/10 px-3 py-1.5 rounded transition-colors text-white"
-              onClick={handleOpen}
-            >
-              Tools
-            </Button>
+            {fileMenuOpen && (
+              <div
+                id="vex-file-menu"
+                role="menu"
+                className="absolute left-0 top-full z-[60] mt-1 min-w-[220px] rounded-md border border-slate-700 bg-slate-900 py-1 text-sm text-slate-100 shadow-xl"
+              >
+                <button
+                  id="vex-file-new"
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/10"
+                  onClick={handleNewProject}
+                >
+                  <FilePlus className="h-4 w-4 opacity-80" />
+                  New blank project
+                </button>
+                <button
+                  id="vex-file-load"
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/10"
+                  onClick={handleLoadProject}
+                >
+                  <FolderOpen className="h-4 w-4 opacity-80" />
+                  Load project from file…
+                </button>
+                <button
+                  id="vex-file-save"
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/10"
+                  onClick={handleSave}
+                >
+                  <Save className="h-4 w-4 opacity-80" />
+                  Save project to file…
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <div id="vex-header-project-info" className="flex items-center gap-2">
@@ -3043,17 +3049,6 @@ function BlocklyEditor() {
           )}
         </div>
         <div id="vex-header-actions" className="flex items-center gap-2">
-          {!unityAgentState.isVisible && (
-            <Button
-              id="vex-btn-open-unity-agent"
-              variant="secondary"
-              size="sm"
-              onClick={handleOpenUnityAgent}
-              className="bg-slate-600 hover:bg-slate-700 text-white border-0"
-            >
-              Open Unity Agent
-            </Button>
-          )}
           {!playgroundState.isVisible && (
             <Button
               id="vex-btn-open-playground"
@@ -3259,94 +3254,6 @@ function BlocklyEditor() {
           )}
         </div>
       </div>
-
-      {/* Unity Agent floating window — stay mounted after first open so WebGL is not torn down. */}
-      {unityPlayerMounted && (
-        <div
-          id="vex-unity-agent-window"
-          ref={unityAgentRef}
-          onMouseDown={handleUnityAgentMouseDown}
-          suppressHydrationWarning
-          className="fixed z-50 bg-slate-900"
-          style={{
-            left: `${unityAgentState.x}px`,
-            top: `${unityAgentState.y}px`,
-            cursor: unityAgentState.isDragging ? "grabbing" : "auto",
-            width: unityAgentState.isMaximized ? "640px" : "420px",
-            height: "auto",
-            visibility: unityAgentState.isVisible ? "visible" : "hidden",
-            pointerEvents: unityAgentState.isVisible ? "auto" : "none",
-          }}
-          aria-hidden={!unityAgentState.isVisible}
-        >
-          <div
-            id="vex-unity-agent-header"
-            className="unity-agent-header flex cursor-grab items-center justify-between px-4 py-2 text-white active:cursor-grabbing"
-          >
-            <div id="vex-unity-agent-title-row" className="flex items-center gap-2">
-              <GripVertical className="h-4 w-4 text-white/70" />
-              <h3 id="vex-unity-agent-title" className="text-sm font-semibold">
-                Unity Agent
-              </h3>
-            </div>
-            <div id="vex-unity-agent-window-controls" className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMinimizeUnityAgent()
-                }}
-              >
-                {unityAgentState.isMinimized ? <Maximize className="h-4 w-4" /> : <Minimize className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMaximizeUnityAgent()
-                }}
-              >
-                {unityAgentState.isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleCloseUnityAgent()
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div
-            id="vex-unity-agent-window-body"
-            className="overflow-hidden rounded-b-lg"
-            style={{ height: unityAgentState.isMinimized ? 0 : unityAgentState.isMaximized ? 780 : 540 }}
-          >
-            <div
-              id="vex-unity-agent-window-body-inner"
-              style={{
-                height: unityAgentState.isMaximized ? 780 : 540,
-                width: "100%",
-              }}
-            >
-              <UnityAgentPanel
-                workspace={workspace}
-                consoleLines={consoleLines}
-                runError={gameState.runError}
-                isRunning={isRunning}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Playground Window */}
       {playgroundState.isVisible && (

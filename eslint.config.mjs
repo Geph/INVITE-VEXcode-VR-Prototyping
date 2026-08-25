@@ -12,8 +12,6 @@ export default [
       ".next/**",
       "out/**",
       "node_modules/**",
-      // Unity WebGL build artifacts, not authored source.
-      "public/Build/**",
     ],
   },
   ...tseslint.configs.recommended,

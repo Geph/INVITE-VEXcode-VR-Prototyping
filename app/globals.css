@@ -273,17 +273,9 @@
   overflow: hidden;
 }
 
-#vex-unity-agent-window {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1rem;
-  box-shadow: 0 24px 48px -20px rgba(2, 6, 23, 0.65);
-  overflow: hidden;
-}
-
 #vex-playground-header,
 #vex-ai-assistant-header,
-#vex-robot-config-header,
-#vex-unity-agent-header {
+#vex-robot-config-header {
   background-image: none;
 }
 
@@ -299,14 +291,9 @@
   background: #1d4ed8;
 }
 
-#vex-unity-agent-header {
-  background: #111827;
-}
-
 #vex-playground-window-controls button,
 #vex-ai-assistant-window-controls button,
-#vex-robot-config-window-controls button,
-#vex-unity-agent-window-controls button {
+#vex-robot-config-window-controls button {
   border-radius: 0.45rem;
 }
 
@@ -324,17 +311,4 @@
   border-color: #e2e8f0;
   background: #fff;
   border-radius: 0.65rem;
-}
-
-#vex-unity-agent-panel {
-  background: #0b1220;
-}
-
-#vex-unity-agent-review-toolbar {
-  border-color: rgba(255, 255, 255, 0.06);
-}
-
-#vex-unity-agent-console-log {
-  border-color: rgba(255, 255, 255, 0.08);
-  border-radius: 0.55rem;
 }
