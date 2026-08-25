@@ -2,7 +2,7 @@
 
 An AI-Assisted visual block-based programming environment designed for learning robotics and programming concepts. Built with Next.js and Google Blockly, this application provides an interactive way to program a virtual submarine robot to clean up ocean trash.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com)
+[![Deployed on GitHub Pages](https://img.shields.io/badge/Deployed%20on-GitHub%20Pages-222222?style=for-the-badge&logo=githubpages)](https://pages.github.com)
 [![Built with Next.js](https://img.shields.io/badge/Built%20with-Next.js-black?style=for-the-badge&logo=next.js)](https://nextjs.org)
 [![Powered by Blockly](https://img.shields.io/badge/Powered%20by-Blockly-4285F4?style=for-the-badge&logo=google)](https://developers.google.com/blockly)
 
@@ -26,8 +26,8 @@ Visual programming using Google Blockly with seven categories of blocks:
 | **Switch** | Green | Functions: define and call custom functions, boolean operators |
 
 ### Ocean Cleanup Playground
-- **Interactive Canvas**: Sandy ocean floor with colorful coral reef borders
-- **Submarine Robot**: Cute yellow submarine with periscope that responds to block commands
+- **Interactive Canvas**: Sandy ocean floor edged by a reef of brain, staghorn, fan, polyp, and tube corals
+- **Submarine Robot**: Yellow submarine with a lit bow, viewport, conning tower, and stern propeller, so its heading is readable at a glance
 - **Trash Collection**: Floating debris spawns randomly; collect it by driving into it
 - **Collision Detection**: Hit the coral borders and receive a "Game Over" notification
 - **Score Tracking**: Orange counter displays total trash collected
@@ -89,33 +89,59 @@ An integrated help system with multiple support options:
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
-- npm or yarn
+
+Node.js 22 (the version in `.nvmrc`; anything from 20.9 up will work) and npm.
 
 ### Installation
 
-\`\`\`bash
-# Clone the repository
-git clone https://github.com/your-username/ocean-cleanup-blocks.git
-
-# Navigate to project directory
-cd ocean-cleanup-blocks
-
-# Install dependencies
+```bash
+git clone https://github.com/Geph/INVITE-VEXcode-VR-Prototyping.git
+cd INVITE-VEXcode-VR-Prototyping
 npm install
-
-# Start development server
 npm run dev
-\`\`\`
+```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser. The dev server binds to
+`0.0.0.0`, so it is also reachable from other devices on your network.
+
+To run the collaboration server alongside the app, use `npm run dev:all`.
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Next.js dev server with Turbopack |
+| `npm run dev:all` | Dev server plus the block-sharing collab server |
+| `npm run build` | Static export to `out/` |
+| `npm run lint` | ESLint (flat config) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Simulation geometry checks |
 
 ### Building for Production
 
-\`\`\`bash
+```bash
 npm run build
-npm start
-\`\`\`
+```
+
+The build is a static export, so `out/` can be served by any static host. When
+serving from a subpath (as GitHub Pages does for project sites), set the base
+path at build time:
+
+```bash
+NEXT_PUBLIC_BASE_PATH=/INVITE-VEXcode-VR-Prototyping npm run build
+```
+
+## Deployment
+
+Three GitHub Actions workflows drive the repository:
+
+- **`ci.yml`** runs lint, typecheck, the geometry checks, and a full static
+  build on every push to `main`/`SV` and on every pull request. A separate
+  non-blocking job reports `npm audit` findings for runtime dependencies.
+- **`deploy-pages.yml`** builds with the correct `basePath` and publishes `out/`
+  to GitHub Pages on pushes to `main` and `SV`.
+- **`release.yml`** is a manual workflow that bumps the version with
+  `npm version`, pushes the tag, and opens a GitHub release.
 
 ## Usage Guide
 
@@ -142,25 +168,33 @@ npm start
 
 ## Technology Stack
 
-- **Framework**: Next.js 14 with App Router
-- **Block Editor**: Google Blockly
+- **Framework**: Next.js 16 (App Router, Turbopack, static export)
+- **Block Editor**: Google Blockly, bundled from npm rather than a CDN
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
 - **Language**: TypeScript
+- **3D Agent**: Unity WebGL via `react-unity-webgl`
 
 ## Project Structure
 
-\`\`\`
+```
+├── .github/workflows/    # CI, GitHub Pages deploy, release
 ├── app/
 │   ├── page.tsx          # Main application component
 │   ├── layout.tsx        # Root layout
 │   └── globals.css       # Global styles
 ├── components/
+│   ├── vex-workspace.tsx # Blockly editor, block definitions, robot runtime
+│   ├── unity-sidebar.tsx # Unity WebGL agent panel
 │   └── ui/               # Reusable UI components
 ├── lib/
-│   └── utils.ts          # Utility functions
-└── public/               # Static assets
-\`\`\`
+│   ├── robot-runtime.ts     # Units, angles, collision and sensor geometry
+│   ├── reef-art.ts          # Canvas artwork for the reef and the submarine
+│   ├── python-generator.ts  # Blockly -> Python for the "Show Python" view
+│   └── utils.ts             # Utility functions
+├── scripts/              # Collab server and simulation checks
+└── public/               # Static assets, including the Unity build
+```
 
 ## Contributing
 
@@ -180,8 +214,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Google Blockly](https://developers.google.com/blockly) for the block-based programming framework
 - [VEXcode VR](https://vr.vex.com/) for design inspiration
-- [Vercel](https://vercel.com) for hosting and deployment
 
 ## Support
 
-If you encounter any issues or have questions, please [open an issue](https://github.com/your-username/ocean-cleanup-blocks/issues) on GitHub.
+If you encounter any issues or have questions, please [open an issue](https://github.com/Geph/INVITE-VEXcode-VR-Prototyping/issues) on GitHub.

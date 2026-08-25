@@ -7,6 +7,9 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import {
   clampRobotPosition,
+  BUMPER_CONTACT_MARGIN_PX,
+  BUMPER_FORWARD_PX,
+  BUMPER_LATERAL_PX,
   CORAL_REEF_BATTERY_SEC,
   CORAL_REEF_FIELD_MM,
   CORAL_REEF_TRASH_COUNT,
@@ -15,11 +18,12 @@ import {
   DISTANCE_SENSOR_MAX_MM,
   driveDurationMs,
   fieldMmToPixel,
-  fieldRulerTicksMm,
+  drawFieldRulerOverlay,
   forEachProgramBlock,
   generateWhenStartedJavaScript,
   getDefaultRobotPixelPosition,
   getPlaygroundCanvasSize,
+  remapPixelAcrossCanvas,
   maxDriveDistanceMm,
   EYE_NEAR_MM,
   isTrashNearEye,
@@ -27,7 +31,6 @@ import {
   nearestTrashInFrontMm,
   normalizeDegrees,
   pixelToFieldMm,
-  pixelsToDistance,
   pointHitsCoral,
   raycastToBorder,
   attachNumberShadow,
@@ -43,7 +46,16 @@ import {
   isBlocklyFieldEditorTarget,
   isTypingInFormField,
 } from "@/lib/blockly-widget-fix"
+import {
+  CORAL_COLORS,
+  CORAL_KINDS,
+  drawCoralPiece,
+  drawReefBed,
+  drawSubmarine,
+} from "@/lib/reef-art"
 import { useBlocklyCollab } from "@/lib/use-blockly-collab"
+import { blockToPythonSnippet, generatePythonProgram } from "@/lib/python-generator"
+import { installVexBlockContextMenu } from "@/lib/blockly-context-menu"
 import BlocklyCollabOverlay from "@/components/blockly-collab-overlay"
 import {
   Play,
@@ -83,6 +95,10 @@ import {
   ArrowLeft,
   Settings,
   Calculator,
+  Ruler,
+  Minus,
+  Square,
+  Bot,
 } from "lucide-react"
 
 declare global {
@@ -208,10 +224,6 @@ interface AIAssistantState {
   surveyStep: "main" | "strategy" | "predict" | "fix" | "compare" | "feel" | "partner" | "strategy-examples"
 }
 
-interface CategoryState {
-  selectedCategory: string | null
-}
-
 interface TrashItem {
   id: number
   x: number
@@ -223,6 +235,47 @@ interface TrashItem {
 }
 
 type MissionEndReason = "coral" | "battery" | "complete" | null
+
+/**
+ * Thrown to unwind a running block program. Generated code has no way to
+ * `return`, so stopping means rejecting at the next `await` and swallowing it.
+ */
+class ProgramStopped extends Error {
+  constructor() {
+    super("Program stopped")
+    this.name = "ProgramStopped"
+  }
+}
+
+/**
+ * Every generated loop body ends with this so the browser can paint and the
+ * runtime gets a chance to observe a stop request. Without it a loop whose body
+ * is all synchronous blocks freezes the tab.
+ */
+const LOOP_YIELD = "await robot.wait(0);\n"
+
+/** Block types that create a JS loop, so `break` is legal inside them. */
+const LOOP_BLOCK_TYPES = new Set([
+  "repeat_times",
+  "forever_loop",
+  "repeat_until",
+  "while_loop",
+  "repeat",
+  "forever",
+])
+
+/** One row of the VEX print console. `print` appends to the last row. */
+interface ConsoleLine {
+  text: string
+  color: string
+}
+
+const PRINT_COLORS: Record<string, string> = {
+  black: "#d1fae5",
+  red: "#f87171",
+  green: "#4ade80",
+  blue: "#60a5fa",
+}
 
 interface GameState {
   trashCollected: number
@@ -756,6 +809,7 @@ function BlocklyEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [workspace, setWorkspace] = useState<any>(null)
   const [blocklyLoaded, setBlocklyLoaded] = useState(false)
+  const [blocklyLoadError, setBlocklyLoadError] = useState<string | null>(null)
   const collab = useBlocklyCollab(workspace, blocklyLoaded, blocklyWorkspaceContainerRef)
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
   const [isRunning, setIsRunning] = useState<boolean>(false)
@@ -784,6 +838,24 @@ function BlocklyEditor() {
     lastPenPoint: null as { x: number; y: number } | null,
   })
   const isRunningRef = useRef(false)
+  /** True from the moment a program starts until its async body finishes unwinding. */
+  const programActiveRef = useRef(false)
+  /** Set when the program must unwind (stop project, mission end, reset). */
+  const stopRequestedRef = useRef(false)
+  /** Settles the in-flight movement promise so `await` never dangles. */
+  const animationCancelRef = useRef<(() => void) | null>(null)
+
+  /** Ends the current movement early and lets the awaiting program continue. */
+  const cancelRobotAnimation = useCallback(() => {
+    if (animationCancelRef.current) {
+      animationCancelRef.current()
+      return
+    }
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current)
+      animationRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     setIsMounted(true)
@@ -824,7 +896,7 @@ function BlocklyEditor() {
   const [penTrail, setPenTrail] = useState<
     { x1: number; y1: number; x2: number; y2: number; color: string; width: number }[]
   >([])
-  const [consoleLines, setConsoleLines] = useState<string[]>([])
+  const [consoleLines, setConsoleLines] = useState<ConsoleLine[]>([])
 
   const [robotState, setRobotState] = useState<RobotState>({
     x: initialRobotPos.x,
@@ -845,6 +917,8 @@ function BlocklyEditor() {
     isMinimized: false,
     isMaximized: false,
   })
+  const [showRuler, setShowRuler] = useState(false)
+  const [showSensors, setShowSensors] = useState(true)
 
   const [unityAgentState, setUnityAgentState] = useState<UnityAgentState>({
     x: 400,
@@ -856,6 +930,9 @@ function BlocklyEditor() {
     isMinimized: false,
     isMaximized: false,
   })
+  // Keep the WebGL player mounted after first open so minimize/close cannot
+  // stack a second WASM heap on top of a half-quit instance.
+  const [unityPlayerMounted, setUnityPlayerMounted] = useState(true)
 
   const [aiAssistantState, setAiAssistantState] = useState<AIAssistantState>({
     x: 400,
@@ -948,25 +1025,28 @@ function BlocklyEditor() {
 
   const initializeCoralBorders = useCallback((maximized: boolean) => {
     const { w: width, h: height } = getPlaygroundCanvasSize(maximized)
-    const coralColors = ["#FF6B6B", "#FF8E8E", "#FFB6B6", "#E67E22", "#FF5252", "#F39C12"]
     const pieces: CoralPiece[] = []
 
-    const pushPiece = (x: number, y: number, seed: number) => {
+    /** `angle` turns the colony so it grows away from the wall it sits on. */
+    const pushPiece = (x: number, y: number, seed: number, angle: number) => {
       pieces.push({
         x,
         y,
         radius: 12 + seededRandom(seed) * 8,
-        color: coralColors[Math.floor(seededRandom(seed + 1) * coralColors.length)],
+        color: CORAL_COLORS[Math.floor(seededRandom(seed + 1) * CORAL_COLORS.length)],
+        kind: CORAL_KINDS[Math.floor(seededRandom(seed + 2) * CORAL_KINDS.length)],
+        angle,
+        seed,
       })
     }
 
     for (let x = 0; x < width; x += 30) {
-      pushPiece(x + 15, 15, x)
-      pushPiece(x + 15, height - 15, x + 1000)
+      pushPiece(x + 15, 15, x, Math.PI)
+      pushPiece(x + 15, height - 15, x + 1000, 0)
     }
     for (let y = 30; y < height - 30; y += 30) {
-      pushPiece(15, y + 15, y + 2000)
-      pushPiece(width - 15, y + 15, y + 3000)
+      pushPiece(15, y + 15, y + 2000, Math.PI / 2)
+      pushPiece(width - 15, y + 15, y + 3000, -Math.PI / 2)
     }
 
     setCoralPieces(pieces)
@@ -989,86 +1069,7 @@ function BlocklyEditor() {
     ctx.save()
     ctx.translate(robotState.x, robotState.y)
     ctx.rotate((robotState.rotation * Math.PI) / 180)
-
-    // Main
-    // submarine body - yellow oval
-    ctx.fillStyle = "#FFD700"
-    ctx.strokeStyle = "#E6B800"
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.ellipse(0, 0, 25 * scale, 18 * scale, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-
-    // Red triangular periscope/antenna on top
-    ctx.fillStyle = "#E74C3C"
-    ctx.strokeStyle = "#C0392B"
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(0, -25 * scale)
-    ctx.lineTo(-6 * scale, -12 * scale)
-    ctx.lineTo(6 * scale, -12 * scale)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
-
-    // Googly eyes - white circles with black pupils
-    // Left eye
-    ctx.fillStyle = "#FFFFFF"
-    ctx.strokeStyle = "#333"
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.arc(-8 * scale, -4 * scale, 7 * scale, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-    // Left pupil
-    ctx.fillStyle = "#000"
-    ctx.beginPath()
-    ctx.arc(-6 * scale, -4 * scale, 3 * scale, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Right eye
-    ctx.fillStyle = "#FFFFFF"
-    ctx.strokeStyle = "#333"
-    ctx.beginPath()
-    ctx.arc(8 * scale, -4 * scale, 7 * scale, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-    // Right pupil
-    ctx.fillStyle = "#000"
-    ctx.beginPath()
-    ctx.arc(10 * scale, -4 * scale, 3 * scale, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Whiskers/antennae
-    ctx.strokeStyle = "#333"
-    ctx.lineWidth = 1.5
-    // Left whiskers
-    ctx.beginPath()
-    ctx.moveTo(-20 * scale, -2 * scale)
-    ctx.lineTo(-30 * scale, -8 * scale)
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.moveTo(-20 * scale, 2 * scale)
-    ctx.lineTo(-30 * scale, 6 * scale)
-    ctx.stroke()
-    // Right whiskers
-    ctx.beginPath()
-    ctx.moveTo(20 * scale, -2 * scale)
-    ctx.lineTo(30 * scale, -8 * scale)
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.moveTo(20 * scale, 2 * scale)
-    ctx.lineTo(30 * scale, 6 * scale)
-    ctx.stroke()
-
-    // Small smile
-    ctx.strokeStyle = "#333"
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
-    ctx.arc(0, 4 * scale, 6 * scale, 0.2, Math.PI - 0.2)
-    ctx.stroke()
-
+    drawSubmarine(ctx, { scale })
     ctx.restore()
   }, [playgroundState.isVisible, playgroundState.isMinimized, playgroundState.isMaximized, robotState])
 
@@ -1111,39 +1112,51 @@ function BlocklyEditor() {
   }, [playgroundState.isDragging])
 
   useEffect(() => {
-    if (typeof window !== "undefined" && !window.Blockly) {
-      const script = document.createElement("script")
-      script.src = "https://cdn.jsdelivr.net/npm/blockly@10/blockly.min.js"
-      script.crossOrigin = "anonymous"
-      script.onload = () => {
-        console.log("[v0] Blockly core loaded successfully")
-        const Blockly = window.Blockly
-        if (Blockly) {
-          defineDrivetrainBlocks(Blockly, setAnglePickerState, setDistancePickerState) // Pass setDistancePickerState
-          defineMagnetBlocks(Blockly)
-          defineDrawingBlocks(Blockly)
-          defineSensingBlocks(Blockly)
-          defineConsoleBlocks(Blockly)
-          defineLogicBlocks(Blockly)
-          defineOperatorsBlocks(Blockly) // Define Operators blocks
-          defineSwitchBlocks(Blockly) // This function is now defined
-          setBlocklyLoaded(true)
-        }
-      }
-      script.onerror = (e) => {
-        console.log("[v0] Failed to load Blockly core:", e)
-      }
-      document.body.appendChild(script)
-    } else if (window.Blockly) {
-      defineDrivetrainBlocks(window.Blockly, setAnglePickerState, setDistancePickerState) // Pass setDistancePickerState
-      defineMagnetBlocks(window.Blockly)
-      defineDrawingBlocks(window.Blockly)
-      defineSensingBlocks(window.Blockly)
-      defineConsoleBlocks(window.Blockly)
-      defineLogicBlocks(window.Blockly)
-      defineOperatorsBlocks(window.Blockly) // Define Operators blocks
-      defineSwitchBlocks(window.Blockly) // This function is now defined
+    let cancelled = false
+
+    const registerBlocks = (Blockly: any) => {
+      defineDrivetrainBlocks(Blockly)
+      defineMagnetBlocks(Blockly)
+      defineDrawingBlocks(Blockly)
+      defineSensingBlocks(Blockly)
+      defineConsoleBlocks(Blockly)
+      defineLogicBlocks(Blockly)
+      defineOperatorsBlocks(Blockly)
+      defineSwitchBlocks(Blockly)
+      installVexBlockContextMenu(Blockly)
+      ;(window as any).__vexBlockToPython = (block: any) => blockToPythonSnippet(block)
+    }
+
+    if (window.Blockly) {
+      registerBlocks(window.Blockly)
       setBlocklyLoaded(true)
+      return
+    }
+
+    void (async () => {
+      try {
+        // Loaded on demand so Blockly stays out of the initial bundle.
+        const [core, generator] = await Promise.all([import("blockly"), import("blockly/javascript")])
+        if (cancelled) return
+
+        // The ESM namespace is frozen, so expose a writable facade that also
+        // carries `.JavaScript` the way the old UMD global did.
+        const Blockly = Object.assign(Object.create(null), core, {
+          JavaScript: generator.javascriptGenerator,
+        })
+
+        window.Blockly = Blockly
+        registerBlocks(Blockly)
+        setBlocklyLoaded(true)
+      } catch (error) {
+        if (cancelled) return
+        console.error("Failed to load Blockly:", error)
+        setBlocklyLoadError(error instanceof Error ? error.message : "Unknown error")
+      }
+    })()
+
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -1179,8 +1192,8 @@ function BlocklyEditor() {
       whenStartedBlock.initSvg()
       whenStartedBlock.render()
       whenStartedBlock.moveBy(50, 50)
-      whenStartedBlock.setDeletable(false) // Can't be deleted
-      whenStartedBlock.setMovable(true) // Can be moved
+      whenStartedBlock.setDeletable(true)
+      whenStartedBlock.setMovable(true)
       ensureBlocklyWidgetDivReady()
     }, 100)
   }, [blocklyLoaded, workspace])
@@ -1197,7 +1210,6 @@ function BlocklyEditor() {
   useEffect(() => {
     if (!workspace || !blocklyLoaded) return
 
-    const Blockly = window.Blockly
 
     /** Only these fields open custom angle/distance pickers; all other fields use Blockly's inline editor. */
     const PICKER_FIELDS: Record<string, string> = {
@@ -1288,7 +1300,6 @@ function BlocklyEditor() {
   useEffect(() => {
     if (!workspace || !blocklyLoaded) return
 
-    const Blockly = window.Blockly
 
     let blocks: any[] = []
 
@@ -1449,13 +1460,10 @@ function BlocklyEditor() {
     ctx.arc(spawn.x, spawn.y, 14, 0, Math.PI * 2)
     ctx.fill()
 
-    // Draw coral borders along all edges
-    coralPieces.forEach((piece) => {
-      ctx.fillStyle = piece.color
-      ctx.beginPath()
-      ctx.arc(piece.x, piece.y, piece.radius, 0, Math.PI * 2) // Apply scale here
-      ctx.fill()
-    })
+    // Draw coral borders along all edges. The rubble bed is a separate pass so
+    // neighbouring colonies fuse into one ledge.
+    drawReefBed(ctx, coralPieces)
+    coralPieces.forEach((piece) => drawCoralPiece(ctx, piece))
 
     // Draw floating trash items
     trashItems.forEach((trash) => {
@@ -1548,7 +1556,11 @@ function BlocklyEditor() {
     }
 
     drawRobot()
-  }, [drawRobot, robotState, playgroundState.isMaximized, trashItems, coralPieces, penTrail, isRunning])
+
+    if (showRuler) {
+      drawFieldRulerOverlay(ctx, width, height)
+    }
+  }, [drawRobot, robotState, playgroundState.isMaximized, trashItems, coralPieces, penTrail, isRunning, showRuler])
 
   const checkCoralCollision = useCallback(
     (x: number, y: number): boolean => {
@@ -1579,7 +1591,9 @@ function BlocklyEditor() {
       const dy = robotState.y - trash.y
       const distance = Math.sqrt(dx * dx + dy * dy)
       const pickupRadius = robotSize * 0.5 + 15 * scale * trash.scale
-      const magnetRadius = magnetRange + 15 * scale * trash.scale
+      // Only an energized magnet extends reach; previously the bare item radius
+      // counted as a magnet radius even with the magnet off.
+      const magnetRadius = magnetRange > 0 ? magnetRange + 15 * scale * trash.scale : 0
 
       if (distance < pickupRadius || distance < magnetRadius) {
         collectedCount++
@@ -1631,10 +1645,9 @@ function BlocklyEditor() {
   }, [playgroundState.isMaximized, coralPieces, syncTrashItems])
 
   const endMission = useCallback((reason: MissionEndReason, opts?: { runError?: string; gameLost?: boolean }) => {
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current)
-      animationRef.current = null
-    }
+    // Unwind the block program too, otherwise it keeps driving after game over.
+    stopRequestedRef.current = true
+    cancelRobotAnimation()
     if (trashSpawnIntervalRef.current) {
       clearInterval(trashSpawnIntervalRef.current)
       trashSpawnIntervalRef.current = null
@@ -1650,7 +1663,7 @@ function BlocklyEditor() {
       showCelebration: reason === "complete",
       isSpawningTrash: false,
     }))
-  }, [])
+  }, [cancelRobotAnimation])
 
   useEffect(() => {
     if (!gameState.isSpawningTrash) return
@@ -1736,331 +1749,80 @@ function BlocklyEditor() {
       const startState = { ...robotStateRef.current }
       let lastPoint = { x: startState.x, y: startState.y }
 
-      const canvasW = playgroundState.isMaximized ? 600 : 400
-      const canvasH = playgroundState.isMaximized ? 600 : 400
+      const { w: canvasW, h: canvasH } = getPlaygroundCanvasSize(playgroundState.isMaximized)
+
+      const settle = () => {
+        animationCancelRef.current = null
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current)
+          animationRef.current = null
+        }
+        resolve()
+      }
+
+      // `stop driving` and mission end call this so the awaiting program resumes
+      // instead of hanging on a promise that would never settle.
+      animationCancelRef.current = settle
+
+      /** Commit a frame: refs and pen first, then a pure state update. */
+      const commit = (x: number, y: number, rotation: number) => {
+        const clamped = clampRobotPosition(x, y, canvasW, canvasH)
+        if (clamped.x !== lastPoint.x || clamped.y !== lastPoint.y) {
+          recordPenSegment(lastPoint, { x: clamped.x, y: clamped.y })
+          lastPoint = { x: clamped.x, y: clamped.y }
+        }
+        robotStateRef.current = { x: clamped.x, y: clamped.y, rotation }
+        setRobotState((prev) => ({ ...prev, x: clamped.x, y: clamped.y, rotation }))
+      }
 
       const animate = (currentTime: number) => {
         const elapsed = currentTime - startTime
         const progress = Math.min(elapsed / duration, 1)
         const easeProgress = 1 - Math.pow(1 - progress, 3) // Ease-out cubic
 
-        setRobotState((prev) => {
-          const newState = { ...prev }
-          if (targetState.x !== undefined) {
-            newState.x = startState.x + (targetState.x - startState.x) * easeProgress
-          }
-          if (targetState.y !== undefined) {
-            newState.y = startState.y + (targetState.y - startState.y) * easeProgress
-          }
-          if (targetState.rotation !== undefined) {
-            const delta = shortestRotationDelta(startState.rotation, targetState.rotation)
-            newState.rotation = normalizeDegrees(startState.rotation + delta * easeProgress)
-          }
-          const clamped = clampRobotPosition(newState.x, newState.y, canvasW, canvasH)
-          newState.x = clamped.x
-          newState.y = clamped.y
-          const currentPoint = { x: newState.x, y: newState.y }
-          if (currentPoint.x !== lastPoint.x || currentPoint.y !== lastPoint.y) {
-            recordPenSegment(lastPoint, currentPoint)
-            lastPoint = currentPoint
-          }
-          robotStateRef.current = { x: newState.x, y: newState.y, rotation: newState.rotation }
-          return newState
-        })
+        const current = { ...robotStateRef.current }
+        if (targetState.x !== undefined) {
+          current.x = startState.x + (targetState.x - startState.x) * easeProgress
+        }
+        if (targetState.y !== undefined) {
+          current.y = startState.y + (targetState.y - startState.y) * easeProgress
+        }
+        if (targetState.rotation !== undefined) {
+          const delta = shortestRotationDelta(startState.rotation, targetState.rotation)
+          current.rotation = normalizeDegrees(startState.rotation + delta * easeProgress)
+        }
+        commit(current.x, current.y, current.rotation)
 
         if (progress < 1) {
           animationRef.current = requestAnimationFrame(animate)
-        } else {
-          // Ensure final state is exact
-          setRobotState((prev) => {
-            const finalState = { ...prev }
-            if (targetState.x !== undefined) finalState.x = targetState.x
-            if (targetState.y !== undefined) finalState.y = targetState.y
-            if (targetState.rotation !== undefined) finalState.rotation = targetState.rotation
-            const clamped = clampRobotPosition(finalState.x, finalState.y, canvasW, canvasH)
-            finalState.x = clamped.x
-            finalState.y = clamped.y
-            robotStateRef.current = { x: finalState.x, y: finalState.y, rotation: finalState.rotation }
-            return finalState
-          })
-          resolve()
+          return
         }
+
+        // Land exactly on the target so repeated moves do not accumulate drift.
+        commit(
+          targetState.x ?? current.x,
+          targetState.y ?? current.y,
+          targetState.rotation ?? current.rotation,
+        )
+        settle()
       }
 
       animationRef.current = requestAnimationFrame(animate)
     })
   }
 
-  const getPythonCode = useCallback(() => {
-    if (!workspace) return "# No code yet"
-    
-    // Recursively generate code for a statement input (DO, ELSE, etc.)
-    const generateStatements = (block: any, inputName: string, indent: string): string => {
-      const child = block.getInputTargetBlock(inputName)
-      if (!child) return `${indent}pass\n`
-      return generateSequence(child, indent)
-    }
-
-    // Walk a chain of next-connected blocks
-    const generateSequence = (block: any, indent: string): string => {
-      if (!block) return ""
-      return generatePythonFromBlock(block, indent) + generateSequence(block.getNextBlock(), indent)
-    }
-
-    // Custom Python code generator - traverse blocks and generate Python syntax
-    const generatePythonFromBlock = (block: any, indent: string = ""): string => {
-      if (!block) return ""
-      
-      const type = block.type
-      let code = ""
-      
-      switch (type) {
-        case "when_started":
-          code = "# When Started\ndef main():\n"
-          code += generateStatements(block, "DO", "    ")
-          code += "\nmain()"
-          break
-          
-        case "drive_simple": {
-          const dir = block.getFieldValue("DIRECTION") || "forward"
-          code = `${indent}drivetrain.drive(${dir.toUpperCase()})\n`
-          break
-        }
-          
-        case "drive_distance": {
-          const direction = block.getFieldValue("DIRECTION") || "forward"
-          const distance = block.getFieldValue("DISTANCE") || "200"
-          const unit = block.getFieldValue("UNIT") || "mm"
-          const unitPython = unit === "inches" ? "INCHES" : "MM"
-          code = `${indent}drivetrain.drive_for(${direction.toUpperCase()}, ${distance}, ${unitPython})\n`
-          break
-        }
-          
-        case "turn_simple": {
-          const dir = block.getFieldValue("DIRECTION") || "right"
-          code = `${indent}drivetrain.turn(${dir.toUpperCase()})\n`
-          break
-        }
-          
-        case "turn_degrees": {
-          const turnDir = block.getFieldValue("DIRECTION") || "right"
-          const degrees = block.getFieldValue("DEGREES") || "90"
-          code = `${indent}drivetrain.turn_for(${turnDir.toUpperCase()}, ${degrees}, DEGREES)\n`
-          break
-        }
-        
-        case "turn_to_heading": {
-          const heading = block.getFieldValue("HEADING") || "0"
-          code = `${indent}drivetrain.turn_to_heading(${heading}, DEGREES)\n`
-          break
-        }
-        
-        case "turn_to_rotation": {
-          const rotation = block.getFieldValue("ROTATION") || "0"
-          code = `${indent}drivetrain.turn_to_rotation(${rotation}, DEGREES)\n`
-          break
-        }
-          
-        case "set_drive_velocity": {
-          const velocity = block.getFieldValue("VELOCITY") || "50"
-          code = `${indent}drivetrain.set_drive_velocity(${velocity}, PERCENT)\n`
-          break
-        }
-          
-        case "set_turn_velocity": {
-          const turnVel = block.getFieldValue("VELOCITY") || "50"
-          code = `${indent}drivetrain.set_turn_velocity(${turnVel}, PERCENT)\n`
-          break
-        }
-          
-        case "set_drive_heading": {
-          const heading = block.getFieldValue("HEADING") || "0"
-          code = `${indent}drivetrain.set_heading(${heading}, DEGREES)\n`
-          break
-        }
-        
-        case "set_drive_rotation": {
-          const rotation = block.getFieldValue("ROTATION") || "0"
-          code = `${indent}drivetrain.set_rotation(${rotation}, DEGREES)\n`
-          break
-        }
-        
-        case "set_drive_timeout": {
-          const timeout = block.getFieldValue("TIMEOUT") || "1"
-          code = `${indent}drivetrain.set_timeout(${timeout}, SECONDS)\n`
-          break
-        }
-          
-        case "stop_driving":
-          code = `${indent}drivetrain.stop()\n`
-          break
-          
-        case "forever":
-        case "forever_loop": {
-          code = `${indent}while True:\n`
-          code += generateStatements(block, "DO", indent + "    ")
-          break
-        }
-
-        case "repeat":
-        case "repeat_times": {
-          const times = block.getFieldValue("TIMES") || "10"
-          code = `${indent}for i in range(${times}):\n`
-          code += generateStatements(block, "DO", indent + "    ")
-          break
-        }
-        
-        case "repeat_until": {
-          const cond = block.getInputTargetBlock("CONDITION")
-          const condStr = cond ? `not ${cond.type}()` : "not condition"
-          code = `${indent}while ${condStr}:\n`
-          code += generateStatements(block, "DO", indent + "    ")
-          break
-        }
-        
-        case "while_loop": {
-          code = `${indent}while condition:\n`
-          code += generateStatements(block, "DO", indent + "    ")
-          break
-        }
-          
-        case "wait_seconds": {
-          const waitTime = block.getFieldValue("SECONDS") || "1"
-          code = `${indent}wait(${waitTime}, SECONDS)\n`
-          break
-        }
-        
-        case "wait_until":
-          code = `${indent}wait_until(condition)\n`
-          break
-          
-        case "if_then": {
-          const ifCond = block.getInputTargetBlock("CONDITION")
-          const ifCondStr = ifCond ? generatePythonFromBlock(ifCond, "").trim() : "condition"
-          code = `${indent}if ${ifCondStr}:\n`
-          code += generateStatements(block, "DO", indent + "    ")
-          break
-        }
-        
-        case "if_then_else": {
-          const ifelseCond = block.getInputTargetBlock("CONDITION")
-          const ifelseCondStr = ifelseCond ? generatePythonFromBlock(ifelseCond, "").trim() : "condition"
-          code = `${indent}if ${ifelseCondStr}:\n`
-          code += generateStatements(block, "DO", indent + "    ")
-          code += `${indent}else:\n`
-          code += generateStatements(block, "ELSE", indent + "    ")
-          break
-        }
-        
-        case "break_block":
-          code = `${indent}break\n`
-          break
-        
-        case "stop_project":
-          code = `${indent}stop()\n`
-          break
-        
-        case "comment_block": {
-          const comment = block.getFieldValue("COMMENT") || ""
-          code = `${indent}# ${comment}\n`
-          break
-        }
-          
-        case "energize_magnet": {
-          const action = block.getFieldValue("ACTION") || "pick up"
-          code = action === "pick up" 
-            ? `${indent}electromagnet.pickup()\n`
-            : `${indent}electromagnet.drop()\n`
-          break
-        }
-          
-        case "move_pen": {
-          const penAction = block.getFieldValue("POSITION") || "down"
-          code = `${indent}pen.move(${penAction.toUpperCase()})\n`
-          break
-        }
-        
-        case "set_pen_width": {
-          const width = block.getFieldValue("WIDTH") || "1"
-          code = `${indent}pen.set_pen_width(${width})\n`
-          break
-        }
-          
-        case "set_pen_color": {
-          const color = block.getFieldValue("COLOR") || "red"
-          code = `${indent}pen.set_pen_color("${color}")\n`
-          break
-        }
-          
-        case "print_text": {
-          const text = block.getFieldValue("TEXT") || ""
-          code = `${indent}brain.print("${text}")\n`
-          break
-        }
-        
-        case "clear_all_rows":
-          code = `${indent}brain.clear()\n`
-          break
-        
-        case "set_cursor_next_row":
-          code = `${indent}brain.next_row()\n`
-          break
-        
-        // Sensing blocks
-        case "bumper_pressed":
-          code = `bumper.pressed()`
-          break
-        
-        case "eye_is_near": {
-          const nearObj = block.getFieldValue("OBJECT") || "any"
-          code = `eye.is_near_object()`
-          break
-        }
-        
-        case "eye_detects_color": {
-          const detColor = block.getFieldValue("COLOR") || "red"
-          code = `eye.detect("${detColor}")`
-          break
-        }
-        
-        // Operators
-        case "math_arithmetic": {
-          const op = block.getFieldValue("OP") || "ADD"
-          const opMap: { [key: string]: string } = { ADD: "+", MINUS: "-", MULTIPLY: "*", DIVIDE: "/" }
-          const a = block.getFieldValue("A") || "0"
-          const b = block.getFieldValue("B") || "0"
-          code = `(${a} ${opMap[op] || "+"} ${b})`
-          break
-        }
-        
-        case "random_int": {
-          const from = block.getFieldValue("FROM") || "1"
-          const to = block.getFieldValue("TO") || "10"
-          code = `random.randint(${from}, ${to})`
-          break
-        }
-          
-        default:
-          code = `${indent}# ${type}()\n`
-      }
-      
-      return code
-    }
-    
-    const whenStarted = workspace.getAllBlocks(false).find((b: { type: string }) => b.type === "when_started")
-    if (!whenStarted) return "# No code yet\n# Add blocks inside when started to see Python code"
-
-    return (
-      "# VEXcode VR Python\nfrom vexcode import *\nimport random\n\n" +
-      generatePythonFromBlock(whenStarted)
-    )
-  }, [workspace])
+  const getPythonCode = useCallback(() => generatePythonProgram(workspace), [workspace])
 
   const handleRun = async () => {
-    if (!workspace || !window.Blockly || isRunning) return
+    // `isRunning` can already be false while a stopped program is still unwinding,
+    // so gate on the ref to avoid two programs driving the same robot.
+    if (!workspace || !window.Blockly || programActiveRef.current) return
 
+    programActiveRef.current = true
+    stopRequestedRef.current = false
     isRunningRef.current = true
     setIsRunning(true)
+    setPenTrail([])
     coralGraceUntilRef.current = performance.now() + 400
     setGameState((prev) => ({
       ...prev,
@@ -2079,11 +1841,21 @@ function BlocklyEditor() {
       jsGen.init(workspace)
     }
     const code = generateWhenStartedJavaScript(workspace, jsGen)
+    // `when_bumper` stacks are separate hats, so they are collected and polled
+    // alongside the main program rather than inlined into it.
+    const bumperEvents = workspace
+      .getAllBlocks(false)
+      .filter((b: { type: string }) => b.type === "when_bumper")
+      .map((b: any) => ({
+        bumper: b.getFieldValue("BUMPER"),
+        state: b.getFieldValue("STATE"),
+        body: jsGen.statementToCode(b, "DO"),
+      }))
+      .filter((handler: { body: string }) => handler.body.trim().length > 0)
     if (typeof jsGen.finish === "function") {
       jsGen.finish(workspace)
     }
 
-    const { w: canvasWidth, h: canvasHeight } = getPlaygroundCanvasSize(playgroundState.isMaximized)
 
     runtimeRef.current = {
       driveVelocity: 50,
@@ -2120,72 +1892,122 @@ function BlocklyEditor() {
       return clampRobotPosition(x, y, w, h)
     }
 
-    const formatPrint = (text: unknown) => {
-      const raw = String(text)
-      const precision = runtimeRef.current.printPrecision
+    /** Print precision applies to numeric values only; text passes through. */
+    const formatPrint = (value: unknown): string => {
+      if (typeof value === "boolean") return value ? "true" : "false"
+      const raw = typeof value === "string" ? value : String(value)
+      if (raw.trim() === "") return raw
       const asNum = Number(raw)
-      const formatted = Number.isFinite(asNum) ? Number(asNum.toFixed(Math.max(0, -Math.log10(precision)))) : raw
-      return formatted
+      if (!Number.isFinite(asNum)) return raw
+      const precision = runtimeRef.current.printPrecision
+      const decimals = Math.max(0, Math.round(-Math.log10(precision > 0 ? precision : 1)))
+      return asNum.toFixed(decimals)
     }
 
-    const appendConsole = (text: unknown) => {
-      const line = formatPrint(text)
-      setConsoleLines((prev) => [...prev, line])
+    /** VEX `print` writes into the current row; only the cursor block advances it. */
+    const appendConsole = (value: unknown) => {
+      const chunk = formatPrint(value)
+      const color = PRINT_COLORS[runtimeRef.current.printColor] ?? PRINT_COLORS.black
+      setConsoleLines((prev) => {
+        if (prev.length === 0) return [{ text: chunk, color }]
+        const next = prev.slice()
+        const last = next[next.length - 1]
+        next[next.length - 1] = { text: last.text + chunk, color }
+        return next
+      })
+    }
+
+    const nextConsoleRow = () => {
+      setConsoleLines((prev) => [...prev, { text: "", color: PRINT_COLORS.black }])
+    }
+
+    /** Runtime/system messages always get their own row. */
+    const pushConsoleLine = (text: string, color = PRINT_COLORS.black) => {
+      setConsoleLines((prev) => [...prev, { text, color }])
+    }
+
+    /** Generated code has no early return, so unwind via throw at each await. */
+    const throwIfStopped = () => {
+      if (stopRequestedRef.current) throw new ProgramStopped()
+    }
+
+    // Serialize drivetrain motion so concurrent when_started threads queue
+    // instead of fighting over the same animation.
+    let motionQueue: Promise<void> = Promise.resolve()
+    const withMotionLock = async <T,>(fn: () => Promise<T>): Promise<T> => {
+      const run = motionQueue.then(fn, fn)
+      motionQueue = run.then(
+        () => undefined,
+        () => undefined,
+      )
+      return run
     }
 
     const robotAPI = {
-      drive: async (direction: string, distance?: number, unit?: string) => {
-        const sign = direction === "forward" ? 1 : -1
-        const pixels =
-          distance === undefined
-            ? distanceToPixels(200, "mm")
-            : distanceToPixels(Number(distance), unit || "mm")
-        const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
-        const rawX = robotStateRef.current.x + sign * pixels * Math.sin(angleRad)
-        const rawY = robotStateRef.current.y - sign * pixels * Math.cos(angleRad)
-        const { x: targetX, y: targetY } = clampPosition(rawX, rawY)
-        const actualPixels = Math.hypot(targetX - robotStateRef.current.x, targetY - robotStateRef.current.y)
-        const duration = driveDurationMs(actualPixels, runtimeRef.current.driveVelocity)
-        const drivePromise = animateRobotFluid({ x: targetX, y: targetY }, duration, robotStateRef)
-        if (runtimeRef.current.driveTimeoutSec != null) {
-          await Promise.race([
-            drivePromise,
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Drive timeout")), runtimeRef.current.driveTimeoutSec! * 1000),
-            ),
-          ]).catch(() => {
-            robotAPI.stopDriving()
-          })
-        } else {
-          await drivePromise
-        }
-      },
-      turn: async (direction: string, degrees?: number) => {
-        const multiplier = direction === "right" ? 1 : -1
-        const turnAmount = degrees === undefined ? 90 : Number(degrees)
-        const targetRotation = normalizeDegrees(robotStateRef.current.rotation + turnAmount * multiplier)
-        const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, targetRotation))
-        const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
-        await animateRobotFluid({ rotation: targetRotation }, duration, robotStateRef)
-      },
-      turnToHeading: async (heading: number) => {
-        const target = normalizeDegrees(Number(heading))
-        const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
-        const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
-        await animateRobotFluid({ rotation: target }, duration, robotStateRef)
-        runtimeRef.current.heading = target
-      },
-      turnToRotation: async (rotation: number) => {
-        const target = normalizeDegrees(Number(rotation))
-        const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
-        const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
-        await animateRobotFluid({ rotation: target }, duration, robotStateRef)
-      },
+      drive: async (direction: string, distance?: number, unit?: string) =>
+        withMotionLock(async () => {
+          throwIfStopped()
+          const sign = direction === "forward" ? 1 : -1
+          const pixels =
+            distance === undefined
+              ? distanceToPixels(200, "mm")
+              : distanceToPixels(Number(distance), unit || "mm")
+          const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
+          const rawX = robotStateRef.current.x + sign * pixels * Math.sin(angleRad)
+          const rawY = robotStateRef.current.y - sign * pixels * Math.cos(angleRad)
+          const { x: targetX, y: targetY } = clampPosition(rawX, rawY)
+          const actualPixels = Math.hypot(targetX - robotStateRef.current.x, targetY - robotStateRef.current.y)
+          const duration = driveDurationMs(actualPixels, runtimeRef.current.driveVelocity)
+          const drivePromise = animateRobotFluid({ x: targetX, y: targetY }, duration, robotStateRef)
+          if (runtimeRef.current.driveTimeoutSec != null) {
+            let timer: ReturnType<typeof setTimeout> | undefined
+            const timeout = new Promise<"timeout">((resolve) => {
+              timer = setTimeout(() => resolve("timeout"), runtimeRef.current.driveTimeoutSec! * 1000)
+            })
+            const outcome = await Promise.race([drivePromise.then(() => "done" as const), timeout])
+            if (timer) clearTimeout(timer)
+            if (outcome === "timeout") {
+              // Settle the movement promise; leaving it pending would hang the program.
+              cancelRobotAnimation()
+              await drivePromise
+            }
+          } else {
+            await drivePromise
+          }
+          throwIfStopped()
+        }),
+      turn: async (direction: string, degrees?: number) =>
+        withMotionLock(async () => {
+          throwIfStopped()
+          const multiplier = direction === "right" ? 1 : -1
+          const turnAmount = degrees === undefined ? 90 : Number(degrees)
+          const targetRotation = normalizeDegrees(robotStateRef.current.rotation + turnAmount * multiplier)
+          const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, targetRotation))
+          const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
+          await animateRobotFluid({ rotation: targetRotation }, duration, robotStateRef)
+          throwIfStopped()
+        }),
+      turnToHeading: async (heading: number) =>
+        withMotionLock(async () => {
+          throwIfStopped()
+          const target = normalizeDegrees(Number(heading))
+          const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
+          const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
+          await animateRobotFluid({ rotation: target }, duration, robotStateRef)
+          runtimeRef.current.heading = target
+          throwIfStopped()
+        }),
+      turnToRotation: async (rotation: number) =>
+        withMotionLock(async () => {
+          throwIfStopped()
+          const target = normalizeDegrees(Number(rotation))
+          const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
+          const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
+          await animateRobotFluid({ rotation: target }, duration, robotStateRef)
+          throwIfStopped()
+        }),
       stopDriving: () => {
-        if (animationRef.current) {
-          cancelAnimationFrame(animationRef.current)
-          animationRef.current = null
-        }
+        cancelRobotAnimation()
       },
       setDriveVelocity: (velocity: number) => {
         runtimeRef.current.driveVelocity = Number(velocity)
@@ -2239,28 +2061,40 @@ function BlocklyEditor() {
         appendConsole(text)
       },
       wait: async (seconds: number) => {
-        await new Promise((resolve) => setTimeout(resolve, Number(seconds) * 1000))
+        throwIfStopped()
+        const ms = Math.max(0, Number(seconds) * 1000)
+        await new Promise((resolve) => setTimeout(resolve, Number.isFinite(ms) ? ms : 0))
+        // Loop bodies yield through `wait`, so this is where stops get noticed.
+        throwIfStopped()
       },
       setCursorNextRow: () => {
-        appendConsole("")
+        nextConsoleRow()
       },
       clearAllRows: () => {
         setConsoleLines([])
       },
       setPrintPrecision: (precision: number) => {
-        runtimeRef.current.printPrecision = Number(precision)
+        const value = Number(precision)
+        runtimeRef.current.printPrecision = Number.isFinite(value) && value > 0 ? value : 1
       },
       setPrintColor: (color: string) => {
-        runtimeRef.current.printColor = color.toLowerCase()
+        runtimeRef.current.printColor = String(color).toLowerCase()
       },
       bumperPressed: (bumper: string) => {
         if (!robotCapabilities.bumperSensor) return false
-        const side = bumper.toLowerCase()
-        const offset = side === "left" ? -90 : 90
-        const angleRad = ((robotStateRef.current.rotation + offset) * Math.PI) / 180
-        const probeX = robotStateRef.current.x + Math.sin(angleRad) * 22
-        const probeY = robotStateRef.current.y - Math.cos(angleRad) * 22
-        return pointHitsCoral(probeX, probeY, coralPieces, 4)
+        const side = bumper.toLowerCase() === "left" ? -1 : 1
+        const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
+        // VEX bumpers sit on the front corners, so probe forward-and-out rather
+        // than straight sideways from the middle of the hull.
+        const probeX =
+          robotStateRef.current.x +
+          Math.sin(angleRad) * BUMPER_FORWARD_PX +
+          Math.cos(angleRad) * BUMPER_LATERAL_PX * side
+        const probeY =
+          robotStateRef.current.y -
+          Math.cos(angleRad) * BUMPER_FORWARD_PX +
+          Math.sin(angleRad) * BUMPER_LATERAL_PX * side
+        return pointHitsCoral(probeX, probeY, coralPieces, BUMPER_CONTACT_MARGIN_PX)
       },
       distanceFoundObject: (sensor: string) => {
         const trash = trashItemsRef.current
@@ -2297,19 +2131,21 @@ function BlocklyEditor() {
       eyeDetectsColor: (_sensor: string, color: string) => {
         if (!robotCapabilities.eyeSensor) return false
         const { x, y } = robotStateRef.current
-        const trash = trashItemsRef.current
-        for (const t of trash) {
+        const trashColors: Record<string, string[]> = {
+          red: ["can"],
+          green: ["bag"],
+          blue: ["bottle"],
+          yellow: ["wrapper"],
+          orange: ["wrapper"],
+          purple: ["bag"],
+        }
+        const matching = trashColors[color] ?? []
+        // Scan every nearby item; returning on the first one meant a matching
+        // item was missed whenever a non-matching item happened to be closer.
+        for (const t of trashItemsRef.current) {
           if (t.isCollected) continue
           if (Math.hypot(x - t.x, y - t.y) > 40) continue
-          const trashColors: Record<string, string[]> = {
-            red: ["can"],
-            green: ["bag"],
-            blue: ["bottle"],
-            yellow: ["wrapper"],
-            orange: ["wrapper"],
-            purple: ["bag"],
-          }
-          return trashColors[color]?.includes(t.type) ?? false
+          if (matching.includes(t.type)) return true
         }
         if (color === "red" || color === "orange") {
           return pointHitsCoral(x, y, coralPieces, 20)
@@ -2332,33 +2168,80 @@ function BlocklyEditor() {
       },
       getPositionAngle: () => normalizeDegrees(robotStateRef.current.rotation),
       stop: () => {
-        if (animationRef.current) {
-          cancelAnimationFrame(animationRef.current)
-          animationRef.current = null
-        }
+        stopRequestedRef.current = true
+        cancelRobotAnimation()
         if (trashSpawnIntervalRef.current) {
           clearInterval(trashSpawnIntervalRef.current)
           trashSpawnIntervalRef.current = null
         }
         isRunningRef.current = false
         setIsRunning(false)
+        // Abandon the rest of the program, including any enclosing forever loop.
+        throw new ProgramStopped()
       },
     }
 
+    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
+
+    /** Poll bumper state and fire each `when_bumper` stack on its edge. */
+    const startBumperWatchers = () => {
+      if (bumperEvents.length === 0) return () => {}
+
+      const watchers = bumperEvents.map((handler: { bumper: string; state: string; body: string }) => ({
+        matches: (was: boolean, now: boolean) =>
+          handler.state === "pressed" ? now && !was : was && !now,
+        run: new AsyncFunction("robot", handler.body) as (robot: unknown) => Promise<void>,
+        bumper: handler.bumper,
+        was: false,
+        busy: false,
+      }))
+
+      const timer = setInterval(() => {
+        if (stopRequestedRef.current) return
+        for (const watcher of watchers) {
+          const now = robotAPI.bumperPressed(watcher.bumper)
+          const fire = watcher.matches(watcher.was, now)
+          watcher.was = now
+          // Skip re-entry so a slow handler cannot stack up on itself.
+          if (!fire || watcher.busy) continue
+          watcher.busy = true
+          watcher
+            .run(robotAPI)
+            .catch((error: unknown) => {
+              if (!(error instanceof ProgramStopped)) console.error("Bumper handler error:", error)
+            })
+            .finally(() => {
+              watcher.busy = false
+            })
+        }
+      }, 50)
+
+      return () => clearInterval(timer)
+    }
+
+    const stopBumperWatchers = startBumperWatchers()
+
     try {
-      if (!code.trim()) {
-        appendConsole("Add blocks inside when started to run your program.")
+      if (!code.trim() && bumperEvents.length === 0) {
+        pushConsoleLine("Add blocks inside when started to run your program.")
         return
       }
-      const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
-      const execFunc = new AsyncFunction("robot", code)
-      await execFunc(robotAPI)
+      if (code.trim()) {
+        const execFunc = new AsyncFunction("robot", code)
+        await execFunc(robotAPI)
+      }
     } catch (error: unknown) {
-      console.error("Execution error:", error)
-      const message = error instanceof Error ? error.message : "Program error"
-      setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: false, runError: message }))
-      appendConsole(`Error: ${message}`)
+      // A stop is a normal end of run, not a program error.
+      if (!(error instanceof ProgramStopped)) {
+        console.error("Execution error:", error)
+        const message = error instanceof Error ? error.message : "Program error"
+        setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: false, runError: message }))
+        pushConsoleLine(`Error: ${message}`, PRINT_COLORS.red)
+      }
     } finally {
+      stopBumperWatchers()
+      stopRequestedRef.current = false
+      programActiveRef.current = false
       if (isRunningRef.current) {
         isRunningRef.current = false
         setIsRunning(false)
@@ -2367,10 +2250,8 @@ function BlocklyEditor() {
   }
 
   const handleReset = () => {
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current)
-      animationRef.current = null
-    }
+    stopRequestedRef.current = true
+    cancelRobotAnimation()
     if (trashSpawnIntervalRef.current) {
       clearInterval(trashSpawnIntervalRef.current)
       trashSpawnIntervalRef.current = null
@@ -2401,45 +2282,6 @@ function BlocklyEditor() {
     syncTrashItems([])
     setPenTrail([])
     setConsoleLines([])
-  }
-
-  const handleClear = () => {
-    if (workspace) {
-      workspace.clear()
-    }
-    const clearPos = getDefaultRobotPixelPosition(playgroundState.isMaximized)
-    setRobotState({
-      x: clearPos.x,
-      y: clearPos.y,
-      rotation: 0,
-      driveVelocity: 50,
-      turnVelocity: 50,
-      heading: 0,
-    })
-    setGameState({
-      trashCollected: 0,
-      trashTotal: 0,
-      batteryPercent: 100,
-      gameLost: false,
-      isGameOver: false,
-      runError: null,
-      showCelebration: false,
-      missionEndReason: null,
-      isSpawningTrash: false,
-    })
-    syncTrashItems([])
-    setPenTrail([])
-    setConsoleLines([])
-    if (trashSpawnIntervalRef.current) {
-      clearInterval(trashSpawnIntervalRef.current)
-      trashSpawnIntervalRef.current = null
-    }
-    if (floatAnimationRef.current) {
-      cancelAnimationFrame(floatAnimationRef.current)
-      floatAnimationRef.current = null
-    }
-    setIsRunning(false)
-    isRunningRef.current = false
   }
 
   const handleTrash = () => {
@@ -2518,7 +2360,6 @@ function BlocklyEditor() {
 
     if (!workspace || !window.Blockly) return
 
-    const Blockly = window.Blockly
 
     let blocks: any[] = []
     if (category === "drivetrain") {
@@ -2634,10 +2475,53 @@ function BlocklyEditor() {
   }
 
   const handleMaximizePlayground = () => {
-    setPlaygroundState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
+    const fromMaximized = playgroundState.isMaximized
+    const toMaximized = !fromMaximized
+    const from = getPlaygroundCanvasSize(fromMaximized)
+    const to = getPlaygroundCanvasSize(toMaximized)
+    const remap = (x: number, y: number) =>
+      remapPixelAcrossCanvas(x, y, from.w, from.h, to.w, to.h)
+
+    setRobotState((prev) => {
+      const mapped = remap(prev.x, prev.y)
+      const clamped = clampRobotPosition(mapped.x, mapped.y, to.w, to.h)
+      robotStateRef.current = {
+        x: clamped.x,
+        y: clamped.y,
+        rotation: robotStateRef.current.rotation,
+      }
+      return { ...prev, x: clamped.x, y: clamped.y }
+    })
+
+    setTrashItems((items) => {
+      const next = items.map((trash) => {
+        const mapped = remap(trash.x, trash.y)
+        return { ...trash, x: mapped.x, y: mapped.y }
+      })
+      trashItemsRef.current = next
+      return next
+    })
+
+    setPenTrail((segs) =>
+      segs.map((seg) => {
+        const a = remap(seg.x1, seg.y1)
+        const b = remap(seg.x2, seg.y2)
+        return { ...seg, x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+      }),
+    )
+
+    if (runtimeRef.current.lastPenPoint) {
+      runtimeRef.current.lastPenPoint = remap(
+        runtimeRef.current.lastPenPoint.x,
+        runtimeRef.current.lastPenPoint.y,
+      )
+    }
+
+    setPlaygroundState((prev) => ({ ...prev, isMaximized: toMaximized }))
   }
 
   const handleOpenUnityAgent = () => {
+    setUnityPlayerMounted(true)
     setUnityAgentState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
   }
 
@@ -2767,26 +2651,29 @@ function BlocklyEditor() {
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, width, height)
 
-    // Draw coral border
-    const coralColors = ["#FF6B6B", "#FF8E8E", "#FFB6B6", "#E67E22", "#FF5252"]
+    // Draw coral border with the same artwork as the playground, at preview size.
+    const previewCoral: CoralPiece[] = []
+    const pushPreviewCoral = (x: number, y: number, seed: number, angle: number) => {
+      previewCoral.push({
+        x,
+        y,
+        radius: 8 + seededRandom(seed) * 4,
+        color: CORAL_COLORS[Math.floor(seededRandom(seed + 1) * CORAL_COLORS.length)],
+        kind: CORAL_KINDS[Math.floor(seededRandom(seed + 2) * CORAL_KINDS.length)],
+        angle,
+        seed,
+      })
+    }
     for (let x = 0; x < width; x += 20) {
-      ctx.fillStyle = coralColors[x % coralColors.length]
-      ctx.beginPath()
-      ctx.arc(x + 10, 10, 8, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.beginPath()
-      ctx.arc(x + 10, height - 10, 8, 0, Math.PI * 2)
-      ctx.fill()
+      pushPreviewCoral(x + 10, 10, x, Math.PI)
+      pushPreviewCoral(x + 10, height - 10, x + 1000, 0)
     }
     for (let y = 20; y < height - 20; y += 20) {
-      ctx.fillStyle = coralColors[y % coralColors.length]
-      ctx.beginPath()
-      ctx.arc(10, y + 10, 8, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.beginPath()
-      ctx.arc(width - 10, y + 10, 8, 0, Math.PI * 2)
-      ctx.fill()
+      pushPreviewCoral(10, y + 10, y + 2000, Math.PI / 2)
+      pushPreviewCoral(width - 10, y + 10, y + 3000, -Math.PI / 2)
     }
+    drawReefBed(ctx, previewCoral)
+    previewCoral.forEach((piece) => drawCoralPiece(ctx, piece))
 
     // Draw "Trash: 0" counter
     ctx.fillStyle = "#F5A623"
@@ -2807,62 +2694,17 @@ function BlocklyEditor() {
       ctx.save()
       ctx.translate(x, y)
       ctx.rotate((rotation * Math.PI) / 180)
-
-      // Body
-      ctx.fillStyle = "#FFD700"
-      ctx.strokeStyle = "#E6B800"
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.ellipse(0, 0, 15, 10, 0, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.stroke()
-
-      // Periscope
-      ctx.fillStyle = "#E74C3C"
-      ctx.beginPath()
-      ctx.moveTo(0, -15)
-      ctx.lineTo(-4, -8)
-      ctx.lineTo(4, -8)
-      ctx.closePath()
-      ctx.fill()
-
-      // Eyes
-      ctx.fillStyle = "#FFF"
-      ctx.beginPath()
-      ctx.arc(-4, -2, 4, 0, Math.PI * 2)
-      ctx.arc(4, -2, 4, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = "#000"
-      ctx.beginPath()
-      ctx.arc(-3, -2, 2, 0, Math.PI * 2)
-      ctx.arc(5, -2, 2, 0, Math.PI * 2)
-      ctx.fill()
-
-      // Whiskers
-      ctx.strokeStyle = "#333"
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(-12, 0)
-      ctx.lineTo(-18, -4)
-      ctx.moveTo(-12, 2)
-      ctx.lineTo(-18, 5)
-      ctx.moveTo(12, 0)
-      ctx.lineTo(18, -4)
-      ctx.moveTo(12, 2)
-      ctx.lineTo(18, 5)
-      ctx.stroke()
-
+      drawSubmarine(ctx, { scale: 0.55, headlamp: false, bumpers: false })
       ctx.restore()
     }
 
     // Parse blocks and calculate path
-    const Blockly = window.Blockly
     const pathPoints: { x: number; y: number }[] = [{ x: currentX, y: currentY }]
 
     const allBlocks = workspace.getAllBlocks()
-    const startBlock = allBlocks.find((b: { type: string }) => b.type === "when_started")
+    const startBlocks = allBlocks.filter((b: { type: string }) => b.type === "when_started")
 
-    if (startBlock) {
+    for (const startBlock of startBlocks) {
       forEachProgramBlock(startBlock, (block) => {
         const blockType = block.type
 
@@ -3112,16 +2954,20 @@ function BlocklyEditor() {
     }))
   }, [gameState.showCelebration])
 
-  const rulerTicks = fieldRulerTicksMm()
   const canvasSize = getPlaygroundCanvasSize(playgroundState.isMaximized)
 
   return (
-    <div id="vex-app-root" className="h-screen flex flex-col bg-gray-100 overflow-hidden">
+    <div id="vex-app-root" className="h-screen flex flex-col overflow-hidden">
       {/* Header */}
-      <div id="vex-header" className="h-14 bg-gradient-to-r from-[#1976D2] to-[#2196F3] flex items-center justify-between px-4 text-white shadow-md">
+      <div id="vex-header" className="h-14 flex items-center justify-between px-4 text-white">
         <div id="vex-header-left" className="flex items-center gap-4">
-          <div id="vex-header-brand" className="bg-[#FF6B35] px-3 py-1.5 rounded font-bold text-xs">
-            VEXcode VR Codesign Prototype
+          <div
+            id="vex-header-brand"
+            className="flex h-9 w-9 shrink-0 items-center justify-center"
+            title="VEXcode VR Codesign Prototype"
+            aria-label="VEXcode VR Codesign Prototype"
+          >
+            <Bot className="h-5 w-5 text-white" strokeWidth={2.25} aria-hidden />
           </div>
           <div id="vex-header-menu" className="flex items-center gap-2 text-sm">
             <Button
@@ -3261,7 +3107,7 @@ function BlocklyEditor() {
       {/* Main Content */}
       <div id="vex-main" className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Category Icons */}
-        <div id="vex-category-sidebar" className="w-20 bg-[#D6E4F5] border-r border-gray-300 flex flex-col items-center py-4 gap-1 relative">
+        <div id="vex-category-sidebar" className="w-20 border-r flex flex-col items-center py-4 gap-1 relative">
           <Button
             id="vex-category-drivetrain"
             variant="ghost"
@@ -3387,7 +3233,11 @@ function BlocklyEditor() {
         <div id="vex-blockly-workspace" ref={blocklyWorkspaceContainerRef} className="flex-1 relative">
           {!blocklyLoaded && (
             <div id="vex-blockly-loading" className="absolute inset-0 flex items-center justify-center">
-              <p className="text-gray-600">Loading Blockly...</p>
+              {blocklyLoadError ? (
+                <p className="text-red-600">Could not load the block editor: {blocklyLoadError}</p>
+              ) : (
+                <p className="text-gray-600">Loading Blockly...</p>
+              )}
             </div>
           )}
           {/* Always keep blocklyDiv mounted, just hide with CSS */}
@@ -3410,25 +3260,28 @@ function BlocklyEditor() {
         </div>
       </div>
 
-      {/* Unity Agent floating window */}
-      {unityAgentState.isVisible && (
+      {/* Unity Agent floating window — stay mounted after first open so WebGL is not torn down. */}
+      {unityPlayerMounted && (
         <div
           id="vex-unity-agent-window"
           ref={unityAgentRef}
           onMouseDown={handleUnityAgentMouseDown}
           suppressHydrationWarning
-          className="fixed z-50 rounded-lg border-2 border-gray-600 bg-slate-900 shadow-2xl transition-all duration-200"
+          className="fixed z-50 bg-slate-900"
           style={{
             left: `${unityAgentState.x}px`,
             top: `${unityAgentState.y}px`,
             cursor: unityAgentState.isDragging ? "grabbing" : "auto",
             width: unityAgentState.isMaximized ? "640px" : "420px",
             height: "auto",
+            visibility: unityAgentState.isVisible ? "visible" : "hidden",
+            pointerEvents: unityAgentState.isVisible ? "auto" : "none",
           }}
+          aria-hidden={!unityAgentState.isVisible}
         >
           <div
             id="vex-unity-agent-header"
-            className="unity-agent-header flex cursor-grab items-center justify-between rounded-t-lg bg-gradient-to-r from-slate-700 to-slate-800 px-4 py-2 text-white active:cursor-grabbing"
+            className="unity-agent-header flex cursor-grab items-center justify-between px-4 py-2 text-white active:cursor-grabbing"
           >
             <div id="vex-unity-agent-title-row" className="flex items-center gap-2">
               <GripVertical className="h-4 w-4 text-white/70" />
@@ -3472,11 +3325,17 @@ function BlocklyEditor() {
               </Button>
             </div>
           </div>
-          {!unityAgentState.isMinimized && (
+          <div
+            id="vex-unity-agent-window-body"
+            className="overflow-hidden rounded-b-lg"
+            style={{ height: unityAgentState.isMinimized ? 0 : unityAgentState.isMaximized ? 780 : 540 }}
+          >
             <div
-              id="vex-unity-agent-window-body"
-              className="overflow-hidden rounded-b-lg"
-              style={{ height: unityAgentState.isMaximized ? 780 : 540 }}
+              id="vex-unity-agent-window-body-inner"
+              style={{
+                height: unityAgentState.isMaximized ? 780 : 540,
+                width: "100%",
+              }}
             >
               <UnityAgentPanel
                 workspace={workspace}
@@ -3485,7 +3344,7 @@ function BlocklyEditor() {
                 isRunning={isRunning}
               />
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -3496,18 +3355,18 @@ function BlocklyEditor() {
           ref={playgroundRef}
           onMouseDown={handlePlaygroundMouseDown}
           suppressHydrationWarning
-          className="fixed bg-white rounded-lg shadow-2xl border-2 border-gray-300 z-50 transition-all duration-200"
+          className="fixed bg-white z-50 transition-all duration-200"
           style={{
             left: `${playgroundState.x}px`,
             top: `${playgroundState.y}px`,
             cursor: playgroundState.isDragging ? "grabbing" : "auto",
-            width: playgroundState.isMaximized ? "640px" : "440px",
+            width: playgroundState.isMaximized ? "616px" : "416px",
             height: "auto",
           }}
         >
           <div
             id="vex-playground-header"
-            className="playground-header bg-gradient-to-r from-[#4A90E2] to-[#357ABD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing"
+            className="playground-header text-white px-4 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
           >
             <div id="vex-playground-title-row" className="flex items-center gap-2">
               <GripVertical className="h-4 w-4 text-white/70" />
@@ -3517,15 +3376,18 @@ function BlocklyEditor() {
             </div>
             <div id="vex-playground-window-controls" className="flex items-center gap-1">
               <Button
+                id="vex-playground-hide"
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6 text-white hover:bg-white/20"
+                aria-label={playgroundState.isMinimized ? "Show playground" : "Hide playground"}
+                title={playgroundState.isMinimized ? "Show playground" : "Hide playground"}
                 onClick={(e) => {
                   e.stopPropagation()
                   handleMinimizePlayground()
                 }}
               >
-                {playgroundState.isMinimized ? <Maximize className="h-4 w-4" /> : <Minimize className="h-4 w-4" />}
+                {playgroundState.isMinimized ? <Square className="h-3.5 w-3.5" /> : <Minus className="h-4 w-4" />}
               </Button>
               <Button
                 variant="ghost"
@@ -3556,13 +3418,57 @@ function BlocklyEditor() {
               {consoleLines.length > 0 && (
                 <div
                   id="vex-playground-console"
-                  className="absolute top-2 left-2 right-12 z-10 max-h-20 overflow-y-auto rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] text-green-300 shadow-md"
+                  className="absolute top-2 left-2 right-20 z-10 max-h-20 overflow-y-auto rounded-md bg-black/75 px-2 py-1 font-mono text-[10px] text-green-300 shadow-md"
                 >
                   {consoleLines.map((line, i) => (
-                    <div key={`${i}-${line}`}>{line || "\u00a0"}</div>
+                    <div key={i} style={{ color: line.color }}>
+                      {line.text || "\u00a0"}
+                    </div>
                   ))}
                 </div>
               )}
+
+              <div
+                id="vex-playground-field-toggles"
+                className="absolute top-2 right-2 z-20 flex items-center gap-1.5"
+              >
+                <button
+                  id="vex-playground-sensors-toggle"
+                  type="button"
+                  aria-pressed={showSensors}
+                  aria-label={showSensors ? "Hide robot sensors" : "Show robot sensors"}
+                  title={showSensors ? "Hide robot sensors" : "Show robot sensors"}
+                  className={`flex h-7 w-7 items-center justify-center rounded-md border shadow-sm backdrop-blur-sm transition-colors ${
+                    showSensors
+                      ? "border-sky-400/70 bg-sky-300/85 text-sky-950"
+                      : "border-white/50 bg-white/70 text-slate-600 hover:bg-white/90"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowSensors((on) => !on)
+                  }}
+                >
+                  <Gauge className="h-4 w-4" />
+                </button>
+                <button
+                  id="vex-playground-ruler-toggle"
+                  type="button"
+                  aria-pressed={showRuler}
+                  aria-label={showRuler ? "Hide field ruler" : "Show field ruler"}
+                  title={showRuler ? "Hide field ruler" : "Show field ruler"}
+                  className={`flex h-7 w-7 items-center justify-center rounded-md border shadow-sm backdrop-blur-sm transition-colors ${
+                    showRuler
+                      ? "border-amber-400/70 bg-amber-300/85 text-amber-950"
+                      : "border-white/50 bg-white/70 text-slate-600 hover:bg-white/90"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowRuler((on) => !on)
+                  }}
+                >
+                  <Ruler className="h-4 w-4" />
+                </button>
+              </div>
 
               <div id="vex-playground-canvas-row" className="flex">
                 <canvas
@@ -3571,34 +3477,11 @@ function BlocklyEditor() {
                   width={canvasSize.w}
                   height={canvasSize.h}
                 />
-                <div
-                  id="vex-playground-ruler-y"
-                  className="w-8 bg-gray-100 border-l border-gray-300 flex flex-col items-center justify-between py-1 text-[8px] text-gray-600"
-                  style={{ height: canvasSize.h }}
-                  aria-label="Y axis millimeters"
-                >
-                  {rulerTicks.map((mm) => (
-                    <span key={mm} className="transform -rotate-90 whitespace-nowrap">
-                      {mm}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div
-                id="vex-playground-ruler-x"
-                className="h-8 bg-gray-100 border-t border-gray-300 flex items-center justify-between px-2 text-[8px] text-gray-600"
-                style={{ width: canvasSize.w + 32 }}
-                aria-label="X axis millimeters"
-              >
-                {rulerTicks.map((mm) => (
-                  <span key={mm}>{mm}</span>
-                ))}
               </div>
 
               <div
                 id="vex-playground-status-bar"
-                className="border-t-2 border-[#357ABD]/20 bg-gradient-to-b from-slate-50 to-slate-100 px-3 py-3 space-y-2.5"
-                style={{ width: canvasSize.w + 32 }}
+                className="px-3 py-3 space-y-2.5"
               >
                 <div className="flex flex-wrap items-end gap-4">
                   <div
@@ -3632,27 +3515,29 @@ function BlocklyEditor() {
                     </div>
                   </div>
                 </div>
-                <div
-                  id="vex-playground-sensors"
-                  className="rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-[11px] font-mono text-slate-700 space-y-1"
-                >
-                  <div className="font-sans text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                    Robot sensors
+                {showSensors && (
+                  <div
+                    id="vex-playground-sensors"
+                    className="rounded-md border border-slate-200 bg-white/80 px-3 py-2 text-[11px] font-mono text-slate-700 space-y-1"
+                  >
+                    <div className="font-sans text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                      Robot sensors
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Location (mm)</span> X {liveSensors.field.x}, Y {liveSensors.field.y}
+                      <span className="text-slate-400 mx-1">·</span>
+                      <span className="text-slate-500">Rotation</span> {liveSensors.rotation}°
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Front distance</span> {liveSensors.frontDistanceMm} mm
+                      {liveSensors.frontObjectDetected && <span className="text-cyan-700"> · object detected</span>}
+                      {liveSensors.eyeNear && <span className="text-cyan-700"> · eye near trash</span>}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Field {CORAL_REEF_FIELD_MM}×{CORAL_REEF_FIELD_MM} mm · Start position (0, -800)
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-slate-500">Location (mm)</span> X {liveSensors.field.x}, Y {liveSensors.field.y}
-                    <span className="text-slate-400 mx-1">·</span>
-                    <span className="text-slate-500">Rotation</span> {liveSensors.rotation}°
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Front distance</span> {liveSensors.frontDistanceMm} mm
-                    {liveSensors.frontObjectDetected && <span className="text-cyan-700"> · object detected</span>}
-                    {liveSensors.eyeNear && <span className="text-cyan-700"> · eye near trash</span>}
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    Field {CORAL_REEF_FIELD_MM}×{CORAL_REEF_FIELD_MM} mm · Start position (0, -800)
-                  </div>
-                </div>
+                )}
               </div>
 
               {gameState.isGameOver && (
@@ -3772,7 +3657,7 @@ function BlocklyEditor() {
           ref={aiAssistantRef}
           onMouseDown={handleAIAssistantMouseDown}
           suppressHydrationWarning
-          className="fixed bg-white rounded-lg shadow-2xl border-2 border-gray-300 z-50 transition-all duration-200"
+          className="fixed bg-white z-50 transition-all duration-200"
           style={{
             left: `${aiAssistantState.x}px`,
             top: `${aiAssistantState.y}px`,
@@ -3782,7 +3667,7 @@ function BlocklyEditor() {
         >
           <div
             id="vex-ai-assistant-header"
-            className="ai-assistant-header bg-gradient-to-r from-[#9B59B6] to-[#8E44AD] text-white px-4 py-2 rounded-t-lg flex items-center justify-between cursor-grab active:cursor-grabbing"
+            className="ai-assistant-header text-white px-4 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
           >
             <div className="flex items-center gap-2">
               <GripVertical className="h-4 w-4 text-white/70" />
@@ -4120,7 +4005,7 @@ function BlocklyEditor() {
       {robotConfigState.isVisible && (
         <div
           id="vex-robot-config-window"
-          className="fixed bg-white border-2 border-gray-300 shadow-xl z-50"
+          className="fixed bg-white z-50"
           style={{
             left: `${robotConfigState.x}px`,
             top: `${robotConfigState.y}px`,
@@ -4131,7 +4016,7 @@ function BlocklyEditor() {
         >
           <div
             id="vex-robot-config-header"
-            className="robot-config-header bg-gradient-to-r from-blue-600 to-blue-500 text-white p-3 rounded-t-lg flex items-center justify-between cursor-move"
+            className="robot-config-header text-white p-3 flex items-center justify-between cursor-move"
           >
             <div className="flex items-center gap-2">
               <GripVertical className="h-5 w-5" />
@@ -4474,8 +4359,8 @@ function BlocklyEditor() {
 }
 
 // Block definition functions - pass setAnglePickerState to drivetrain blocks
-function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDistancePickerState: any) {
-  // Added setDistancePickerState
+/** Picker UI is opened by the workspace pointer listener, not by field validators. */
+function defineDrivetrainBlocks(Blockly: any) {
   Blockly.Blocks["drive_simple"] = {
     init: function () {
       this.appendDummyInput()
@@ -4518,21 +4403,12 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
               ["mm", "mm"],
               ["inches", "inches"],
             ],
-            (newValue) => {
-              // When unit changes, show alert and highlight distance field
+            // Nudge the learner to re-check the distance, without a modal that
+            // interrupts the drag and swallows the field commit.
+            (newValue: string) => {
               if (newValue !== this.getFieldValue("UNIT")) {
-                alert("⚠️ Units changed! Please check your distance value.")
-
-                const distanceFieldElement = this.getField("DISTANCE") as { fieldGroup_?: { querySelector: (s: string) => Element | null } }
-                if (distanceFieldElement?.fieldGroup_) {
-                  const rect = distanceFieldElement.fieldGroup_.querySelector("rect")
-                  if (rect) {
-                    rect.setAttribute("fill", "#ff1493")
-                    setTimeout(() => {
-                      rect.setAttribute("fill", "#ffffff")
-                    }, 3000)
-                  }
-                }
+                this.setWarningText("Units changed — check your distance value.")
+                setTimeout(() => this.setWarningText(null), 4000)
               }
               return newValue
             },
@@ -4588,12 +4464,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
           "DIRECTION",
         )
         .appendField("for")
-        .appendField(
-          new Blockly.FieldNumber(90, 0, 360, null, (newValue: number) => {
-            // Removed direct call to setAnglePickerState, will be handled by click listener
-          }),
-          "DEGREES",
-        )
+        .appendField(new Blockly.FieldNumber(90, 0, 360, 1), "DEGREES")
         .appendField("degrees")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
@@ -4612,12 +4483,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
     init: function () {
       this.appendDummyInput()
         .appendField("turn to heading")
-        .appendField(
-          new Blockly.FieldNumber(90, 0, 359, 1, (newValue: string) => {
-            // Removed direct call to setAnglePickerState, will be handled by click listener
-          }),
-          "HEADING",
-        )
+        .appendField(new Blockly.FieldNumber(90, 0, 359, 1), "HEADING")
         .appendField("degrees")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
@@ -4635,12 +4501,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
     init: function () {
       this.appendDummyInput()
         .appendField("turn to rotation")
-        .appendField(
-          new Blockly.FieldNumber(90, 0, 360, null, (newValue: number) => {
-            // Removed direct call to setAnglePickerState, will be handled by click listener
-          }),
-          "ROTATION",
-        )
+        .appendField(new Blockly.FieldNumber(90, 0, 360, 1), "ROTATION")
         .appendField("degrees")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
@@ -4706,12 +4567,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
     init: function () {
       this.appendDummyInput()
         .appendField("set drive heading to")
-        .appendField(
-          new Blockly.FieldNumber(0, 0, 359, 1, (newValue: string) => {
-            // Removed direct call to setAnglePickerState, will be handled by click listener
-          }),
-          "HEADING",
-        )
+        .appendField(new Blockly.FieldNumber(0, 0, 359, 1), "HEADING")
         .appendField("degrees")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
@@ -4729,12 +4585,7 @@ function defineDrivetrainBlocks(Blockly: any, setAnglePickerState: any, setDista
     init: function () {
       this.appendDummyInput()
         .appendField("set drive rotation to")
-        .appendField(
-          new Blockly.FieldNumber(0, 0, 360, 1, (newValue: string) => {
-            // Removed direct call to setAnglePickerState, will be handled by click listener
-          }),
-          "ROTATION",
-        )
+        .appendField(new Blockly.FieldNumber(0, 0, 360, 1), "ROTATION")
         .appendField("degrees")
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
@@ -4919,16 +4770,15 @@ function defineSensingBlocks(Blockly: any) {
           ]),
           "STATE",
         )
-      this.setNextStatement(true, null)
+      // A hat block with its own mouth: blocks used to snap *below* it, which
+      // put them in a stack that the program generator silently discarded.
+      this.appendStatementInput("DO").setCheck(null)
       this.setColour("#F4D03F")
-      this.setTooltip("When bumper is pressed or released")
+      this.setTooltip("Runs the blocks inside whenever the bumper changes state")
     },
   }
-  Blockly.JavaScript.forBlock["when_bumper"] = (block: any) => {
-    const bumper = block.getFieldValue("BUMPER")
-    const state = block.getFieldValue("STATE")
-    return `// Event: when ${bumper} bumper ${state}\n`
-  }
+  // Handled as an event stack by the runner, not inlined into the main program.
+  Blockly.JavaScript.forBlock["when_bumper"] = () => ""
 
   Blockly.Blocks["distance_found_object"] = {
     init: function () {
@@ -5140,10 +4990,11 @@ function defineConsoleBlocks(Blockly: any) {
       this.appendDummyInput()
         .appendField("set print precision to")
         .appendField(
+          // "1" first so the block's default matches the runtime default.
           new Blockly.FieldDropdown([
+            ["1", "1"],
             ["0.1", "0.1"],
             ["0.01", "0.01"],
-            ["1", "1"],
           ]),
           "PRECISION",
         )
@@ -5183,9 +5034,6 @@ function defineConsoleBlocks(Blockly: any) {
 
 // Logic Blocks
 function defineLogicBlocks(Blockly: any) {
-  /** Yield in tight loops so awaits inside the body can run. */
-  const LOOP_YIELD = "await robot.wait(0.01);\n"
-
   Blockly.Blocks["wait_seconds"] = {
     init: function () {
       this.appendDummyInput()
@@ -5243,7 +5091,7 @@ function defineLogicBlocks(Blockly: any) {
   }
   Blockly.JavaScript.forBlock["forever_loop"] = (block: any) => {
     const statements = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while(true) {\n${statements}await robot.wait(0.01);\n}\n`
+    return `while(true) {\n${statements}${LOOP_YIELD}}\n`
   }
 
   Blockly.Blocks["repeat_until"] = {
@@ -5341,7 +5189,18 @@ function defineLogicBlocks(Blockly: any) {
       this.setColour("#F5A623")
     },
   }
-  Blockly.JavaScript.forBlock["break_block"] = () => `break;\n`
+  Blockly.JavaScript.forBlock["break_block"] = (block: any) => {
+    // A bare `break` outside a loop is a syntax error, which would stop the
+    // whole program from running rather than just this block.
+    for (let parent = block.getSurroundParent?.(); parent; parent = parent.getSurroundParent?.()) {
+      if (LOOP_BLOCK_TYPES.has(parent.type)) {
+        block.setWarningText?.(null)
+        return "break;\n"
+      }
+    }
+    block.setWarningText?.("Put break inside a loop block.")
+    return "// break ignored: not inside a loop\n"
+  }
 
   Blockly.Blocks["stop_project"] = {
     init: function () {
@@ -5380,7 +5239,10 @@ function defineOperatorsBlocks(Blockly: any) {
   Blockly.JavaScript.forBlock["math_number"] = (block: any) => {
     const num = Number(block.getFieldValue("NUM"))
     const safe = Number.isFinite(num) ? num : 0
-    return [String(safe), Blockly.JavaScript.ORDER_ATOMIC]
+    // A negative literal binds looser than atomic, otherwise `a - -5` can be
+    // emitted without the parentheses it needs.
+    const order = safe < 0 ? Blockly.JavaScript.ORDER_UNARY_NEGATION : Blockly.JavaScript.ORDER_ATOMIC
+    return [String(safe), order]
   }
 
   // Math Arithmetic
@@ -5556,9 +5418,12 @@ function defineOperatorsBlocks(Blockly: any) {
     },
   }
   Blockly.JavaScript.forBlock["random_int"] = (block: any) => {
-    const from = block.getFieldValue("FROM") || "1"
-    const to = block.getFieldValue("TO") || "10"
-    return [`(Math.floor(Math.random() * (${to} - ${from} + 1)) + ${from})`, Blockly.JavaScript.ORDER_ATOMIC]
+    // `|| fallback` used to turn a legitimate 0 bound into 1.
+    const from = Number(block.getFieldValue("FROM"))
+    const to = Number(block.getFieldValue("TO"))
+    const lo = Math.min(Number.isFinite(from) ? from : 0, Number.isFinite(to) ? to : 0)
+    const hi = Math.max(Number.isFinite(from) ? from : 0, Number.isFinite(to) ? to : 0)
+    return [`(Math.floor(Math.random() * (${hi} - ${lo} + 1)) + ${lo})`, Blockly.JavaScript.ORDER_ATOMIC]
   }
 
   // Round Number
@@ -5756,13 +5621,33 @@ function defineSwitchBlocks(Blockly: any) {
       this.appendDummyInput().appendField("when started")
       this.appendStatementInput("DO").setCheck(null)
       this.setColour("#FFB300")
-      this.setTooltip("Runs when the program starts")
+      this.setTooltip("Runs when the program starts. Duplicate for multi-threaded programs.")
       this.setHelpUrl("")
+      this.setDeletable(true)
+      this.setMovable(true)
     },
   }
 
   registerBlockGenerator(Blockly, "when_started", (block: any) => {
     return Blockly.JavaScript.statementToCode(block, "DO")
+  })
+
+  // Editable Python snippet produced by “Convert Block to Switch Block”.
+  Blockly.Blocks["switch_code"] = {
+    init: function () {
+      this.appendDummyInput().appendField("switch")
+      this.appendDummyInput().appendField(new Blockly.FieldTextInput("# python"), "CODE")
+      this.setPreviousStatement(true, null)
+      this.setNextStatement(true, null)
+      this.setColour("#7CB342")
+      this.setTooltip("Switch (Python) block — shown in the Python view; not executed by START")
+      this.setHelpUrl("")
+    },
+  }
+
+  registerBlockGenerator(Blockly, "switch_code", (block: any) => {
+    const code = block.getFieldValue("CODE") || ""
+    return `// switch: ${String(code).replace(/\n/g, " ")}\n`
   })
 
   // Forever loop
@@ -5780,7 +5665,7 @@ function defineSwitchBlocks(Blockly: any) {
 
   registerBlockGenerator(Blockly, "forever", (block: any) => {
     const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
-    return `while (true) {\n${statements_do}await robot.wait(0.01);\n}\n`
+    return `while (true) {\n${statements_do}${LOOP_YIELD}}\n`
   })
 
   // Repeat N times
@@ -5801,7 +5686,7 @@ function defineSwitchBlocks(Blockly: any) {
   registerBlockGenerator(Blockly, "repeat", (block: any) => {
     const value_times = Blockly.JavaScript.valueToCode(block, "TIMES", Blockly.JavaScript.ORDER_ATOMIC) || "0"
     const statements_do = Blockly.JavaScript.statementToCode(block, "DO")
-    return `for (let count = 0; count < ${value_times}; count++) {\n${statements_do}}\n`
+    return `for (let count = 0; count < ${value_times}; count++) {\n${statements_do}${LOOP_YIELD}}\n`
   })
 
   // Wait

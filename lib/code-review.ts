@@ -39,6 +39,7 @@ export interface ProgramAnalysis {
 
 type BlocklyBlock = {
   type: string
+  isEnabled?: () => boolean
   getFieldValue: (name: string) => string
   getInputTargetBlock: (name: string) => unknown
   getNextBlock: () => unknown
@@ -88,39 +89,43 @@ export function analyzeBlocklyWorkspace(workspace: BlocklyWorkspace | null): Pro
 
   if (!workspace) return empty
 
-  const whenStarted = workspace.getAllBlocks(false).find((b) => b.type === "when_started")
-  if (!whenStarted) return empty
+  const whenStartedHats = workspace
+    .getAllBlocks(false)
+    .filter((b) => b.type === "when_started" && (typeof b.isEnabled !== "function" || b.isEnabled()))
+  if (whenStartedHats.length === 0) return empty
 
   const analysis: ProgramAnalysis = {
     ...empty,
     hasWhenStarted: true,
   }
 
-  forEachProgramBlock(whenStarted, (block) => {
-    analysis.blockCount++
-    analysis.hasProgramBody = true
+  for (const whenStarted of whenStartedHats) {
+    forEachProgramBlock(whenStarted, (block) => {
+      analysis.blockCount++
+      analysis.hasProgramBody = true
 
-    if (DRIVE_TYPES.has(block.type)) {
-      analysis.hasDrive = true
-      analysis.driveCount++
-    }
-    if (TURN_TYPES.has(block.type)) analysis.hasTurn = true
-    if (LOOP_TYPES.has(block.type)) analysis.hasLoop = true
-    if (IF_TYPES.has(block.type)) analysis.hasIfThen = true
-    if (DISTANCE_TYPES.has(block.type)) analysis.usesDistanceSensor = true
-    if (EYE_TYPES.has(block.type)) analysis.usesEyeSensor = true
-    if (BUMPER_TYPES.has(block.type)) analysis.usesBumper = true
-    if (POSITION_TYPES.has(block.type)) analysis.usesPosition = true
+      if (DRIVE_TYPES.has(block.type)) {
+        analysis.hasDrive = true
+        analysis.driveCount++
+      }
+      if (TURN_TYPES.has(block.type)) analysis.hasTurn = true
+      if (LOOP_TYPES.has(block.type)) analysis.hasLoop = true
+      if (IF_TYPES.has(block.type)) analysis.hasIfThen = true
+      if (DISTANCE_TYPES.has(block.type)) analysis.usesDistanceSensor = true
+      if (EYE_TYPES.has(block.type)) analysis.usesEyeSensor = true
+      if (BUMPER_TYPES.has(block.type)) analysis.usesBumper = true
+      if (POSITION_TYPES.has(block.type)) analysis.usesPosition = true
 
-    const primaryDo = CONTROL_DO_INPUTS[block.type]
-    if (
-      primaryDo &&
-      !block.getInputTargetBlock(primaryDo) &&
-      block.getNextBlock()
-    ) {
-      analysis.hasMisplacedControlBody = true
-    }
-  })
+      const primaryDo = CONTROL_DO_INPUTS[block.type]
+      if (
+        primaryDo &&
+        !block.getInputTargetBlock(primaryDo) &&
+        block.getNextBlock()
+      ) {
+        analysis.hasMisplacedControlBody = true
+      }
+    })
+  }
 
   analysis.onlyForeverNoSensing =
     analysis.hasLoop &&

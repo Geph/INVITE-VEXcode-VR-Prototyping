@@ -27,7 +27,7 @@ type BlocklyWorkspace = Parameters<typeof analyzeBlocklyWorkspace>[0] & {
 
 interface UnityAgentPanelProps {
   workspace: BlocklyWorkspace | null
-  consoleLines: string[]
+  consoleLines: { text: string; color: string }[]
   runError: string | null
   isRunning: boolean
 }
@@ -117,7 +117,9 @@ export default function UnityAgentPanel({
                 </span>
               )}
               {consoleLines.map((line, i) => (
-                <div key={`${i}-${line}`}>{line || "\u00a0"}</div>
+                <div key={i} style={{ color: line.color }}>
+                  {line.text || "\u00a0"}
+                </div>
               ))}
             </div>
           </div>

@@ -15,6 +15,16 @@ export const TRASH_HIT_RADIUS_PX = 20
 /** Front eye offset from robot center (px). */
 export const EYE_FORWARD_OFFSET_PX = 22
 
+/**
+ * Bumper contact points sit on the front corners of the hull. The reach has to
+ * exceed the hull's own coral-collision envelope (`robotRadius` 22 + piece
+ * radius 12–20), otherwise the mission ends on impact before the bumper can
+ * ever read as pressed.
+ */
+export const BUMPER_FORWARD_PX = 20
+export const BUMPER_LATERAL_PX = 12
+export const BUMPER_CONTACT_MARGIN_PX = 14
+
 /** ~13.33 playground pixels per 100 mm (7.5 mm per pixel). */
 export const MM_PER_PIXEL = 7.5
 export const PIXELS_PER_MM = 1 / MM_PER_PIXEL
@@ -114,6 +124,12 @@ export interface CoralPiece {
   y: number
   radius: number
   color: string
+  /** Rendering only. Colony shape; omitted pieces pick one from `seed`. */
+  kind?: "brain" | "branch" | "fan" | "polyps" | "tube"
+  /** Rendering only. Rotation (radians) that points the colony away from its wall. */
+  angle?: number
+  /** Rendering only. Drives the deterministic per-colony detail. */
+  seed?: number
 }
 
 export interface TrashSim {
@@ -260,16 +276,30 @@ export function forEachProgramBlock(
   }
 }
 
-/** JavaScript for the when_started stack only (ignores other top-level stacks). */
+/** JavaScript for every when_started stack, run as concurrent threads. */
 export function generateWhenStartedJavaScript(
-  workspace: { getAllBlocks: (ordered: boolean) => { type: string }[] } | null,
+  workspace: { getAllBlocks: (ordered: boolean) => { type: string; isEnabled?: () => boolean }[] } | null,
   js: { blockToCode: (block: { type: string }) => string | [string, number] },
 ): string {
   if (!workspace) return ""
-  const whenStarted = workspace.getAllBlocks(false).find((b) => b.type === "when_started")
-  if (!whenStarted) return ""
-  const result = js.blockToCode(whenStarted)
-  return Array.isArray(result) ? result[0] : result
+  const hats = workspace
+    .getAllBlocks(false)
+    .filter((b) => b.type === "when_started" && (typeof b.isEnabled !== "function" || b.isEnabled()))
+
+  const bodies = hats
+    .map((hat) => {
+      const result = js.blockToCode(hat)
+      return ((Array.isArray(result) ? result[0] : result) || "").trimEnd()
+    })
+    .filter((body) => body.trim().length > 0)
+
+  if (bodies.length === 0) return ""
+  if (bodies.length === 1) return `${bodies[0]}\n`
+
+  const threads = bodies
+    .map((body, index) => `  // thread ${index + 1}\n  (async () => {\n${body}\n  })()`)
+    .join(",\n")
+  return `await Promise.all([\n${threads}\n]);\n`
 }
 
 export function registerBlockGenerator(Blockly: { JavaScript: { forBlock: Record<string, unknown> } }, type: string, fn: (block: unknown) => string | [string, number]) {
@@ -349,8 +379,83 @@ export function getDefaultRobotPixelPosition(isMaximized: boolean): { x: number;
   return clampRobotPosition(pos.x, pos.y, w, h)
 }
 
+/** Keep a canvas point at the same field (mm) location after a playground size change. */
+export function remapPixelAcrossCanvas(
+  x: number,
+  y: number,
+  fromW: number,
+  fromH: number,
+  toW: number,
+  toH: number,
+): { x: number; y: number } {
+  const mm = pixelToFieldMm(x, y, fromW, fromH)
+  return fieldMmToPixel(mm.x, mm.y, toW, toH)
+}
+
 export function fieldRulerTicksMm(): number[] {
   return [-1000, -500, 0, 500, 1000]
+}
+
+/**
+ * Subtle yellow millimetre overlay along the inner field edges.
+ * Drawn last so ticks stay readable over coral, without covering the centre.
+ */
+export function drawFieldRulerOverlay(
+  ctx: CanvasRenderingContext2D,
+  canvasW: number,
+  canvasH: number,
+): void {
+  const inset = 28
+  const left = pixelToFieldMm(inset, 0, canvasW, canvasH).x
+  const right = pixelToFieldMm(canvasW - inset, 0, canvasW, canvasH).x
+  const top = pixelToFieldMm(0, inset, canvasW, canvasH).y
+  const bottom = pixelToFieldMm(0, canvasH - inset, canvasW, canvasH).y
+  const minorStep = 100
+  const startX = Math.ceil(left / minorStep) * minorStep
+  const startY = Math.ceil(top / minorStep) * minorStep
+
+  ctx.save()
+  ctx.lineCap = "round"
+  ctx.font = "bold 9px ui-sans-serif, system-ui, sans-serif"
+  ctx.textBaseline = "middle"
+
+  ctx.fillStyle = "rgba(255, 214, 64, 0.16)"
+  ctx.fillRect(inset, canvasH - inset - 1, canvasW - inset * 2, 14)
+  ctx.fillRect(canvasW - inset - 1, inset, 14, canvasH - inset * 2)
+
+  for (let mm = startX; mm <= right; mm += minorStep) {
+    const { x } = fieldMmToPixel(mm, 0, canvasW, canvasH)
+    const major = mm % 500 === 0
+    ctx.strokeStyle = major ? "rgba(212, 160, 12, 0.72)" : "rgba(212, 160, 12, 0.38)"
+    ctx.lineWidth = major ? 1.4 : 0.8
+    ctx.beginPath()
+    ctx.moveTo(x, canvasH - inset - 1)
+    ctx.lineTo(x, canvasH - inset - (major ? 11 : 6))
+    ctx.stroke()
+    if (major) {
+      ctx.fillStyle = "rgba(110, 72, 8, 0.72)"
+      ctx.textAlign = "center"
+      ctx.fillText(String(mm), x, canvasH - inset - 16)
+    }
+  }
+
+  for (let mm = startY; mm <= bottom; mm += minorStep) {
+    const { y } = fieldMmToPixel(0, mm, canvasW, canvasH)
+    const major = mm % 500 === 0
+    ctx.strokeStyle = major ? "rgba(212, 160, 12, 0.72)" : "rgba(212, 160, 12, 0.38)"
+    ctx.lineWidth = major ? 1.4 : 0.8
+    ctx.beginPath()
+    ctx.moveTo(canvasW - inset - 1, y)
+    ctx.lineTo(canvasW - inset - (major ? 11 : 6), y)
+    ctx.stroke()
+    if (major) {
+      ctx.fillStyle = "rgba(110, 72, 8, 0.72)"
+      ctx.textAlign = "right"
+      ctx.fillText(String(mm), canvasW - inset - 14, y)
+    }
+  }
+
+  ctx.restore()
 }
 
 /** Place trash away from coral borders and the default spawn point. */
