@@ -136,10 +136,10 @@ NEXT_PUBLIC_BASE_PATH=/INVITE-VEXcode-VR-Prototyping npm run build
 Three GitHub Actions workflows drive the repository:
 
 - **`ci.yml`** runs lint, typecheck, the geometry checks, and a full static
-  build on every push to `main`/`SV` and on every pull request. A separate
+  build on every push to `main`/`SV`/`Mars-Rover` and on every pull request. A separate
   non-blocking job reports `npm audit` findings for runtime dependencies.
 - **`deploy-pages.yml`** builds with the correct `basePath` and publishes `out/`
-  to GitHub Pages on pushes to `main` and `SV`.
+  to GitHub Pages on pushes to `main`, `SV`, and `Mars-Rover`.
 - **`release.yml`** is a manual workflow that bumps the version with
   `npm version`, pushes the tag, and opens a GitHub release.
 
