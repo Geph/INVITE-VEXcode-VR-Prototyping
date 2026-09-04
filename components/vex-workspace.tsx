@@ -13,7 +13,6 @@ import {
   driveDurationMs,
   fieldMmToPixel,
   drawFieldRulerOverlay,
-  forEachProgramBlock,
   generateWhenStartedJavaScript,
   getPlaygroundCanvasSize,
   remapPixelAcrossCanvas,
@@ -28,7 +27,6 @@ import {
   turnDurationMs,
   type CoralPiece,
 } from "@/lib/robot-runtime"
-import { isTypingInFormField } from "@/lib/blockly-widget-form"
 import {
   AngleWheelPicker,
   CompassPicker,
@@ -37,14 +35,11 @@ import {
 } from "@/blocks/fields"
 import { installAllBlocks } from "@/blocks/registry"
 import { flyoutContents } from "@/blocks/toolbox"
+import { AIAssistant, type AIAssistantHandle, type SurveyStep } from "@/components/ai-assistant"
+import { PlaygroundCanvas } from "@/components/playground/PlaygroundCanvas"
+import { PlaygroundWindow } from "@/components/playground/PlaygroundWindow"
 import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/BlocklyEditor"
-import {
-  CORAL_COLORS,
-  CORAL_KINDS,
-  drawCoralPiece,
-  drawReefBed,
-  drawSubmarine,
-} from "@/playgrounds/ocean-reef/art"
+import { drawSubmarine } from "@/playgrounds/ocean-reef/art"
 import {
   DEFAULT_PLAYGROUND_ID,
   get as getPlayground,
@@ -81,24 +76,12 @@ import {
   Eye,
   RotateCcw,
   HelpCircle,
-  Lightbulb,
   Wrench,
-  GitCompare,
-  Heart,
-  Users,
   Zap,
-  Search,
   StopCircle,
-  ArrowLeftRight,
   RefreshCw,
   Gauge,
   Target,
-  FileDiff,
-  Frown,
-  Sparkles,
-  PartyPopper,
-  Share2,
-  ArrowLeft,
   Settings,
   Ruler,
   Minus,
@@ -239,19 +222,6 @@ interface RobotConfigState {
   isVisible: boolean
   isMinimized: boolean
   isMaximized: boolean
-}
-
-// Draggable AI Assistant state
-interface AIAssistantState {
-  x: number
-  y: number
-  isDragging: boolean
-  dragStartX: number
-  dragStartY: number
-  isVisible: boolean
-  isMinimized: boolean
-  isMaximized: boolean
-  surveyStep: "main" | "strategy" | "predict" | "fix" | "compare" | "feel" | "partner" | "strategy-examples"
 }
 
 interface TrashItem {
@@ -440,8 +410,7 @@ function PlaygroundPickerDialog({
 function VexWorkspace() {
   const blocklyWorkspaceContainerRef = useRef<HTMLDivElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
-  const aiAssistantRef = useRef<HTMLDivElement>(null)
-  const predictCanvasRef = useRef<HTMLCanvasElement>(null)
+  const aiAssistantRef = useRef<AIAssistantHandle>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [workspace, setWorkspace] = useState<any>(null)
   const [blocklyLoaded, setBlocklyLoaded] = useState(false)
@@ -449,7 +418,7 @@ function VexWorkspace() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
   const [isRunning, setIsRunning] = useState<boolean>(false)
   const animationRef = useRef<number | null>(null)
-  const [aiStep, setAiStep] = useState<AIAssistantState["surveyStep"]>("main")
+  const [aiStep, setAiStep] = useState<SurveyStep>("main")
 
   const initialRobotPos = { x: START_POSE.xMm, y: START_POSE.yMm }
   const robotStateRef = useRef<{ x: number; y: number; rotation: number }>({
@@ -525,9 +494,7 @@ function VexWorkspace() {
   useEffect(() => {
     setIsMounted(true)
     const playgroundX = Math.max(16, window.innerWidth - 520)
-    const aiX = Math.max(16, window.innerWidth - 420)
     setPlaygroundState((prev) => ({ ...prev, x: playgroundX }))
-    setAiAssistantState((prev) => ({ ...prev, x: aiX }))
     setRobotConfigState((prev) => ({ ...prev, x: Math.max(16, window.innerWidth / 2 - 200) }))
     setPlaygroundId(resolvePlaygroundId(new URLSearchParams(window.location.search).get("playground")))
   }, [])
@@ -608,18 +575,6 @@ function VexWorkspace() {
       document.removeEventListener("keydown", onKeyDown)
     }
   }, [fileMenuOpen])
-
-  const [aiAssistantState, setAiAssistantState] = useState<AIAssistantState>({
-    x: 400,
-    y: 200,
-    isDragging: false,
-    dragStartX: 0,
-    dragStartY: 0,
-    isVisible: false,
-    isMinimized: false,
-    isMaximized: true,
-    surveyStep: "main",
-  })
 
   const [anglePickerState, setAnglePickerState] = useState<{
     isOpen: boolean
@@ -1727,237 +1682,8 @@ function VexWorkspace() {
   }
 
   const handleOpenAIAssistant = () => {
-    setAiAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
-    setAiStep("main") // Reset AI assistant step when opened
+    aiAssistantRef.current?.open()
   }
-
-  const handleCloseAIAssistant = () => {
-    setAiAssistantState((prev) => ({ ...prev, isVisible: false }))
-    setAiStep("main") // Reset AI assistant step when closed
-  }
-
-  const handleMinimizeAIAssistant = () => {
-    setAiAssistantState((prev) => ({ ...prev, isMinimized: !prev.isMinimized }))
-  }
-
-  const handleMaximizeAIAssistant = () => {
-    setAiAssistantState((prev) => ({ ...prev, isMaximized: !prev.isMaximized }))
-  }
-
-  const handleAIAssistantMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("button")) return
-    if (!(e.target as HTMLElement).closest(".ai-assistant-header")) return
-
-    setAiAssistantState((prev) => ({
-      ...prev,
-      isDragging: true,
-      dragStartX: e.clientX - prev.x,
-      dragStartY: e.clientY - prev.y,
-    }))
-  }
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (aiAssistantState.isDragging) {
-        setAiAssistantState((prev) => ({
-          ...prev,
-          x: e.clientX - prev.dragStartX,
-          y: e.clientY - prev.dragStartY,
-        }))
-      }
-    }
-
-    const handleMouseUp = () => {
-      setAiAssistantState((prev) => ({ ...prev, isDragging: false }))
-    }
-
-    if (aiAssistantState.isDragging) {
-      document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleMouseUp)
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-    }
-  }, [aiAssistantState.isDragging])
-
-  // Function to draw the prediction on the predict canvas
-  const drawPrediction = useCallback(() => {
-    const canvas = predictCanvasRef.current
-    if (!canvas || !workspace || !window.Blockly) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    const width = 300
-    const height = 300
-    const scale = 0.5 // Scale down for preview
-
-    // Draw ocean floor background (same as playground)
-    const gradient = ctx.createLinearGradient(0, 0, 0, height)
-    gradient.addColorStop(0, "#f4d6a2")
-    gradient.addColorStop(0.5, "#e8c18e")
-    gradient.addColorStop(1, "#d4a76a")
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, width, height)
-
-    // Draw coral border with the same artwork as the playground, at preview size.
-    const previewCoral: CoralPiece[] = []
-    const pushPreviewCoral = (x: number, y: number, seed: number, angle: number) => {
-      previewCoral.push({
-        x,
-        y,
-        radius: 8 + seededRandom(seed) * 4,
-        color: CORAL_COLORS[Math.floor(seededRandom(seed + 1) * CORAL_COLORS.length)],
-        kind: CORAL_KINDS[Math.floor(seededRandom(seed + 2) * CORAL_KINDS.length)],
-        angle,
-        seed,
-      })
-    }
-    for (let x = 0; x < width; x += 20) {
-      pushPreviewCoral(x + 10, 10, x, Math.PI)
-      pushPreviewCoral(x + 10, height - 10, x + 1000, 0)
-    }
-    for (let y = 20; y < height - 20; y += 20) {
-      pushPreviewCoral(10, y + 10, y + 2000, Math.PI / 2)
-      pushPreviewCoral(width - 10, y + 10, y + 3000, -Math.PI / 2)
-    }
-    drawReefBed(ctx, previewCoral)
-    previewCoral.forEach((piece) => drawCoralPiece(ctx, piece))
-
-    // Draw "Trash: 0" counter
-    ctx.fillStyle = "#F5A623"
-    ctx.beginPath()
-    ctx.roundRect(10, 25, 60, 22, 5)
-    ctx.fill()
-    ctx.fillStyle = "#FFF"
-    ctx.font = "bold 12px Arial"
-    ctx.fillText("Trash: 0", 15, 41)
-
-    // Start position (center) - robot's current position
-    let currentX = width / 2
-    let currentY = height / 2
-    let currentRotation = 0 // 0 = facing up
-
-    // Draw starting submarine
-    const drawMiniSub = (x: number, y: number, rotation: number) => {
-      ctx.save()
-      ctx.translate(x, y)
-      ctx.rotate((rotation * Math.PI) / 180)
-      drawSubmarine(ctx, { scale: 0.55, headlamp: false, bumpers: false })
-      ctx.restore()
-    }
-
-    // Parse blocks and calculate path
-    const pathPoints: { x: number; y: number }[] = [{ x: currentX, y: currentY }]
-
-    const allBlocks = workspace.getAllBlocks()
-    const startBlocks = allBlocks.filter((b: { type: string }) => b.type === "when_started")
-
-    for (const startBlock of startBlocks) {
-      forEachProgramBlock(startBlock, (block) => {
-        const blockType = block.type
-
-        if (blockType === "turn_degrees" || blockType === "turn_simple") {
-          const direction = block.getFieldValue("DIRECTION")
-          const degrees =
-            blockType === "turn_simple" ? 90 : Number.parseFloat(block.getFieldValue("DEGREES")) || 90
-          currentRotation += direction === "right" ? degrees : -degrees
-        } else if (blockType === "turn_to_heading") {
-          currentRotation = Number.parseFloat(block.getFieldValue("HEADING")) || 0
-        } else if (blockType === "turn_to_rotation") {
-          currentRotation = Number.parseFloat(block.getFieldValue("ROTATION")) || 0
-        } else if (blockType === "drive_distance") {
-          const direction = block.getFieldValue("DIRECTION")
-          const distance = Number.parseFloat(block.getFieldValue("DISTANCE")) || 200
-          const unit = block.getFieldValue("UNIT") || "mm"
-          const pixels = distanceToPixels(distance, unit) * scale
-          const sign = direction === "forward" ? 1 : -1
-          const angleRad = (currentRotation * Math.PI) / 180
-          currentX += sign * pixels * Math.sin(angleRad)
-          currentY -= sign * pixels * Math.cos(angleRad)
-          pathPoints.push({ x: currentX, y: currentY })
-        } else if (blockType === "drive_simple") {
-          const direction = block.getFieldValue("DIRECTION")
-          const pixels = distanceToPixels(200, "mm") * scale
-          const sign = direction === "forward" ? 1 : -1
-          const angleRad = (currentRotation * Math.PI) / 180
-          currentX += sign * pixels * Math.sin(angleRad)
-          currentY -= sign * pixels * Math.cos(angleRad)
-          pathPoints.push({ x: currentX, y: currentY })
-        }
-      })
-    }
-
-    if (pathPoints.length > 1) {
-      ctx.strokeStyle = "#22C55E" // Green color
-      ctx.lineWidth = 3
-      ctx.setLineDash([8, 4]) // Dotted line pattern
-      ctx.lineCap = "round"
-      ctx.lineJoin = "round"
-
-      ctx.beginPath()
-      ctx.moveTo(pathPoints[0].x, pathPoints[0].y)
-      for (let i = 1; i < pathPoints.length; i++) {
-        ctx.lineTo(pathPoints[i].x, pathPoints[i].y)
-      }
-      ctx.stroke()
-      ctx.setLineDash([]) // Reset to solid
-    }
-
-    // Draw submarine at start position with correct rotation
-    drawMiniSub(width / 2, height / 2, currentRotation)
-  }, [workspace]) // Removed drawPrediction from dependency array to fix circular dependency
-
-  const handleKeyPress = (e: KeyboardEvent) => {
-    if (isTypingInFormField()) return
-
-    const key = e.key
-
-    if (aiAssistantState.surveyStep === "main") {
-      switch (key) {
-        case "1":
-          setAiStep("strategy")
-          break
-        case "2":
-          setAiStep("predict")
-          break
-        case "3":
-          setAiStep("fix")
-          break
-        case "4":
-          setAiStep("compare")
-          break
-        case "5":
-          setAiStep("feel")
-          break
-        case "6":
-          setAiStep("partner")
-          break
-      }
-    }
-  }
-
-  useEffect(() => {
-    if (aiAssistantState.isVisible && !aiAssistantState.isMinimized) {
-      window.addEventListener("keydown", handleKeyPress)
-    } else {
-      window.removeEventListener("keydown", handleKeyPress)
-    }
-
-    return () => window.removeEventListener("keydown", handleKeyPress)
-  }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiStep]) // Depend on aiStep as well
-
-  useEffect(() => {
-    if (aiAssistantState.isVisible && !aiAssistantState.isMinimized && aiStep === "predict") {
-      // Small delay to ensure canvas is rendered
-      const timer = setTimeout(() => {
-        drawPrediction()
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [aiAssistantState.isVisible, aiAssistantState.isMinimized, aiStep, drawPrediction])
 
   useEffect(() => {
     if (!gameState.showCelebration) return
@@ -2023,7 +1749,7 @@ function VexWorkspace() {
 
   useEffect(() => {
     if (gameState.isGameOver) {
-      setAiAssistantState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
+      aiAssistantRef.current?.show()
     }
   }, [gameState.isGameOver])
 
@@ -2301,70 +2027,15 @@ function VexWorkspace() {
 
       {/* Playground Window */}
       {playgroundState.isVisible && (
-        <div
-          id="vex-playground-window"
-          ref={playgroundRef}
+        <PlaygroundWindow
+          title={selectedPlaygroundName}
+          state={playgroundState}
+          windowRef={playgroundRef}
           onMouseDown={handlePlaygroundMouseDown}
-          suppressHydrationWarning
-          className="fixed bg-white z-50 transition-all duration-200"
-          style={{
-            left: `${playgroundState.x}px`,
-            top: `${playgroundState.y}px`,
-            cursor: playgroundState.isDragging ? "grabbing" : "auto",
-            width: playgroundState.isMaximized ? "616px" : "416px",
-            height: "auto",
-          }}
+          onMinimize={handleMinimizePlayground}
+          onMaximize={handleMaximizePlayground}
+          onClose={handleClosePlayground}
         >
-          <div
-            id="vex-playground-header"
-            className="playground-header text-white px-4 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-          >
-            <div id="vex-playground-title-row" className="flex items-center gap-2">
-              <GripVertical className="h-4 w-4 text-white/70" />
-              <h3 id="vex-playground-title" className="font-semibold text-sm">
-                {selectedPlaygroundName}
-              </h3>
-            </div>
-            <div id="vex-playground-window-controls" className="flex items-center gap-1">
-              <Button
-                id="vex-playground-hide"
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                aria-label={playgroundState.isMinimized ? "Show playground" : "Hide playground"}
-                title={playgroundState.isMinimized ? "Show playground" : "Hide playground"}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMinimizePlayground()
-                }}
-              >
-                {playgroundState.isMinimized ? <Square className="h-3.5 w-3.5" /> : <Minus className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMaximizePlayground()
-                }}
-              >
-                {playgroundState.isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleClosePlayground()
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          {!playgroundState.isMinimized && (
             <div id="vex-playground-body" className="flex flex-col relative">
               {consoleLines.length > 0 && (
                 <div
@@ -2421,14 +2092,7 @@ function VexWorkspace() {
                 </button>
               </div>
 
-              <div id="vex-playground-canvas-row" className="flex">
-                <canvas
-                  id="vex-playground-canvas"
-                  ref={canvasRef}
-                  width={canvasSize.w}
-                  height={canvasSize.h}
-                />
-              </div>
+              <PlaygroundCanvas canvasRef={canvasRef} width={canvasSize.w} height={canvasSize.h} />
 
               <div
                 id="vex-playground-status-bar"
@@ -2647,360 +2311,15 @@ function VexWorkspace() {
                 </div>
               )}
             </div>
-          )}
-        </div>
+        </PlaygroundWindow>
       )}
 
-      {/* AI Assistant Window */}
-      {aiAssistantState.isVisible && (
-        <div
-          id="vex-ai-assistant-window"
-          ref={aiAssistantRef}
-          onMouseDown={handleAIAssistantMouseDown}
-          suppressHydrationWarning
-          className="fixed bg-white z-50 transition-all duration-200"
-          style={{
-            left: `${aiAssistantState.x}px`,
-            top: `${aiAssistantState.y}px`,
-            cursor: aiAssistantState.isDragging ? "grabbing" : "auto",
-            width: aiAssistantState.isMaximized ? "420px" : "320px",
-          }}
-        >
-          <div
-            id="vex-ai-assistant-header"
-            className="ai-assistant-header text-white px-4 py-2 flex items-center justify-between cursor-grab active:cursor-grabbing"
-          >
-            <div className="flex items-center gap-2">
-              <GripVertical className="h-4 w-4 text-white/70" />
-              <h3 id="vex-ai-assistant-title" className="font-semibold text-sm">
-                AI Assistant
-              </h3>
-            </div>
-            <div id="vex-ai-assistant-window-controls" className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMinimizeAIAssistant()
-                }}
-              >
-                {aiAssistantState.isMinimized ? <Maximize className="h-4 w-4" /> : <Minimize className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMaximizeAIAssistant()
-                }}
-              >
-                {aiAssistantState.isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-white hover:bg-white/20"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleCloseAIAssistant()
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          {!aiAssistantState.isMinimized && (
-            <div id="vex-ai-assistant-body" className="p-4">
-              {aiStep === "main" ? (
-                <div id="vex-ai-assistant-menu" className="text-gray-700">
-                  <p className="mb-4 font-medium text-base">What sort of help do you want?</p>
-                  <div className="flex flex-col gap-2">
-                    <Button
-                      className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0"
-                      onClick={() => setAiStep("strategy")}
-                    >
-                      <Lightbulb className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">1.</span>
-                      <span>Come up with a strategy</span>
-                    </Button>
-                    <Button
-                      className="justify-start text-left h-auto py-3 px-4 bg-purple-500 hover:bg-purple-600 text-white border-0"
-                      onClick={() => {
-                        console.log("[v0] Navigate to predict")
-                        setAiStep("predict")
-                      }}
-                    >
-                      <Target className="mr-3 h-5 w-5" />
-                      <span className="mr-2">2.</span> Predict and Plan
-                    </Button>
-                    <Button
-                      className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0"
-                      onClick={() => setAiStep("fix")}
-                    >
-                      <Wrench className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">3.</span>
-                      <span>Fix something that&apos;s not working</span>
-                    </Button>
-                    <Button
-                      className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0"
-                      onClick={() => setAiStep("compare")}
-                    >
-                      <GitCompare className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">4.</span>
-                      <span>Compare to a previous attempt</span>
-                    </Button>
-                    <Button
-                      className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0"
-                      onClick={() => setAiStep("feel")}
-                    >
-                      <Heart className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">5.</span>
-                      <span>Tell me how you feel</span>
-                    </Button>
-                    <Button
-                      className="justify-start text-left h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0"
-                      onClick={() => setAiStep("partner")}
-                    >
-                      <Users className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">6.</span>
-                      <span>Work with a partner</span>
-                    </Button>
-                  </div>
-                </div>
-              ) : aiStep === "strategy" ? (
-                <div className="text-gray-700">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
-                    onClick={() => setAiStep("main")}
-                  >
-                    ← Back
-                  </Button>
-                  <p className="mb-4 font-medium text-base">What strategy would you like help with?</p>
-                  <div className="flex flex-col gap-2">
-                    <Button 
-                      className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0"
-                      onClick={() => setAiStep("strategy-examples")}
-                    >
-                      <Zap className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">1.</span>
-                      <span>Move faster (efficiently)</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
-                      <RotateCcw className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">2.</span>
-                      <span>Turn around at the edge</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
-                      <Search className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">3.</span>
-                      <span>Find more blocks that could help you</span>
-                    </Button>
-                  </div>
-                </div>
-              ) : aiStep === "strategy-examples" ? (
-                <div className="text-gray-700 text-sm">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
-                    onClick={() => setAiStep("strategy")}
-                  >
-                    ← Back
-                  </Button>
-                  <p className="mb-3 font-medium text-base">Two approaches to move efficiently:</p>
-                  
-                  {/* Approach 1 */}
-                  <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-500 rounded">
-                    <p className="font-semibold text-blue-900 mb-2">Approach 1: Increase Velocity</p>
-                    <p className="text-xs text-gray-600 mb-2">Set drive velocity to 100 at the start, then drive forward.</p>
-                    <div className="bg-white p-2 rounded border border-blue-200 mb-2 font-mono text-xs">
-                      <div className="text-blue-700">when started</div>
-                      <div className="ml-4 text-green-700">set drive_velocity to 100</div>
-                      <div className="ml-4 text-purple-700">drive forward 500 mm</div>
-                    </div>
-                    <p className="text-xs text-gray-700"><span className="font-semibold">Why:</span> Higher velocity = faster movement. This approach is simple and direct.</p>
-                  </div>
-
-                  {/* Approach 2 */}
-                  <div className="mb-4 p-3 bg-green-50 border-l-4 border-green-500 rounded">
-                    <p className="font-semibold text-green-900 mb-2">Approach 2: Add Loop for Continuous Movement</p>
-                    <p className="text-xs text-gray-600 mb-2">Use a forever loop to keep collecting trash continuously without stopping.</p>
-                    <div className="bg-white p-2 rounded border border-green-200 mb-2 font-mono text-xs">
-                      <div className="text-blue-700">when started</div>
-                      <div className="ml-4 text-purple-700">forever</div>
-                      <div className="ml-8 text-green-700">drive forward 300 mm</div>
-                      <div className="ml-8 text-blue-700">turn right 90 degrees</div>
-                    </div>
-                    <p className="text-xs text-gray-700"><span className="font-semibold">Why:</span> Loops allow the robot to patrol continuously, covering more area and collecting more trash automatically.</p>
-                  </div>
-
-                  {/* Comparison */}
-                  <div className="p-3 bg-gray-50 border border-gray-300 rounded">
-                    <p className="font-semibold text-gray-900 mb-2">Comparison:</p>
-                    <div className="text-xs space-y-1">
-                      <div><span className="font-semibold text-blue-700">Approach 1:</span> Best for collecting one area quickly. Limited trash collection.</div>
-                      <div><span className="font-semibold text-green-700">Approach 2:</span> Best for collecting more trash over time. Continuously patrols the area.</div>
-                      <div className="mt-2 text-gray-600">Try both approaches and see which gets you more trash!</div>
-                    </div>
-                  </div>
-                </div>
-              ) : aiStep === "predict" ? (
-                <div className="space-y-4">
-                  <Button variant="outline" onClick={() => setAiStep("main")} className="mb-2">
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Back
-                  </Button>
-                  <p className="text-purple-600 font-semibold">Predict and Plan - Preview your robot&apos;s path:</p>
-                  <div className="border-4 border-purple-300 rounded-lg overflow-hidden">
-                    <canvas id="vex-ai-predict-canvas" ref={predictCanvasRef} width={300} height={300} className="w-full" />
-                  </div>
-                  <Button
-                    onClick={() => {
-                      console.log("[v0] Show Prediction clicked")
-                      drawPrediction()
-                    }}
-                    className="w-full bg-purple-500 hover:bg-purple-600 text-white"
-                  >
-                    <Settings className="w-4 h-4 mr-2" />
-                    Show Prediction
-                  </Button>
-                </div>
-              ) : aiStep === "fix" ? (
-                <div className="text-gray-700">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-3 text-red-600 hover:text-red-800 -ml-2"
-                    onClick={() => setAiStep("main")}
-                  >
-                    ← Back
-                  </Button>
-                  <p className="mb-4 font-medium text-base">What's not working?</p>
-                  <div className="flex flex-col gap-2">
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
-                      <StopCircle className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">1.</span>
-                      <span>Robot isn't moving</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
-                      <ArrowLeftRight className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">2.</span>
-                      <span>Robot moves the wrong direction</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
-                      <Eye className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">3.</span>
-                      <span>Sensors aren't detecting anything</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0">
-                      <RefreshCw className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">4.</span>
-                      <span>Loop doesn't stop</span>
-                    </Button>
-                  </div>
-                </div>
-              ) : aiStep === "compare" ? (
-                <div className="text-gray-700">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-3 text-green-600 hover:text-green-800 -ml-2"
-                    onClick={() => setAiStep("main")}
-                  >
-                    ← Back
-                  </Button>
-                  <p className="mb-4 font-medium text-base">What would you like to compare?</p>
-                  <div className="flex flex-col gap-2">
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0">
-                      <Gauge className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">1.</span>
-                      <span>Compare speed of different attempts</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0">
-                      <Target className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">2.</span>
-                      <span>Compare accuracy of movements</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0">
-                      <FileDiff className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">3.</span>
-                      <span>See what changed between versions</span>
-                    </Button>
-                  </div>
-                </div>
-              ) : aiStep === "feel" ? (
-                <div className="text-gray-700">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-3 text-orange-600 hover:text-orange-800 -ml-2"
-                    onClick={() => setAiStep("main")}
-                  >
-                    ← Back
-                  </Button>
-                  <p className="mb-4 font-medium text-base">How are you feeling?</p>
-                  <div className="flex flex-col gap-2">
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
-                      <Frown className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">1.</span>
-                      <span>Frustrated - nothing is working</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
-                      <HelpCircle className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">2.</span>
-                      <span>Stuck - not sure what to try next</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
-                      <Sparkles className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">3.</span>
-                      <span>Curious - want to learn more</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0">
-                      <PartyPopper className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">4.</span>
-                      <span>Excited - making progress!</span>
-                    </Button>
-                  </div>
-                </div>
-              ) : aiStep === "partner" ? (
-                <div className="text-gray-700">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-3 text-blue-600 hover:text-blue-800 -ml-2"
-                    onClick={() => setAiStep("main")}
-                  >
-                    ← Back
-                  </Button>
-                  <p className="mb-4 font-medium text-base">How would you like to collaborate?</p>
-                  <div className="flex flex-col gap-2">
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
-                      <Share2 className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">1.</span>
-                      <span>Share my code with a partner</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
-                      <GitCompare className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">2.</span>
-                      <span>Compare our solutions</span>
-                    </Button>
-                    <Button className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0">
-                      <Users className="w-5 h-5 mr-3 text-white" />
-                      <span className="mr-2 font-semibold">3.</span>
-                      <span>Work together on one robot</span>
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          )}
-        </div>
-      )}
+      <AIAssistant
+        ref={aiAssistantRef}
+        workspace={workspace}
+        surveyStep={aiStep}
+        onSurveyStepChange={setAiStep}
+      />
 
       {/* Robot Config Window */}
       {robotConfigState.isVisible && (
