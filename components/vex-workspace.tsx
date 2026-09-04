@@ -39,6 +39,7 @@ import { AIAssistant, type AIAssistantHandle, type SurveyStep } from "@/componen
 import { PlaygroundCanvas } from "@/components/playground/PlaygroundCanvas"
 import { PlaygroundWindow } from "@/components/playground/PlaygroundWindow"
 import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/BlocklyEditor"
+import { CodeViewToggle, HeaderActions, RunToolbar } from "@/components/workspace/Toolbar"
 import { drawSubmarine } from "@/playgrounds/ocean-reef/art"
 import {
   DEFAULT_PLAYGROUND_ID,
@@ -1906,13 +1907,10 @@ function VexWorkspace() {
         </div>
         <div id="vex-header-project-info" className="flex items-center gap-2">
           <span className="text-sm font-semibold">VEXcode Project</span>
-          <button
-            id="vex-btn-code-view-toggle"
-            onClick={() => setCodeView(codeView === "blocks" ? "python" : "blocks")}
-            className="text-xs bg-white/20 hover:bg-white/30 text-white px-2 py-1 rounded transition-colors"
-          >
-            {codeView === "blocks" ? "Show Python" : "Show Blocks"}
-          </button>
+          <CodeViewToggle
+            codeView={codeView}
+            onToggle={() => setCodeView(codeView === "blocks" ? "python" : "blocks")}
+          />
           <span className="text-xs text-white/70">Not Saving</span>
         </div>
         <div
@@ -1960,43 +1958,13 @@ function VexWorkspace() {
             </span>
           )}
         </div>
-        <div id="vex-header-actions" className="flex items-center gap-2">
-          {!playgroundState.isVisible && (
-            <Button
-              id="vex-btn-open-playground"
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleOpenPlayground}
-              className="bg-white/20 hover:bg-white/30 text-white border-0"
-              aria-label="Choose a playground"
-              aria-haspopup="dialog"
-              aria-expanded={playgroundPickerOpen}
-            >
-              Open Playground
-            </Button>
-          )}
-          <Button
-            id="vex-btn-get-help"
-            variant="secondary"
-            size="sm"
-            className="bg-pink-500 hover:bg-pink-600 text-white border-0 flex items-center gap-1"
-            onClick={handleOpenAIAssistant}
-          >
-            <HelpCircle className="h-4 w-4" />
-            Get Help
-          </Button>
-          <Button
-            id="vex-btn-robot-config"
-            variant="secondary"
-            size="sm"
-            className="bg-blue-500 hover:bg-blue-600 text-white border-0 flex items-center gap-1"
-            onClick={handleOpenRobotConfig}
-          >
-            <Settings className="h-4 w-4" />
-            Robot
-          </Button>
-        </div>
+        <HeaderActions
+          playgroundVisible={playgroundState.isVisible}
+          playgroundPickerOpen={playgroundPickerOpen}
+          onOpenPlayground={handleOpenPlayground}
+          onGetHelp={handleOpenAIAssistant}
+          onOpenRobotConfig={handleOpenRobotConfig}
+        />
       </div>
 
       {/* Main Content */}
@@ -2155,55 +2123,15 @@ function VexWorkspace() {
                 )}
               </div>
 
-              <div id="vex-playground-run-controls" className="flex flex-wrap items-center gap-2 px-3 py-3">
-                <Button
-                  id="vex-btn-start"
-                  size="sm"
-                  className="bg-green-500 hover:bg-green-600 text-white border-0"
-                  onClick={handleStart}
-                  disabled={isRunning && !isStepping}
-                  title={isStepping ? "Run the rest of the program" : "Run the program"}
-                >
-                  <Play className="h-4 w-4 mr-1" />
-                  {isStepping ? "RESUME" : "START"}
-                </Button>
-                <Button
-                  id="vex-btn-step"
-                  size="sm"
-                  className="bg-sky-500 hover:bg-sky-600 text-white border-0"
-                  onClick={handleStep}
-                  title="Run one block at a time"
-                >
-                  <StepForward className="h-4 w-4 mr-1" />
-                  STEP
-                </Button>
-                <Button
-                  id="vex-btn-stop"
-                  size="sm"
-                  className="bg-red-500 hover:bg-red-600 text-white border-0"
-                  onClick={handleStop}
-                  disabled={!isRunning}
-                  title="Stop the program"
-                >
-                  <StopCircle className="h-4 w-4 mr-1" />
-                  STOP
-                </Button>
-                <Button
-                  id="vex-btn-reset"
-                  size="sm"
-                  className="bg-purple-500 hover:bg-purple-600 text-white border-0"
-                  onClick={handleReset}
-                  title="Send the robot back to the start"
-                >
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                  RESET
-                </Button>
-                {isStepping && (
-                  <span id="vex-playground-step-status" className="ml-auto text-[11px] font-medium text-sky-700">
-                    {isPausedOnBlock ? "Paused on highlighted block" : "Stepping…"}
-                  </span>
-                )}
-              </div>
+              <RunToolbar
+                isRunning={isRunning}
+                isStepping={isStepping}
+                isPausedOnBlock={isPausedOnBlock}
+                onStart={handleStart}
+                onStep={handleStep}
+                onStop={handleStop}
+                onReset={handleReset}
+              />
 
               {gameState.isGameOver && (
                 <div id="vex-playground-gameover" className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-b-lg">
