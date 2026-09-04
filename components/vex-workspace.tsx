@@ -40,14 +40,8 @@ import {
   DistanceSliderPicker,
   dismissBlocklyFieldEditors,
 } from "@/blocks/fields"
-import { consoleBlocks } from "@/blocks/common/console"
-import { control } from "@/blocks/common/control"
-import { drawing } from "@/blocks/common/drawing"
-import { drivetrain } from "@/blocks/common/drivetrain"
-import { events } from "@/blocks/common/events"
-import { logic } from "@/blocks/common/logic"
-import { operators } from "@/blocks/common/operators"
-import { installCategory } from "@/blocks/common/types"
+import { installAllBlocks } from "@/blocks/registry"
+import { flyoutContents } from "@/blocks/toolbox"
 import {
   CORAL_COLORS,
   CORAL_KINDS,
@@ -217,29 +211,6 @@ const PLAYGROUND_OPTIONS: {
     icon: Bot,
   },
 ]
-
-/** Heading pair shown at the top of each category flyout, VEXcode style. */
-const CATEGORY_HEADINGS: Record<string, { title: string; subtitle: string }> = {
-  drivetrain: { title: "Drivetrain", subtitle: "Drivetrain - Actions" },
-  operators: { title: "Operators", subtitle: "Operators - Math and Text" },
-  logic: { title: "Logic", subtitle: "Logic - Control" },
-  magnet: { title: "Magnet", subtitle: "Magnet - Actions" },
-  drawing: { title: "Drawing", subtitle: "Drawing - Pen" },
-  sensing: { title: "Sensing", subtitle: "Sensing - Sensors" },
-  console: { title: "Console", subtitle: "Console - Output" },
-  loops: { title: "Switch", subtitle: "Switch - Functions" },
-}
-
-/** Prepends the VEXcode-style heading pair to a category's flyout contents. */
-function withCategoryHeading(category: string | null, blocks: unknown[]): unknown[] {
-  const heading = category ? CATEGORY_HEADINGS[category] : undefined
-  if (!heading) return blocks
-  return [
-    { kind: "label", text: heading.title, "web-class": "vex-flyout-title" },
-    { kind: "label", text: heading.subtitle, "web-class": "vex-flyout-subtitle" },
-    ...blocks,
-  ]
-}
 
 /**
  * `when_started` used to be a C-block whose program lived in a "DO" mouth. That
@@ -830,10 +801,7 @@ function BlocklyEditor() {
     let cancelled = false
 
     const registerBlocks = (Blockly: any) => {
-      for (const category of [drivetrain, operators, logic, drawing, consoleBlocks, events, control]) {
-        installCategory(Blockly, category)
-      }
-      for (const category of activePlayground.blocks) category.define(Blockly)
+      installAllBlocks(Blockly, activePlayground)
       installVexBlockContextMenu(Blockly)
       ;(window as any).__vexBlockToPython = (block: any) => blockToPythonSnippet(block)
     }
@@ -1021,39 +989,9 @@ function BlocklyEditor() {
   useEffect(() => {
     if (!workspace || !blocklyLoaded) return
 
-
-    let blocks: any[] = []
-
-    switch (selectedCategory) {
-      case "drivetrain":
-        blocks = drivetrain.toolboxEntries
-        break
-      case "operators":
-        blocks = operators.toolboxEntries
-        break
-      case "logic":
-        blocks = logic.toolboxEntries
-        break
-      case "magnet":
-        blocks = activePlayground.blocks.find((category) => category.id === "magnet")?.toolbox ?? []
-        break
-      case "drawing":
-        blocks = drawing.toolboxEntries
-        break
-      case "sensing":
-        blocks = activePlayground.blocks.find((category) => category.id === "sensing")?.toolbox ?? []
-        break
-      case "console":
-        blocks = consoleBlocks.toolboxEntries
-        break
-      case "loops":
-        blocks = [...events.toolboxEntries, ...control.toolboxEntries]
-        break
-    }
-
     workspace.updateToolbox({
       kind: "flyoutToolbox",
-      contents: withCategoryHeading(selectedCategory, blocks),
+      contents: flyoutContents(selectedCategory, activePlayground),
     })
   }, [selectedCategory, workspace, blocklyLoaded])
 
@@ -1924,29 +1862,9 @@ function BlocklyEditor() {
 
     if (!workspace || !window.Blockly) return
 
-
-    let blocks: any[] = []
-    if (category === "drivetrain") {
-      blocks = drivetrain.toolboxEntries
-    } else if (category === "operators") {
-      blocks = operators.toolboxEntries
-    } else if (category === "logic") {
-      blocks = logic.toolboxEntries
-    } else if (category === "magnet") {
-      blocks = activePlayground.blocks.find((entry) => entry.id === "magnet")?.toolbox ?? []
-    } else if (category === "drawing") {
-      blocks = drawing.toolboxEntries
-    } else if (category === "sensing") {
-      blocks = activePlayground.blocks.find((entry) => entry.id === "sensing")?.toolbox ?? []
-    } else if (category === "console") {
-      blocks = consoleBlocks.toolboxEntries
-    } else if (category === "loops") {
-      blocks = [...events.toolboxEntries, ...control.toolboxEntries]
-    }
-
     workspace.updateToolbox({
       kind: "flyoutToolbox",
-      contents: withCategoryHeading(category, blocks),
+      contents: flyoutContents(category, activePlayground),
     })
     workspace.getToolbox()?.setSelectedItem(null)
   }
