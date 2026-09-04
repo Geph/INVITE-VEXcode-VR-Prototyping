@@ -1,3 +1,4 @@
+import type { PythonGenerators } from "@/blocks/common/types"
 import type { BlockCategory } from "../types"
 
 function defineMagnetBlocks(Blockly: any) {
@@ -249,6 +250,26 @@ function defineSensingBlocks(Blockly: any) {
   Blockly.JavaScript.forBlock["position_angle"] = () => {
     return [`robot.getPositionAngle()`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
+}
+
+export const oceanReefPythonGenerators: PythonGenerators = {
+  expressions: {
+    bumper_pressed: (block) => `${block.getFieldValue("BUMPER")}_bumper.pressed()`,
+    distance_found_object: (block) => `${block.getFieldValue("SENSOR")}_distance.found_object()`,
+    distance_in_units: (block, { constant }) =>
+      `${block.getFieldValue("SENSOR")}_distance.get_distance(${constant(block.getFieldValue("UNIT"))})`,
+    eye_is_near: (block) => `${block.getFieldValue("SENSOR")}_eye.near_object()`,
+    eye_detects_color: (block, { constant }) =>
+      `${block.getFieldValue("SENSOR")}_eye.detect(${constant(block.getFieldValue("COLOR"))})`,
+    eye_brightness: (block) => `${block.getFieldValue("SENSOR")}_eye.brightness(PERCENT)`,
+    position_value: (block, { constant }) =>
+      `location.position(${constant(block.getFieldValue("AXIS"))}, ${constant(block.getFieldValue("UNIT"))})`,
+    position_angle: () => "location.position_angle(DEGREES)",
+  },
+  statements: {
+    energize_magnet: (block, indent, { constant }) =>
+      `${indent}magnet.energize(${constant(block.getFieldValue("MODE"))})\n`,
+  },
 }
 
 export const oceanReefBlocks: BlockCategory[] = [
