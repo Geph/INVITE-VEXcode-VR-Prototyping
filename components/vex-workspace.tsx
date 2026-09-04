@@ -4,19 +4,14 @@ import type React from "react"
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { createRng, type RobotState as EngineRobotState } from "@/engine"
+import { type RobotState as EngineRobotState } from "@/engine"
 import {
   CORAL_REEF_BATTERY_SEC,
   CORAL_REEF_FIELD_MM,
-  distanceToPixels,
   DISTANCE_SENSOR_MAX_MM,
-  driveDurationMs,
-  fieldMmToPixel,
   drawFieldRulerOverlay,
-  generateWhenStartedJavaScript,
   getPlaygroundCanvasSize,
   remapPixelAcrossCanvas,
-  maxDriveDistanceMm,
   EYE_NEAR_MM,
   isTrashNearEye,
   nearestTrashInFrontMm,
@@ -24,9 +19,9 @@ import {
   raycastToBorder,
   seededRandom,
   shortestRotationDelta,
-  turnDurationMs,
   type CoralPiece,
 } from "@/lib/robot-runtime"
+import { useProgramRunner, type AnimateRobotFluidFn } from "@/hooks/useProgramRunner"
 import {
   AngleWheelPicker,
   CompassPicker,
@@ -271,30 +266,6 @@ function reefViewFromMaximized(maximized: boolean) {
 
 type MissionEndReason = "coral" | "battery" | "complete" | null
 
-/**
- * Thrown to unwind a running block program. Generated code has no way to
- * `return`, so stopping means rejecting at the next `await` and swallowing it.
- */
-class ProgramStopped extends Error {
-  constructor() {
-    super("Program stopped")
-    this.name = "ProgramStopped"
-  }
-}
-
-/** One row of the VEX print console. `print` appends to the last row. */
-interface ConsoleLine {
-  text: string
-  color: string
-}
-
-const PRINT_COLORS: Record<string, string> = {
-  black: "#d1fae5",
-  red: "#f87171",
-  green: "#4ade80",
-  blue: "#60a5fa",
-}
-
 interface GameState {
   trashCollected: number
   trashTotal: number
@@ -417,7 +388,6 @@ function VexWorkspace() {
   const [blocklyLoaded, setBlocklyLoaded] = useState(false)
   const collab = useBlocklyCollab(workspace, blocklyLoaded, blocklyWorkspaceContainerRef)
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
-  const [isRunning, setIsRunning] = useState<boolean>(false)
   const animationRef = useRef<number | null>(null)
   const [aiStep, setAiStep] = useState<SurveyStep>("main")
 
@@ -443,21 +413,8 @@ function VexWorkspace() {
     printColor: "black",
     lastPenPoint: null as { x: number; y: number } | null,
   })
-  const isRunningRef = useRef(false)
-  /** True from the moment a program starts until its async body finishes unwinding. */
-  const programActiveRef = useRef(false)
-  /** Set when the program must unwind (stop project, mission end, reset). */
-  const stopRequestedRef = useRef(false)
   /** Settles the in-flight movement promise so `await` never dangles. */
   const animationCancelRef = useRef<(() => void) | null>(null)
-  /** True while the program pauses before every block instead of running straight through. */
-  const stepModeRef = useRef(false)
-  /** Releases the block the program is parked on. Set only while paused. */
-  const stepGateRef = useRef<(() => void) | null>(null)
-  /** A Step pressed mid-movement, spent by the next block instead of being dropped. */
-  const pendingStepRef = useRef(false)
-  const [isStepping, setIsStepping] = useState(false)
-  const [isPausedOnBlock, setIsPausedOnBlock] = useState(false)
 
   /** Ends the current movement early and lets the awaiting program continue. */
   const cancelRobotAnimation = useCallback(() => {
@@ -469,27 +426,6 @@ function VexWorkspace() {
       cancelAnimationFrame(animationRef.current)
       animationRef.current = null
     }
-  }, [])
-
-  /** Glow the block the program is on; `null` clears it. */
-  const highlightProgramBlock = useCallback(
-    (blockId: string | null) => {
-      if (!workspace) return
-      try {
-        workspace.highlightBlock(blockId)
-      } catch {
-        /* the block can be deleted mid-run */
-      }
-    },
-    [workspace],
-  )
-
-  /** Lets a paused program continue, whether it then runs free or stops. */
-  const releaseStepGate = useCallback(() => {
-    const resume = stepGateRef.current
-    stepGateRef.current = null
-    setIsPausedOnBlock(false)
-    resume?.()
   }, [])
 
   useEffect(() => {
@@ -529,7 +465,6 @@ function VexWorkspace() {
   const [penTrail, setPenTrail] = useState<
     { x1: number; y1: number; x2: number; y2: number; color: string; width: number }[]
   >([])
-  const [consoleLines, setConsoleLines] = useState<ConsoleLine[]>([])
 
   const [robotState, setRobotState] = useState<RobotState>({
     x: initialRobotPos.x,
@@ -666,6 +601,39 @@ function VexWorkspace() {
   )
   const trashSpawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const floatAnimationRef = useRef<number | null>(null)
+  const deployTrashFieldRef = useRef<() => void>(() => {})
+  const animateRobotFluidRef = useRef<AnimateRobotFluidFn>(async () => {})
+
+  const {
+    handleStart,
+    handleStep,
+    handleStop,
+    handleReset,
+    isRunning,
+    setIsRunning,
+    isRunningRef,
+    stopRequestedRef,
+    isStepping,
+    isPausedOnBlock,
+    consoleLines,
+  } = useProgramRunner({
+    workspace,
+    robotStateRef,
+    setRobotState,
+    runtimeRef,
+    reefStateRef,
+    activePlayground,
+    robotCapabilities,
+    getView: () => reefViewFromMaximized(playgroundState.isMaximized),
+    animateRobotFluidRef,
+    deployTrashFieldRef,
+    cancelRobotAnimation,
+    setGameState,
+    setPenTrail,
+    coralGraceUntilRef,
+    trashSpawnIntervalRef,
+    syncTrashItems,
+  })
 
   const initializeCoralBorders = useCallback((maximized: boolean) => {
     const view = reefViewFromMaximized(maximized)
@@ -855,6 +823,7 @@ function VexWorkspace() {
       runError: null,
     }))
   }, [playgroundState.isMaximized, commitReefState])
+  deployTrashFieldRef.current = deployTrashField
 
   const endMission = useCallback((reason: MissionEndReason, opts?: { runError?: string; gameLost?: boolean }) => {
     // Unwind the block program too, otherwise it keeps driving after game over.
@@ -1025,519 +994,9 @@ function VexWorkspace() {
       animationRef.current = requestAnimationFrame(animate)
     })
   }
+  animateRobotFluidRef.current = animateRobotFluid
 
   const getPythonCode = useCallback(() => generatePythonProgram(workspace), [workspace])
-
-  const handleRun = async ({ step = false }: { step?: boolean } = {}) => {
-    // `isRunning` can already be false while a stopped program is still unwinding,
-    // so gate on the ref to avoid two programs driving the same robot.
-    if (!workspace || !window.Blockly || programActiveRef.current) return
-
-    programActiveRef.current = true
-    stopRequestedRef.current = false
-    stepModeRef.current = step
-    pendingStepRef.current = false
-    setIsStepping(step)
-    setIsPausedOnBlock(false)
-    isRunningRef.current = true
-    setIsRunning(true)
-    setPenTrail([])
-    coralGraceUntilRef.current = performance.now() + 400
-    setGameState((prev) => ({
-      ...prev,
-      isGameOver: false,
-      gameLost: false,
-      runError: null,
-      missionEndReason: null,
-      showCelebration: false,
-    }))
-    setConsoleLines([])
-    deployTrashField()
-
-    const Blockly = window.Blockly
-    const jsGen = Blockly.JavaScript
-    // Every statement announces itself, which is what drives both the running
-    // block highlight and the pause points for Step.
-    jsGen.STATEMENT_PREFIX = "await robot.__step(%1);\n"
-    if (typeof jsGen.init === "function") {
-      jsGen.init(workspace)
-    }
-    const code = generateWhenStartedJavaScript(workspace, jsGen)
-    // `when_bumper` stacks are separate hats, so they are collected and polled
-    // alongside the main program rather than inlined into it.
-    const bumperEvents = workspace
-      .getAllBlocks(false)
-      .filter((b: { type: string }) => b.type === "when_bumper")
-      .map((b: any) => ({
-        bumper: b.getFieldValue("BUMPER"),
-        state: b.getFieldValue("STATE"),
-        body: jsGen.statementToCode(b, "DO"),
-      }))
-      .filter((handler: { body: string }) => handler.body.trim().length > 0)
-    if (typeof jsGen.finish === "function") {
-      jsGen.finish(workspace)
-    }
-
-
-    runtimeRef.current = {
-      driveVelocity: 50,
-      turnVelocity: 50,
-      driveTimeoutSec: null,
-      heading: 0,
-      penDown: false,
-      penColor: "#000000",
-      penWidth: 2,
-      magnetBoost: false,
-      printPrecision: 1,
-      printColor: "black",
-      lastPenPoint: null,
-    }
-
-    const startPos = { x: START_POSE.xMm, y: START_POSE.yMm }
-    setRobotState({
-      x: startPos.x,
-      y: startPos.y,
-      rotation: 0,
-      driveVelocity: 50,
-      turnVelocity: 50,
-      heading: 0,
-    })
-
-    await new Promise((resolve) => setTimeout(resolve, 100))
-
-    robotStateRef.current = { x: startPos.x, y: startPos.y, rotation: 0 }
-
-    const currentView = () => reefViewFromMaximized(playgroundState.isMaximized)
-
-    const clampPosition = (xMm: number, yMm: number) => clampRobotMm(xMm, yMm, currentView())
-
-    /** Print precision applies to numeric values only; text passes through. */
-    const formatPrint = (value: unknown): string => {
-      if (typeof value === "boolean") return value ? "true" : "false"
-      const raw = typeof value === "string" ? value : String(value)
-      if (raw.trim() === "") return raw
-      const asNum = Number(raw)
-      if (!Number.isFinite(asNum)) return raw
-      const precision = runtimeRef.current.printPrecision
-      const decimals = Math.max(0, Math.round(-Math.log10(precision > 0 ? precision : 1)))
-      return asNum.toFixed(decimals)
-    }
-
-    /** VEX `print` writes into the current row; only the cursor block advances it. */
-    const appendConsole = (value: unknown) => {
-      const chunk = formatPrint(value)
-      const color = PRINT_COLORS[runtimeRef.current.printColor] ?? PRINT_COLORS.black
-      setConsoleLines((prev) => {
-        if (prev.length === 0) return [{ text: chunk, color }]
-        const next = prev.slice()
-        const last = next[next.length - 1]
-        next[next.length - 1] = { text: last.text + chunk, color }
-        return next
-      })
-    }
-
-    const nextConsoleRow = () => {
-      setConsoleLines((prev) => [...prev, { text: "", color: PRINT_COLORS.black }])
-    }
-
-    /** Runtime/system messages always get their own row. */
-    const pushConsoleLine = (text: string, color = PRINT_COLORS.black) => {
-      setConsoleLines((prev) => [...prev, { text, color }])
-    }
-
-    /** Generated code has no early return, so unwind via throw at each await. */
-    const throwIfStopped = () => {
-      if (stopRequestedRef.current) throw new ProgramStopped()
-    }
-
-    // Serialize drivetrain motion so concurrent when_started threads queue
-    // instead of fighting over the same animation.
-    let motionQueue: Promise<void> = Promise.resolve()
-    const withMotionLock = async <T,>(fn: () => Promise<T>): Promise<T> => {
-      const run = motionQueue.then(fn, fn)
-      motionQueue = run.then(
-        () => undefined,
-        () => undefined,
-      )
-      return run
-    }
-
-    const engineRobotRef = {
-      get current(): EngineRobotState {
-        return {
-          xMm: robotStateRef.current.x,
-          yMm: robotStateRef.current.y,
-          headingDeg: robotStateRef.current.rotation,
-          driveVelocity: runtimeRef.current.driveVelocity,
-          turnVelocity: runtimeRef.current.turnVelocity,
-          driveTimeoutMs: runtimeRef.current.driveTimeoutSec != null ? runtimeRef.current.driveTimeoutSec * 1000 : null,
-        }
-      },
-      set current(next: EngineRobotState) {
-        robotStateRef.current = { x: next.xMm, y: next.yMm, rotation: next.headingDeg }
-      },
-    }
-    const playgroundApi = activePlayground.createApi({
-      robot: engineRobotRef,
-      world: reefStateRef,
-      writeConsole: (text, color) => pushConsoleLine(text, color),
-      stopped: { get current() { return stopRequestedRef.current } },
-      rng: createRng(1),
-    })
-
-    const robotAPI = {
-      /**
-       * Injected before every statement by `STATEMENT_PREFIX`. Highlights the
-       * block that is about to run, and in step mode parks there until the
-       * learner asks for the next one.
-       */
-      __step: async (blockId: string) => {
-        throwIfStopped()
-        highlightProgramBlock(blockId)
-        if (!stepModeRef.current) return
-        if (pendingStepRef.current) {
-          pendingStepRef.current = false
-          return
-        }
-        setIsPausedOnBlock(true)
-        await new Promise<void>((resolve) => {
-          stepGateRef.current = resolve
-        })
-        setIsPausedOnBlock(false)
-        throwIfStopped()
-      },
-      drive: async (direction: string, distance?: number, unit?: string) =>
-        withMotionLock(async () => {
-          throwIfStopped()
-          const sign = direction === "forward" ? 1 : -1
-          const distanceMm =
-            distance === undefined ? 200 : unit === "inches" || unit === "INCHES" ? Number(distance) * 25.4 : Number(distance)
-          const angleRad = (robotStateRef.current.rotation * Math.PI) / 180
-          const rawX = robotStateRef.current.x + sign * distanceMm * Math.sin(angleRad)
-          const rawY = robotStateRef.current.y - sign * distanceMm * Math.cos(angleRad)
-          const { xMm: targetX, yMm: targetY } = clampPosition(rawX, rawY)
-          const actualMm = Math.hypot(targetX - robotStateRef.current.x, targetY - robotStateRef.current.y)
-          const duration = driveDurationMs(distanceToPixels(actualMm, "mm"), runtimeRef.current.driveVelocity)
-          const drivePromise = animateRobotFluid({ x: targetX, y: targetY }, duration, robotStateRef)
-          if (runtimeRef.current.driveTimeoutSec != null) {
-            let timer: ReturnType<typeof setTimeout> | undefined
-            const timeout = new Promise<"timeout">((resolve) => {
-              timer = setTimeout(() => resolve("timeout"), runtimeRef.current.driveTimeoutSec! * 1000)
-            })
-            const outcome = await Promise.race([drivePromise.then(() => "done" as const), timeout])
-            if (timer) clearTimeout(timer)
-            if (outcome === "timeout") {
-              // Settle the movement promise; leaving it pending would hang the program.
-              cancelRobotAnimation()
-              await drivePromise
-            }
-          } else {
-            await drivePromise
-          }
-          throwIfStopped()
-        }),
-      turn: async (direction: string, degrees?: number) =>
-        withMotionLock(async () => {
-          throwIfStopped()
-          const multiplier = direction === "right" ? 1 : -1
-          const turnAmount = degrees === undefined ? 90 : Number(degrees)
-          const targetRotation = normalizeDegrees(robotStateRef.current.rotation + turnAmount * multiplier)
-          const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, targetRotation))
-          const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
-          await animateRobotFluid({ rotation: targetRotation }, duration, robotStateRef)
-          throwIfStopped()
-        }),
-      turnToHeading: async (heading: number) =>
-        withMotionLock(async () => {
-          throwIfStopped()
-          const target = normalizeDegrees(Number(heading))
-          const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
-          const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
-          await animateRobotFluid({ rotation: target }, duration, robotStateRef)
-          runtimeRef.current.heading = target
-          throwIfStopped()
-        }),
-      turnToRotation: async (rotation: number) =>
-        withMotionLock(async () => {
-          throwIfStopped()
-          const target = normalizeDegrees(Number(rotation))
-          const delta = Math.abs(shortestRotationDelta(robotStateRef.current.rotation, target))
-          const duration = turnDurationMs(delta, runtimeRef.current.turnVelocity)
-          await animateRobotFluid({ rotation: target }, duration, robotStateRef)
-          throwIfStopped()
-        }),
-      stopDriving: () => {
-        cancelRobotAnimation()
-      },
-      setDriveVelocity: (velocity: number) => {
-        runtimeRef.current.driveVelocity = Number(velocity)
-        setRobotState((prev) => ({ ...prev, driveVelocity: Number(velocity) }))
-      },
-      setTurnVelocity: (velocity: number) => {
-        runtimeRef.current.turnVelocity = Number(velocity)
-        setRobotState((prev) => ({ ...prev, turnVelocity: Number(velocity) }))
-      },
-      setDriveHeading: (heading: number) => {
-        const h = normalizeDegrees(Number(heading))
-        runtimeRef.current.heading = h
-        setRobotState((prev) => ({ ...prev, heading: h, rotation: h }))
-        robotStateRef.current.rotation = h
-      },
-      setDriveRotation: (rotation: number) => {
-        const r = normalizeDegrees(Number(rotation))
-        setRobotState((prev) => ({ ...prev, rotation: r }))
-        robotStateRef.current.rotation = r
-      },
-      setDriveTimeout: async (seconds: number) => {
-        runtimeRef.current.driveTimeoutSec = Number(seconds)
-      },
-      energize: (device: string, mode: string) => {
-        playgroundApi.energize(device, mode)
-        runtimeRef.current.magnetBoost = mode === "boost"
-        if (mode === "drop") runtimeRef.current.magnetBoost = false
-      },
-      movePen: (position: string) => {
-        runtimeRef.current.penDown = position === "down"
-        if (runtimeRef.current.penDown) {
-          runtimeRef.current.lastPenPoint = { ...robotStateRef.current }
-        }
-      },
-      setPenWidth: (width: string) => {
-        const widths: Record<string, number> = { thin: 1, medium: 3, thick: 6 }
-        runtimeRef.current.penWidth = widths[width] ?? 2
-      },
-      setPenColor: (color: string) => {
-        const colors: Record<string, string> = {
-          black: "#000000",
-          red: "#E74C3C",
-          blue: "#3498DB",
-          green: "#27AE60",
-          yellow: "#F1C40F",
-          purple: "#9B59B6",
-          orange: "#E67E22",
-        }
-        runtimeRef.current.penColor = colors[color] ?? color
-      },
-      print: (text: unknown) => {
-        appendConsole(text)
-      },
-      wait: async (seconds: number) => {
-        throwIfStopped()
-        const ms = Math.max(0, Number(seconds) * 1000)
-        await new Promise((resolve) => setTimeout(resolve, Number.isFinite(ms) ? ms : 0))
-        // Loop bodies yield through `wait`, so this is where stops get noticed.
-        throwIfStopped()
-      },
-      setCursorNextRow: () => {
-        nextConsoleRow()
-      },
-      clearAllRows: () => {
-        setConsoleLines([])
-      },
-      setPrintPrecision: (precision: number) => {
-        const value = Number(precision)
-        runtimeRef.current.printPrecision = Number.isFinite(value) && value > 0 ? value : 1
-      },
-      setPrintColor: (color: string) => {
-        runtimeRef.current.printColor = String(color).toLowerCase()
-      },
-      bumperPressed: (bumper: string) => {
-        if (!robotCapabilities.bumperSensor) return false
-        return playgroundApi.bumperPressed(bumper)
-      },
-      distanceFoundObject: (sensor: string) => playgroundApi.distanceFoundObject(sensor),
-      getDistance: (sensor: string, unit: string) => playgroundApi.getDistance(sensor, unit),
-      eyeIsNear: (sensor: string) => {
-        if (!robotCapabilities.eyeSensor) return false
-        return playgroundApi.eyeIsNear(sensor)
-      },
-      eyeDetectsColor: (sensor: string, color: string) => {
-        if (!robotCapabilities.eyeSensor) return false
-        return playgroundApi.eyeDetectsColor(sensor, color)
-      },
-      eyeBrightness: (sensor: string) => {
-        if (!robotCapabilities.eyeSensor) return 0
-        return playgroundApi.eyeBrightness(sensor)
-      },
-      getPosition: (axis: string, unit: string) => playgroundApi.getPosition(axis, unit),
-      getPositionAngle: () => playgroundApi.getPositionAngle(),
-      stop: () => {
-        stopRequestedRef.current = true
-        cancelRobotAnimation()
-        if (trashSpawnIntervalRef.current) {
-          clearInterval(trashSpawnIntervalRef.current)
-          trashSpawnIntervalRef.current = null
-        }
-        isRunningRef.current = false
-        setIsRunning(false)
-        // Abandon the rest of the program, including any enclosing forever loop.
-        throw new ProgramStopped()
-      },
-    }
-
-    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
-
-    /** Poll bumper state and fire each `when_bumper` stack on its edge. */
-    const startBumperWatchers = () => {
-      if (bumperEvents.length === 0) return () => {}
-
-      const watchers = bumperEvents.map((handler: { bumper: string; state: string; body: string }) => ({
-        matches: (was: boolean, now: boolean) =>
-          handler.state === "pressed" ? now && !was : was && !now,
-        run: new AsyncFunction("robot", handler.body) as (robot: unknown) => Promise<void>,
-        bumper: handler.bumper,
-        was: false,
-        busy: false,
-      }))
-
-      const timer = setInterval(() => {
-        if (stopRequestedRef.current) return
-        for (const watcher of watchers) {
-          const now = robotAPI.bumperPressed(watcher.bumper)
-          const fire = watcher.matches(watcher.was, now)
-          watcher.was = now
-          // Skip re-entry so a slow handler cannot stack up on itself.
-          if (!fire || watcher.busy) continue
-          watcher.busy = true
-          watcher
-            .run(robotAPI)
-            .catch((error: unknown) => {
-              if (!(error instanceof ProgramStopped)) console.error("Bumper handler error:", error)
-            })
-            .finally(() => {
-              watcher.busy = false
-            })
-        }
-      }, 50)
-
-      return () => clearInterval(timer)
-    }
-
-    const stopBumperWatchers = startBumperWatchers()
-
-    try {
-      if (!code.trim() && bumperEvents.length === 0) {
-        pushConsoleLine("Add blocks under when started to run your program.")
-        return
-      }
-      if (code.trim()) {
-        const execFunc = new AsyncFunction("robot", code)
-        await execFunc(robotAPI)
-      }
-    } catch (error: unknown) {
-      // A stop is a normal end of run, not a program error.
-      if (!(error instanceof ProgramStopped)) {
-        console.error("Execution error:", error)
-        const message = error instanceof Error ? error.message : "Program error"
-        setGameState((prev) => ({ ...prev, isGameOver: true, gameLost: false, runError: message }))
-        pushConsoleLine(`Error: ${message}`, PRINT_COLORS.red)
-      }
-    } finally {
-      stopBumperWatchers()
-      stopRequestedRef.current = false
-      programActiveRef.current = false
-      stepModeRef.current = false
-      stepGateRef.current = null
-      pendingStepRef.current = false
-      setIsStepping(false)
-      setIsPausedOnBlock(false)
-      highlightProgramBlock(null)
-      if (isRunningRef.current) {
-        isRunningRef.current = false
-        setIsRunning(false)
-      }
-    }
-  }
-
-  /** START also resumes a stepped program, so it reads as "run from here". */
-  const handleStart = () => {
-    if (programActiveRef.current) {
-      if (!stepModeRef.current) return
-      stepModeRef.current = false
-      pendingStepRef.current = false
-      setIsStepping(false)
-      releaseStepGate()
-      return
-    }
-    void handleRun()
-  }
-
-  /** Runs exactly one block, starting the program in step mode if needed. */
-  const handleStep = () => {
-    if (!programActiveRef.current) {
-      void handleRun({ step: true })
-      return
-    }
-    if (!stepModeRef.current) {
-      // Switching from a free run: park on the next block.
-      stepModeRef.current = true
-      setIsStepping(true)
-      return
-    }
-    if (stepGateRef.current) {
-      releaseStepGate()
-      return
-    }
-    // Mid-movement: remember the press so the next block does not stall.
-    pendingStepRef.current = true
-  }
-
-  const handleStop = () => {
-    if (!programActiveRef.current) return
-    stopRequestedRef.current = true
-    stepModeRef.current = false
-    pendingStepRef.current = false
-    setIsStepping(false)
-    cancelRobotAnimation()
-    releaseStepGate()
-    if (trashSpawnIntervalRef.current) {
-      clearInterval(trashSpawnIntervalRef.current)
-      trashSpawnIntervalRef.current = null
-    }
-    isRunningRef.current = false
-    setIsRunning(false)
-    highlightProgramBlock(null)
-  }
-
-  const handleReset = () => {
-    stopRequestedRef.current = true
-    stepModeRef.current = false
-    pendingStepRef.current = false
-    setIsStepping(false)
-    releaseStepGate()
-    highlightProgramBlock(null)
-    cancelRobotAnimation()
-    if (trashSpawnIntervalRef.current) {
-      clearInterval(trashSpawnIntervalRef.current)
-      trashSpawnIntervalRef.current = null
-    }
-    setIsRunning(false)
-    isRunningRef.current = false
-    const resetPos = { x: START_POSE.xMm, y: START_POSE.yMm }
-    setRobotState({
-      x: resetPos.x,
-      y: resetPos.y,
-      rotation: 0,
-      driveVelocity: 50,
-      turnVelocity: 50,
-      heading: 0,
-    })
-    robotStateRef.current = { x: resetPos.x, y: resetPos.y, rotation: 0 }
-    setGameState({
-      trashCollected: 0,
-      trashTotal: 0,
-      batteryPercent: 100,
-      gameLost: false,
-      isGameOver: false,
-      runError: null,
-      showCelebration: false,
-      missionEndReason: null,
-      isSpawningTrash: false,
-    })
-    syncTrashItems([])
-    setPenTrail([])
-    setConsoleLines([])
-  }
 
   const handleTrash = () => {
     setGameState({
