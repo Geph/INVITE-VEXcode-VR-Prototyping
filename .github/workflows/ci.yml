@@ -35,8 +35,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Simulation geometry checks
-        run: npm test
+      - name: Test
+        run: npm test -- --coverage
 
       - name: Build static export
         run: npm run build

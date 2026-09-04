@@ -131,16 +131,17 @@
 
 /* Removed all block transform CSS - let Blockly handle sizing natively via zoom */
 
-/* Blockly inline editors must sit above floating panels and accept pointer/keyboard input */
+/* Blockly field editors: do not force position/parent — Blockly 13 owns those.
+   Only ensure they can receive input above our chrome when visible. */
 .blocklyWidgetDiv,
 .blocklyDropDownDiv {
-  position: fixed !important;
   z-index: 10000 !important;
   pointer-events: auto !important;
 }
 
 .blocklyWidgetDiv input,
 .blocklyWidgetDiv textarea,
+.blocklyDropDownDiv input,
 .blocklyHtmlInput {
   pointer-events: auto !important;
   user-select: text !important;
@@ -258,8 +259,64 @@
   fill: #eef2f7 !important;
 }
 
+/* VEXcode draws value fields as white pills with dark text, which Blockly has
+   no theme hook for — Zelos tints them with the block colour instead. */
+#vex-blockly-workspace .blocklyEditableField > .blocklyFieldRect,
+#vex-blockly-workspace .blocklyEditableField > .blocklyDropdownRect {
+  fill: #ffffff;
+  stroke: rgba(15, 23, 42, 0.16);
+  stroke-width: 1px;
+}
+
+/* Zelos ships `.blocklyDropdownText { fill: #fff !important }`, so match it. */
+#vex-blockly-workspace .blocklyEditableField > .blocklyFieldText,
+#vex-blockly-workspace .blocklyEditableField > .blocklyDropdownText {
+  fill: #0f172a !important;
+}
+
+/* The Zelos dropdown caret ships as a white image, invisible on a white pill. */
+#vex-blockly-workspace .blocklyEditableField image {
+  filter: brightness(0) saturate(0);
+}
+
+/* Flyout headings get an inline fill from the theme, hence !important. */
+#vex-blockly-workspace .vex-flyout-title .blocklyFlyoutLabelText {
+  font-size: 15px;
+  font-weight: 700;
+  fill: #0f172a !important;
+}
+
+#vex-blockly-workspace .vex-flyout-subtitle .blocklyFlyoutLabelText {
+  font-size: 12px;
+  font-weight: 500;
+  fill: #52627a !important;
+}
+
+#vex-blockly-workspace .blocklyFlyoutLabelBackground {
+  fill: transparent;
+}
+
+/* Block the program is currently on, for Step and for running highlights.
+   The glow sits on the group so the block keeps its own emboss filter. */
+#vex-blockly-workspace .blocklyHighlighted {
+  filter: drop-shadow(0 0 5px rgba(250, 204, 21, 0.95));
+}
+
+#vex-blockly-workspace .blocklyHighlighted > .blocklyPath {
+  stroke: #facc15;
+  stroke-width: 4px;
+}
+
 #vex-python-code-view {
   background: #0b1220;
+}
+
+#vex-playground-picker {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 24px 48px -20px rgba(15, 23, 42, 0.35);
 }
 
 #vex-playground-window,

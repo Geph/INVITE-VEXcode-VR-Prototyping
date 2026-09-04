@@ -5,7 +5,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 /**
  * GitHub Pages serves project sites from /<repo>, so assets need a prefix.
- * Vercel and `next dev` serve from the root, so the prefix stays empty there.
+ * `next dev` serves from the root, so the prefix stays empty there.
  */
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? ""
 

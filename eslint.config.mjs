@@ -12,6 +12,7 @@ export default [
       ".next/**",
       "out/**",
       "node_modules/**",
+      "coverage/**",
     ],
   },
   ...tseslint.configs.recommended,

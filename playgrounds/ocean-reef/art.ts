@@ -1,12 +1,63 @@
 /**
  * Canvas artwork for the Coral Reef Cleanup playground.
  *
- * Kept separate from the simulation so the playground and the "predict" preview
- * render the same robot and reef. Nothing here reads or writes simulation
- * state: callers position the context, these helpers only paint.
+ * Positions are world millimetres; the camera maps them onto the canvas.
+ * Painting itself still uses the original pixel-radius artwork so the reef
+ * looks identical at today's 7.5 mm/px zoom.
  */
 
-import { seededRandom, type CoralPiece } from "./robot-runtime"
+import type { Camera, Vec2 } from "@/engine"
+import { seededRandom, type CoralPiece } from "@/lib/robot-runtime"
+import { PIXELS_PER_MM } from "./config"
+
+export interface ReefViewport {
+  widthPx: number
+  heightPx: number
+}
+
+/**
+ * Ocean Reef keeps the historical +Y-down field so getPosition / console
+ * output stay the same. Engine `worldToScreen` inverts Y; do not use it here.
+ */
+export function reefWorldToScreen(xMm: number, yMm: number, cam: Camera, viewport: ReefViewport): Vec2 {
+  return {
+    x: viewport.widthPx / 2 + (xMm - cam.centerMm.x) * cam.zoom,
+    y: viewport.heightPx / 2 + (yMm - cam.centerMm.y) * cam.zoom,
+  }
+}
+
+export function reefScreenToWorld(xPx: number, yPx: number, cam: Camera, viewport: ReefViewport): Vec2 {
+  const zoom = cam.zoom === 0 ? PIXELS_PER_MM : cam.zoom
+  return {
+    x: cam.centerMm.x + (xPx - viewport.widthPx / 2) / zoom,
+    y: cam.centerMm.y + (yPx - viewport.heightPx / 2) / zoom,
+  }
+}
+
+export function coralToScreenPiece(
+  piece: {
+    xMm: number
+    yMm: number
+    radiusMm: number
+    color: string
+    kind?: CoralKind
+    angle?: number
+    seed?: number
+  },
+  cam: Camera,
+  viewport: ReefViewport,
+): CoralPiece {
+  const pos = reefWorldToScreen(piece.xMm, piece.yMm, cam, viewport)
+  return {
+    x: pos.x,
+    y: pos.y,
+    radius: piece.radiusMm * cam.zoom,
+    color: piece.color,
+    kind: piece.kind,
+    angle: piece.angle,
+    seed: piece.seed,
+  }
+}
 
 const HEX = /^#([0-9a-f]{6})$/i
 

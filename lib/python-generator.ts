@@ -180,6 +180,13 @@ function body(block: PyBlock, name: string, indent: string): string {
   return sequence(child, indent)
 }
 
+/** Renders the stack under a cap hat, using `pass` when nothing is attached. */
+function stack(block: PyBlock, indent: string): string {
+  const child = block.getNextBlock()
+  if (!child) return `${indent}pass\n`
+  return sequence(child, indent)
+}
+
 function sequence(block: PyBlock | null, indent: string): string {
   let out = ""
   for (let current = block; current; current = current.getNextBlock()) {
@@ -327,7 +334,7 @@ export function blockToPythonSnippet(block: PyBlock): string {
 
 const HEADER = "# VEXcode VR Python\nfrom vexcode import *\nimport math\nimport random\n\n"
 
-const EMPTY = "# No code yet\n# Add blocks inside when started to see Python code"
+const EMPTY = "# No code yet\n# Add blocks under when started to see Python code"
 
 export function generatePythonProgram(workspace: PyWorkspace | null): string {
   if (!workspace) return EMPTY
@@ -350,7 +357,7 @@ export function generatePythonProgram(workspace: PyWorkspace | null): string {
 
   whenStartedHats.forEach((hat, index) => {
     const name = whenStartedHats.length === 1 ? "main" : `main_${index + 1}`
-    out += `def ${name}():\n${body(hat, "DO", INDENT)}\n`
+    out += `def ${name}():\n${stack(hat, INDENT)}\n`
   })
 
   bumperEvents.forEach((event, index) => {

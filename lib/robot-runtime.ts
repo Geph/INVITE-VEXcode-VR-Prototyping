@@ -1,5 +1,15 @@
 /** Shared helpers for VEXcode VR–style robot simulation (units, angles, block traversal). */
 
+import {
+  DRIVE_MS_PER_MM_AT_50,
+  TURN_MS_PER_DEGREE_AT_50,
+  driveDurationMs as driveDurationFromMm,
+  turnDurationMs,
+} from "@/engine/motion"
+import { normalizeDegrees, shortestRotationDelta } from "@/engine/units"
+
+export { DRIVE_MS_PER_MM_AT_50, TURN_MS_PER_DEGREE_AT_50, normalizeDegrees, shortestRotationDelta, turnDurationMs }
+
 /** Coral Reef Cleanup playground (VEXcode VR docs). */
 export const CORAL_REEF_FIELD_MM = 2000
 export const CORAL_REEF_START_MM = { x: 0, y: -800 }
@@ -57,34 +67,9 @@ export function pixelsToDistance(pixels: number, unit: string): number {
   return pixels * MM_PER_PIXEL
 }
 
-export function normalizeDegrees(deg: number): number {
-  let d = deg % 360
-  if (d < 0) d += 360
-  return d
-}
-
-/** Shortest signed delta from `from` to `to` (degrees). */
-export function shortestRotationDelta(from: number, to: number): number {
-  let delta = normalizeDegrees(to) - normalizeDegrees(from)
-  if (delta > 180) delta -= 360
-  if (delta < -180) delta += 360
-  return delta
-}
-
-/** Drive animation timing at 50% velocity (VEX default). */
-export const DRIVE_MS_PER_MM_AT_50 = 10
-/** Turn animation timing at 50% turn velocity — independent from drive. */
-export const TURN_MS_PER_DEGREE_AT_50 = 22
-
+/** Pixel-taking wrapper around the engine helper (which works in millimetres). */
 export function driveDurationMs(distancePixels: number, driveVelocityPercent: number): number {
-  const v = Math.max(5, Math.min(100, driveVelocityPercent))
-  const distanceMm = pixelsToDistance(distancePixels, "mm")
-  return Math.max(80, (distanceMm * DRIVE_MS_PER_MM_AT_50 * 50) / v)
-}
-
-export function turnDurationMs(degrees: number, turnVelocityPercent: number): number {
-  const v = Math.max(5, Math.min(100, turnVelocityPercent))
-  return Math.max(80, (Math.abs(degrees) * TURN_MS_PER_DEGREE_AT_50 * 50) / v)
+  return driveDurationFromMm(pixelsToDistance(distancePixels, "mm"), driveVelocityPercent)
 }
 
 /** Max drive distance (mm) before hitting playground edge along current heading. */
@@ -239,7 +224,7 @@ export function isTrashNearEye(
   return frontMm !== null
 }
 
-/** Walk statement chain inside when_started (and nested C-blocks). */
+/** Walk the statement chain under when_started (and nested C-blocks). */
 export function forEachProgramBlock(
   startBlock: { type: string; getInputTargetBlock?: (name: string) => unknown; getNextBlock?: () => unknown },
   visit: (block: {
@@ -269,8 +254,10 @@ export function forEachProgramBlock(
     walk(b.getNextBlock())
   }
 
-  if (startBlock.type === "when_started" && startBlock.getInputTargetBlock) {
-    walk(startBlock.getInputTargetBlock("DO"))
+  // The hat contributes no behaviour, so start below it. Skipping it also keeps
+  // a bare hat reading as an empty program rather than a one-block one.
+  if (startBlock.type === "when_started" && startBlock.getNextBlock) {
+    walk(startBlock.getNextBlock())
   } else {
     walk(startBlock)
   }
