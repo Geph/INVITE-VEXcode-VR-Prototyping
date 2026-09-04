@@ -28,12 +28,7 @@ import {
   turnDurationMs,
   type CoralPiece,
 } from "@/lib/robot-runtime"
-import {
-  ensureBlocklyWidgetDivReady,
-  isBlocklyFieldEditorTarget,
-  isTypingInFormField,
-  VEX_WIDGET_NODE_SELECTOR,
-} from "@/lib/blockly-widget-form"
+import { isTypingInFormField } from "@/lib/blockly-widget-form"
 import {
   AngleWheelPicker,
   CompassPicker,
@@ -42,6 +37,7 @@ import {
 } from "@/blocks/fields"
 import { installAllBlocks } from "@/blocks/registry"
 import { flyoutContents } from "@/blocks/toolbox"
+import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/BlocklyEditor"
 import {
   CORAL_COLORS,
   CORAL_KINDS,
@@ -68,7 +64,6 @@ import {
   START_POSE,
   type OceanReefState,
 } from "@/playgrounds/ocean-reef"
-import { createVexTheme } from "@/lib/vex-blockly-theme"
 import { useBlocklyCollab } from "@/lib/use-blockly-collab"
 import { blockToPythonSnippet, generatePythonProgram } from "@/lib/python-generator"
 import { installVexBlockContextMenu } from "@/lib/blockly-context-menu"
@@ -83,13 +78,8 @@ import {
   Maximize2,
   Cog,
   Magnet,
-  Pencil,
   Eye,
-  Terminal,
-  GitBranch,
-  ToggleLeft,
   RotateCcw,
-  Trash2,
   HelpCircle,
   Lightbulb,
   Wrench,
@@ -110,7 +100,6 @@ import {
   Share2,
   ArrowLeft,
   Settings,
-  Calculator,
   Ruler,
   Minus,
   Square,
@@ -448,8 +437,7 @@ function PlaygroundPickerDialog({
   )
 }
 
-function BlocklyEditor() {
-  const blocklyDivRef = useRef<HTMLDivElement>(null)
+function VexWorkspace() {
   const blocklyWorkspaceContainerRef = useRef<HTMLDivElement>(null)
   const playgroundRef = useRef<HTMLDivElement>(null)
   const aiAssistantRef = useRef<HTMLDivElement>(null)
@@ -457,13 +445,10 @@ function BlocklyEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [workspace, setWorkspace] = useState<any>(null)
   const [blocklyLoaded, setBlocklyLoaded] = useState(false)
-  const [blocklyLoadError, setBlocklyLoadError] = useState<string | null>(null)
   const collab = useBlocklyCollab(workspace, blocklyLoaded, blocklyWorkspaceContainerRef)
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
   const [isRunning, setIsRunning] = useState<boolean>(false)
   const animationRef = useRef<number | null>(null)
-  const [deletedBlocks, setDeletedBlocks] = useState<string | null>(null)
-  const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
   const [aiStep, setAiStep] = useState<AIAssistantState["surveyStep"]>("main")
 
   const initialRobotPos = { x: START_POSE.xMm, y: START_POSE.yMm }
@@ -797,203 +782,43 @@ function BlocklyEditor() {
     }
   }, [playgroundState.isDragging])
 
-  useEffect(() => {
-    let cancelled = false
+  const handleRegisterBlocks = useCallback((Blockly: any) => {
+    installAllBlocks(Blockly, activePlayground)
+    installVexBlockContextMenu(Blockly)
+    ;(window as any).__vexBlockToPython = (block: any) => blockToPythonSnippet(block)
+  }, [activePlayground])
 
-    const registerBlocks = (Blockly: any) => {
-      installAllBlocks(Blockly, activePlayground)
-      installVexBlockContextMenu(Blockly)
-      ;(window as any).__vexBlockToPython = (block: any) => blockToPythonSnippet(block)
-    }
-
-    if (window.Blockly) {
-      registerBlocks(window.Blockly)
-      setBlocklyLoaded(true)
-      return
-    }
-
-    void (async () => {
-      try {
-        // Loaded on demand so Blockly stays out of the initial bundle.
-        const [core, generator] = await Promise.all([import("blockly"), import("blockly/javascript")])
-        if (cancelled) return
-
-        // The ESM namespace is frozen, so expose a writable facade that also
-        // carries `.JavaScript` the way the old UMD global did.
-        const Blockly = Object.assign(Object.create(null), core, {
-          JavaScript: generator.javascriptGenerator,
-        })
-
-        window.Blockly = Blockly
-        registerBlocks(Blockly)
-        setBlocklyLoaded(true)
-      } catch (error) {
-        if (cancelled) return
-        console.error("Failed to load Blockly:", error)
-        setBlocklyLoadError(error instanceof Error ? error.message : "Unknown error")
-      }
-    })()
-
-    return () => {
-      cancelled = true
+  const handleFieldPicker = useCallback((event: FieldPickerEvent) => {
+    blocklyPickerRef.current = { blockId: event.blockId, fieldName: event.fieldName }
+    if (event.blockType === "turn_degrees" || event.blockType === "turn_to_rotation" || event.blockType === "set_drive_rotation") {
+      setAnglePickerState({
+        isOpen: true,
+        angle: Number(event.value) || 0,
+        x: event.clientX,
+        y: event.clientY,
+      })
+    } else if (event.blockType === "turn_to_heading" || event.blockType === "set_drive_heading") {
+      setCompassPickerState({
+        isOpen: true,
+        heading: Number(event.value) || 0,
+        x: event.clientX,
+        y: event.clientY,
+      })
+    } else if (event.blockType === "drive_distance") {
+      setDistancePickerState({
+        isOpen: true,
+        distance: Number(event.value) || 200,
+        direction: event.direction || "forward",
+        x: event.clientX,
+        y: event.clientY,
+      })
     }
   }, [])
 
-  useEffect(() => {
-    if (!blocklyLoaded || !blocklyDivRef.current || workspace) return // Use ref
-
-    const Blockly = window.Blockly
-
-    const ws = Blockly.inject(blocklyDivRef.current, {
-      toolbox: {
-        kind: "flyoutToolbox",
-        contents: [],
-      },
-      renderer: "zelos",
-      theme: createVexTheme(Blockly),
-      zoom: {
-        controls: true,
-        wheel: true,
-        startScale: 1,
-        maxScale: 3,
-        minScale: 0.3,
-        scaleSpeed: 1.2,
-      },
-      move: {
-        scrollbars: true,
-        drag: true,
-        wheel: true,
-      },
-      trashcan: false,
-    })
-    setWorkspace(ws)
-
-    setTimeout(() => {
-      const whenStartedBlock = ws.newBlock("when_started")
-      whenStartedBlock.initSvg()
-      whenStartedBlock.render()
-      whenStartedBlock.moveBy(50, 50)
-      whenStartedBlock.setDeletable(true)
-      whenStartedBlock.setMovable(true)
-      ensureBlocklyWidgetDivReady()
-    }, 100)
-  }, [blocklyLoaded, workspace])
-
-  useEffect(() => {
-    if (!blocklyLoaded) return
-    ensureBlocklyWidgetDivReady()
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (!(node instanceof Element)) continue
-          if (
-            node.matches?.(VEX_WIDGET_NODE_SELECTOR) ||
-            node.querySelector?.(VEX_WIDGET_NODE_SELECTOR)
-          ) {
-            ensureBlocklyWidgetDivReady()
-            return
-          }
-        }
-      }
-    })
-    observer.observe(document.body, { childList: true, subtree: true })
-    return () => observer.disconnect()
-  }, [blocklyLoaded])
-
-  // Combined effect for handling field clicks across all relevant blocks
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-
-    /** Only these fields open custom angle/distance pickers; all other fields use Blockly's inline editor. */
-    const PICKER_FIELDS: Record<string, string> = {
-      turn_degrees: "DEGREES",
-      turn_to_rotation: "ROTATION",
-      set_drive_rotation: "ROTATION",
-      turn_to_heading: "HEADING",
-      set_drive_heading: "HEADING",
-      drive_distance: "DISTANCE",
-    }
-
-    const openCustomPicker = (e: PointerEvent) => {
-      const target = e.target as Element
-      if (isBlocklyFieldEditorTarget(target)) return
-
-      const blockSvg = target.closest(".blocklyDraggable")
-      if (!blockSvg) return
-
-      const blockId = blockSvg.getAttribute("data-id")
-      if (!blockId) return
-
-      const block = workspace.getBlockById(blockId)
-      if (!block) return
-
-      const fieldName = PICKER_FIELDS[block.type]
-      if (!fieldName) return
-
-      // Blockly 13 / Zelos uses `.blocklyEditableField` (not the old
-      // `.blocklyEditableText`). Hit-test via the field's SVG root instead.
-      const field = block.getField(fieldName) as {
-        getSvgRoot?: () => SVGElement | null
-      } | null
-      const fieldSvg = field?.getSvgRoot?.()
-      if (!fieldSvg || !(target instanceof Node) || !fieldSvg.contains(target)) return
-
-      e.preventDefault()
-      e.stopPropagation()
-      e.stopImmediatePropagation()
-      dismissBlocklyFieldEditors()
-
-      const currentVal = block.getFieldValue(fieldName)
-      blocklyPickerRef.current = { blockId: block.id, fieldName }
-
-      const blockType = block.type
-      if (blockType === "turn_degrees" || blockType === "turn_to_rotation" || blockType === "set_drive_rotation") {
-        setAnglePickerState({
-          isOpen: true,
-          angle: Number(currentVal) || 0,
-          x: e.clientX,
-          y: e.clientY,
-        })
-      } else if (blockType === "turn_to_heading" || blockType === "set_drive_heading") {
-        setCompassPickerState({
-          isOpen: true,
-          heading: Number(currentVal) || 0,
-          x: e.clientX,
-          y: e.clientY,
-        })
-      } else if (blockType === "drive_distance") {
-        setDistancePickerState({
-          isOpen: true,
-          distance: Number(currentVal) || 200,
-          direction: block.getFieldValue("DIRECTION") || "forward",
-          x: e.clientX,
-          y: e.clientY,
-        })
-      }
-    }
-
-    const workspaceSvg = workspace.getParentSvg()
-    if (workspaceSvg) {
-      workspaceSvg.addEventListener("pointerdown", openCustomPicker, true)
-    }
-
-    return () => {
-      if (workspaceSvg) {
-        workspaceSvg.removeEventListener("pointerdown", openCustomPicker, true)
-      }
-    }
-  }, [blocklyLoaded, workspace])
-
-  // useEffect for updating toolbox based on selected category
-  useEffect(() => {
-    if (!workspace || !blocklyLoaded) return
-
-    workspace.updateToolbox({
-      kind: "flyoutToolbox",
-      contents: flyoutContents(selectedCategory, activePlayground),
-    })
-  }, [selectedCategory, workspace, blocklyLoaded])
+  const toolbox = useMemo(
+    () => flyoutContents(selectedCategory, activePlayground),
+    [selectedCategory, activePlayground],
+  )
 
   // Redraw playground when state changes
   const drawPlayground = useCallback(() => {
@@ -1759,13 +1584,6 @@ function BlocklyEditor() {
   }
 
   const handleTrash = () => {
-    if (workspace) {
-      // Save current workspace state before clearing
-      const xml = (window as any).Blockly.Xml.workspaceToDom(workspace)
-      const xmlText = (window as any).Blockly.Xml.domToText(xml)
-      setDeletedBlocks(xmlText)
-      workspace.clear()
-    }
     setGameState({
       trashCollected: 0,
       trashTotal: 0,
@@ -1858,15 +1676,7 @@ function BlocklyEditor() {
   }
 
   const handleSelectCategory = (category: string) => {
-    setSelectedCategory(category) // Update selected category state
-
-    if (!workspace || !window.Blockly) return
-
-    workspace.updateToolbox({
-      kind: "flyoutToolbox",
-      contents: flyoutContents(category, activePlayground),
-    })
-    workspace.getToolbox()?.setSelectedItem(null)
+    setSelectedCategory(category)
   }
 
   const handleOpenPlayground = () => {
@@ -2217,14 +2027,6 @@ function BlocklyEditor() {
     }
   }, [gameState.isGameOver])
 
-  const handleRestoreBlocks = () => {
-    if (workspace && deletedBlocks) {
-      const xml = (window as any).Blockly.Xml.textToDom(deletedBlocks)
-      ;(window as any).Blockly.Xml.domToWorkspace(xml, workspace)
-      setShowDeletedBlocks(false)
-    }
-  }
-
   const handleOpenRobotConfig = () => {
     setRobotConfigState((prev) => ({ ...prev, isVisible: true, isMinimized: false }))
   }
@@ -2473,158 +2275,22 @@ function BlocklyEditor() {
 
       {/* Main Content */}
       <div id="vex-main" className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - Category Icons */}
-        <div id="vex-category-sidebar" className="w-20 border-r flex flex-col items-center py-4 gap-1 relative">
-          <Button
-            id="vex-category-drivetrain"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "drivetrain"
-                ? "bg-[#4A90E2] text-white"
-                : "bg-[#4A90E2]/20 text-[#4A90E2] hover:bg-[#4A90E2]/30"
-            }`}
-            onClick={() => handleSelectCategory("drivetrain")}
-          >
-            <Cog className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Drivetrain</span>
-          </Button>
-          <Button
-            id="vex-category-operators"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "operators"
-                ? "bg-[#4CAF50] text-white"
-                : "bg-[#4CAF50]/20 text-[#4CAF50] hover:bg-[#4CAF50]/30"
-            }`}
-            onClick={() => handleSelectCategory("operators")}
-          >
-            <Calculator className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Operators</span>
-          </Button>
-          <Button
-            id="vex-category-logic"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "logic"
-                ? "bg-[#F5A623] text-white"
-                : "bg-[#F5A623]/20 text-[#F5A623] hover:bg-[#F5A623]/30"
-            }`}
-            onClick={() => handleSelectCategory("logic")}
-          >
-            <GitBranch className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Logic</span>
-          </Button>
-          <Button
-            id="vex-category-magnet"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "magnet"
-                ? "bg-[#9B59B6] text-white"
-                : "bg-[#9B59B6]/20 text-[#9B59B6] hover:bg-[#9B59B6]/30"
-            }`}
-            onClick={() => handleSelectCategory("magnet")}
-          >
-            <Magnet className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Magnet</span>
-          </Button>
-          <Button
-            id="vex-category-drawing"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "drawing"
-                ? "bg-[#E67E22] text-white"
-                : "bg-[#E67E22]/20 text-[#E67E22] hover:bg-[#E67E22]/30"
-            }`}
-            onClick={() => handleSelectCategory("drawing")}
-          >
-            <Pencil className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Drawing</span>
-          </Button>
-          <Button
-            id="vex-category-sensing"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "sensing"
-                ? "bg-[#14B8A6] text-white"
-                : "bg-[#14B8A6]/20 text-[#14B8A6] hover:bg-[#14B8A6]/30"
-            }`}
-            onClick={() => handleSelectCategory("sensing")}
-          >
-            <Eye className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Sensing</span>
-          </Button>
-          <Button
-            id="vex-category-console"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "console"
-                ? "bg-[#7F8C8D] text-white"
-                : "bg-[#7F8C8D]/20 text-[#7F8C8D] hover:bg-[#7F8C8D]/30"
-            }`}
-            onClick={() => handleSelectCategory("console")}
-          >
-            <Terminal className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Console</span>
-          </Button>
-          <Button
-            id="vex-category-switch"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              selectedCategory === "loops"
-                ? "bg-[#2ECC71] text-white"
-                : "bg-[#2ECC71]/20 text-[#2ECC71] hover:bg-[#2ECC71]/30"
-            }`}
-            onClick={() => handleSelectCategory("loops")}
-          >
-            <ToggleLeft className="h-6 w-6" />
-            <span className="text-[10px] font-medium">Switch</span>
-          </Button>
-
-          <div className="flex-1" />
-          <Button
-            id="vex-category-trash"
-            variant="ghost"
-            className={`w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
-              deletedBlocks
-                ? "bg-red-500 text-white hover:bg-red-600"
-                : "bg-red-500/20 text-red-500 hover:bg-red-500/30"
-            }`}
-            onClick={() => (deletedBlocks ? setShowDeletedBlocks(true) : handleTrash())}
-          >
-            <Trash2 className="h-6 w-6" />
-            <span className="text-[10px] font-medium">{deletedBlocks ? "View" : "Trash"}</span>
-          </Button>
-        </div>
-
-        {/* Blockly Workspace */}
-        <div id="vex-blockly-workspace" ref={blocklyWorkspaceContainerRef} className="flex-1 relative">
-          {!blocklyLoaded && (
-            <div id="vex-blockly-loading" className="absolute inset-0 flex items-center justify-center">
-              {blocklyLoadError ? (
-                <p className="text-red-600">Could not load the block editor: {blocklyLoadError}</p>
-              ) : (
-                <p className="text-gray-600">Loading Blockly...</p>
-              )}
-            </div>
-          )}
-          {/* Always keep blocklyDiv mounted, just hide with CSS */}
-          <div
-            id="vex-blockly-canvas"
-            ref={blocklyDivRef}
-            className="w-full h-full"
-            style={{ display: codeView === "blocks" ? "block" : "none" }}
-          />
-          {codeView === "blocks" && blocklyLoaded && (
-            <BlocklyCollabOverlay peers={collab.peers} workspace={workspace} />
-          )}
-          {codeView === "python" && (
-            <div id="vex-python-code-view" className="w-full h-full bg-gray-900 text-gray-100 font-mono text-sm overflow-auto p-4">
-              <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
-                <code>{getPythonCode()}</code>
-              </pre>
-            </div>
-          )}
-        </div>
+        <BlocklyEditor
+          toolbox={toolbox}
+          selectedCategory={selectedCategory}
+          onSelectCategory={handleSelectCategory}
+          onRegisterBlocks={handleRegisterBlocks}
+          onWorkspaceReady={setWorkspace}
+          onBlocklyLoaded={() => setBlocklyLoaded(true)}
+          onTrash={handleTrash}
+          onFieldPicker={handleFieldPicker}
+          codeView={codeView}
+          pythonCode={getPythonCode()}
+          workspaceContainerRef={blocklyWorkspaceContainerRef}
+          overlay={
+            blocklyLoaded ? <BlocklyCollabOverlay peers={collab.peers} workspace={workspace} /> : null
+          }
+        />
       </div>
 
       <PlaygroundPickerDialog
@@ -3587,54 +3253,6 @@ function BlocklyEditor() {
         </div>
       )}
 
-      {showDeletedBlocks && deletedBlocks && (
-        <div
-          id="vex-deleted-blocks-modal"
-          className="fixed bg-white rounded-lg shadow-2xl border border-gray-300 overflow-hidden"
-          style={{
-            left: "50%",
-            top: "50%",
-            transform: "translate(-50%, -50%)",
-            width: 400,
-            zIndex: 200,
-          }}
-        >
-          <div className="bg-gradient-to-r from-red-600 to-red-500 text-white px-4 py-2 flex items-center justify-between">
-            <span className="font-semibold text-sm">Deleted Blocks</span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-white hover:bg-white/20"
-                onClick={() => setShowDeletedBlocks(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div className="p-4">
-            <p className="text-sm text-gray-600 mb-4">
-              Your previously deleted blocks are stored here. You can restore them to the workspace.
-            </p>
-            <div className="flex gap-2">
-              <Button className="flex-1 bg-green-500 hover:bg-green-600 text-white" onClick={handleRestoreBlocks}>
-                Restore Blocks
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 bg-transparent"
-                onClick={() => {
-                  setDeletedBlocks(null)
-                  setShowDeletedBlocks(false)
-                }}
-              >
-                Clear Trash
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {gameState.showCelebration && confettiParticles.length > 0 && (
         <div id="vex-celebration-overlay" className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none">
           {confettiParticles.map((particle) => (
@@ -3693,4 +3311,4 @@ function BlocklyEditor() {
   )
 }
 
-export default BlocklyEditor
+export default VexWorkspace
