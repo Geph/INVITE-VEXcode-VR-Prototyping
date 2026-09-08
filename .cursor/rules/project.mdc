@@ -1,0 +1,57 @@
+---
+alwaysApply: true
+---
+
+# INVITE VEXcode VR Prototyping — project rules
+
+## Architecture
+- engine/ is pure TypeScript: no React, no DOM, no imports from components/ or app/.
+- playgrounds/ may import engine/ and blocks/, never components/ or app/.
+- telemetry/ imports nothing from components/ or playgrounds/.
+- components/ may import anything.
+- All simulation state is in world millimetres. Pixels exist only in engine/camera.ts and
+  inside render functions. Never store a position in pixels.
+- A block's definition, its JavaScript generator and its Python generator live in the
+  same file.
+
+## Block naming
+- Every playground block type uses VEX's namespace: pg_<category>_<action>. See
+  docs/LOGGING-SPEC.md for the mapping. Standard Blockly/Scratch types (math_*,
+  procedures_*, comment_text) keep their names.
+- block_type is the only content-level signal our learner-modelling pipeline reads.
+  Never rename one for readability.
+
+## Telemetry
+- The event schema in docs/LOGGING-SPEC.md is a compatibility contract with an external
+  pipeline. Reproduce it exactly, including VEX's misspellings (enemies_nuetralized) and
+  its one capitalised event type (PlaygroundChange). Do not "fix" them.
+- Our own additions go under the _invite namespace, never by widening a VEX field.
+- Telemetry failures never break the app. Wrap every emit in try/catch.
+
+## Style
+- TypeScript strict. No `any` in new code; if a Blockly type is unavoidable, define a
+  minimal structural type.
+- No file over 400 lines. Split before you exceed it.
+- Prefer pure functions with explicit arguments over closures over React refs.
+- Comments explain WHY. Delete commented-out code.
+
+## Simulation
+- tick(state, dtMs) is pure and deterministic given the same seed.
+- Fixed timestep of 1000/60 ms, accumulated. Never scale physics by frame time.
+- All randomness comes from engine/rng.ts, seeded per world. Never call Math.random().
+
+## Constants
+- Every gameplay number lives in the playground's config.ts, marked DOC (from the VEX
+  documentation, do not change) or TUNABLE.
+- Never hard-code a number from docs/ROVER-RESCUE-SPEC.md at a call site.
+
+## Testing
+- Every engine/, systems/ and telemetry/ module has a test file. UI gets smoke tests.
+- Never change a characterisation, parity or conformance test to make new code pass. If
+  behaviour must change, say so explicitly and update the test in its own commit.
+
+## Process
+- Work one phase from docs/CURSOR-PROMPT-PACK.md at a time.
+- Run `npm run lint && npm run typecheck && npm test && npm run build` before calling a
+  phase done.
+- If a change exceeds ~1,500 lines of diff, stop and propose a split.

@@ -842,48 +842,7 @@ Recorded here so it is not forgotten, deliberately **not** designed into Phases 
 
 ## Part 5 — Cursor project rules
 
-Save as `.cursor/rules/project.mdc` with `alwaysApply: true`:
-
-```md
-# INVITE VEXcode VR Prototyping — project rules
-
-## Architecture
-- engine/ is pure TypeScript: no React, no DOM, no imports from components/ or app/.
-- playgrounds/ may import engine/ and blocks/, never components/ or app/.
-- components/ may import everything.
-- All simulation state is in world millimetres. Pixels exist only in engine/camera.ts
-  and inside render functions. Never store a position in pixels.
-- A block's definition, its JavaScript generator, and its Python generator live in
-  the same file.
-
-## Style
-- TypeScript strict. No `any` in new code; if a Blockly type is unavoidable, define a
-  minimal structural type instead.
-- No file over 400 lines. Split before you exceed it.
-- Prefer pure functions with explicit arguments over closures over React refs.
-- Comments explain WHY, not what. Delete commented-out code.
-
-## Simulation
-- tick(state, dtMs) must be pure and deterministic given the same seed.
-- Fixed timestep of 1000/60 ms, accumulated; never scale physics by frame time.
-- All randomness comes from engine/rng.ts seeded per world. Never call Math.random().
-
-## Constants
-- Every gameplay number lives in the playground's config.ts, with a comment marking
-  it either DOC (taken from the VEX documentation, do not change) or TUNABLE.
-- Never hard-code a number from docs/ROVER-RESCUE-SPEC.md at a call site.
-
-## Testing
-- Every engine/ and systems/ module has a test file. UI gets smoke tests.
-- Never change a characterisation or parity test to make new code pass. If behaviour
-  must change, say so explicitly and update the test in its own commit.
-
-## Process
-- Work one phase from docs/ROVER-RESCUE-BUILD-PLAN.md at a time.
-- Run `npm run lint && npm run typecheck && npm test && npm run build` before saying
-  a phase is done.
-- If a change exceeds ~1,500 lines of diff, stop and propose a split.
-```
+The living copy is `.cursor/rules/project.mdc` (Appendix A of `docs/CURSOR-PROMPT-PACK.md`).
 
 ---
 
