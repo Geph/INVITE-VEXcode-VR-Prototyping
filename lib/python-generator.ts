@@ -12,6 +12,7 @@ import {
   registerPythonGenerators,
 } from "@/blocks/generators/python"
 import { oceanReefPythonGenerators } from "@/playgrounds/ocean-reef/blocks"
+import { roverRescuePythonGenerators } from "@/playgrounds/rover-rescue/blocks"
 
 export type { PyBlock } from "@/blocks/generators/python"
 export { blockToPythonSnippet, generatePythonProgram }
@@ -20,3 +21,4 @@ for (const category of commonCategoriesToInstall()) {
   registerPythonGenerators(category.pythonGenerators)
 }
 registerPythonGenerators(oceanReefPythonGenerators)
+registerPythonGenerators(roverRescuePythonGenerators)

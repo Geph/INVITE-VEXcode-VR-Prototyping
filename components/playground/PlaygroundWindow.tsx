@@ -4,6 +4,7 @@ import type React from "react"
 import type { ReactNode, Ref } from "react"
 import { GripVertical, Maximize2, Minimize2, Minus, Square, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { playgroundWindowWidthPx } from "@/lib/robot-runtime"
 
 export interface PlaygroundWindowState {
   x: number
@@ -21,6 +22,7 @@ export function PlaygroundWindow({
   onMinimize,
   onMaximize,
   onClose,
+  canvasWidth,
   children,
 }: {
   title: string
@@ -30,6 +32,7 @@ export function PlaygroundWindow({
   onMinimize: () => void
   onMaximize: () => void
   onClose: () => void
+  canvasWidth: number
   children: ReactNode
 }) {
   return (
@@ -43,7 +46,7 @@ export function PlaygroundWindow({
         left: `${state.x}px`,
         top: `${state.y}px`,
         cursor: state.isDragging ? "grabbing" : "auto",
-        width: state.isMaximized ? "616px" : "416px",
+        width: `${playgroundWindowWidthPx(canvasWidth)}px`,
         height: "auto",
       }}
     >

@@ -340,8 +340,40 @@ export function flyoutBlockWithNumberShadows(
   return { kind: "block", type, inputs }
 }
 
-export function getPlaygroundCanvasSize(isMaximized: boolean): { w: number; h: number } {
-  return { w: isMaximized ? 600 : 400, h: isMaximized ? 600 : 400 }
+export const PLAYGROUND_CANVAS_SHORT_PX = 400
+export const PLAYGROUND_CANVAS_SHORT_MAXIMIZED_PX = 600
+/** White frame around the canvas inside `#vex-playground-window`. */
+export const PLAYGROUND_WINDOW_FRAME_X_PX = 16
+/** Keep the floating window off the right edge of the workbench. */
+export const PLAYGROUND_WINDOW_RIGHT_GUTTER_PX = 104
+
+export function getPlaygroundCanvasSize(
+  isMaximized: boolean,
+  world?: { widthMm: number; heightMm: number },
+): { w: number; h: number } {
+  const short = isMaximized ? PLAYGROUND_CANVAS_SHORT_MAXIMIZED_PX : PLAYGROUND_CANVAS_SHORT_PX
+  if (!world || world.widthMm <= 0 || world.heightMm <= 0) {
+    return { w: short, h: short }
+  }
+  const aspect = world.widthMm / world.heightMm
+  if (aspect > 1.01) {
+    return { w: Math.round(short * aspect), h: short }
+  }
+  if (aspect < 0.99) {
+    return { w: short, h: Math.round(short / aspect) }
+  }
+  return { w: short, h: short }
+}
+
+export function playgroundWindowWidthPx(canvasWidth: number): number {
+  return canvasWidth + PLAYGROUND_WINDOW_FRAME_X_PX
+}
+
+export function playgroundWindowX(canvasWidth: number, viewportWidth: number): number {
+  return Math.max(
+    16,
+    viewportWidth - playgroundWindowWidthPx(canvasWidth) - PLAYGROUND_WINDOW_RIGHT_GUTTER_PX,
+  )
 }
 
 /** Canvas pixel position for a VEX field coordinate (origin at playground center). */

@@ -187,6 +187,15 @@ function defineBlocks(Blockly: any) {
     },
   }
 
+  Blockly.Blocks["drive_is_done"] = {
+    init: function () {
+      this.appendDummyInput().appendField("drive is done?")
+      this.setOutput(true, "Boolean")
+      this.setColour("#5A9FE2")
+      this.setTooltip("True when the last drive finished, including if the rover was blocked")
+    },
+  }
+
   Blockly.Blocks["set_drive_timeout"] = {
     init: function () {
       this.appendDummyInput()
@@ -250,9 +259,13 @@ const jsGenerators = {
     const timeout = block.getFieldValue("TIMEOUT")
     return `await robot.setDriveTimeout(${timeout});\n`
   },
+  drive_is_done: () => ["robot.driveIsDone()", 99],
 }
 
 const pythonGenerators: PythonGenerators = {
+  expressions: {
+    drive_is_done: () => "drivetrain.is_done()",
+  },
   statements: {
     drive_simple: (block, indent, { constant }) =>
       `${indent}drivetrain.drive(${constant(block.getFieldValue("DIRECTION"))})\n`,
@@ -288,6 +301,7 @@ export const toolboxEntries = [
   { kind: "block", type: "turn_to_heading" },
   { kind: "block", type: "turn_to_rotation" },
   { kind: "block", type: "stop_driving" },
+  { kind: "block", type: "drive_is_done" },
   { kind: "block", type: "set_drive_velocity" },
   { kind: "block", type: "set_turn_velocity" },
   { kind: "block", type: "set_drive_heading" },

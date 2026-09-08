@@ -29,9 +29,9 @@ export const PLAYGROUND_OPTIONS: {
   },
   {
     id: "rescue-rover",
-    name: "Rescue Rover",
-    available: false,
-    description: "Search and recover. Content coming later.",
+    name: "Rover Rescue",
+    available: true,
+    description: "Explore the 12×6 m research field.",
     icon: Bot,
   },
 ]

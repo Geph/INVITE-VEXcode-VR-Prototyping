@@ -3,17 +3,24 @@
 import type React from "react"
 import { useCallback, useRef } from "react"
 import { normalizeDegrees, shortestRotationDelta } from "@/lib/robot-runtime"
-import { clampRobotMm, poseToCanvas } from "@/playgrounds/ocean-reef"
+import { poseToCanvas } from "@/playgrounds/ocean-reef"
 import type { AnimateRobotFluidFn, HostRobotPose, HostRobotState, ProgramRuntime } from "./program-types"
+import { riverHazardFromState, type RoverRescueState } from "@/playgrounds/rover-rescue/state"
+import { resolveRoverMove } from "@/playgrounds/rover-rescue/systems/physics"
+import { clampHostRobotMm, isRoverRescuePlayground } from "./playground-motion"
 import { reefViewFromMaximized } from "./playground-host"
 
 export function useRobotAnimation({
+  playgroundId,
   playgroundMaximized,
+  roverStateRef,
   setRobotState,
   runtimeRef,
   setPenTrail,
 }: {
+  playgroundId: string
   playgroundMaximized: boolean
+  roverStateRef?: React.MutableRefObject<RoverRescueState>
   setRobotState: React.Dispatch<React.SetStateAction<HostRobotState>>
   runtimeRef: React.MutableRefObject<ProgramRuntime>
   setPenTrail: React.Dispatch<
@@ -77,13 +84,33 @@ export function useRobotAnimation({
 
       /** Commit a frame: refs and pen first, then a pure state update. */
       const commit = (x: number, y: number, rotation: number) => {
-        const clamped = clampRobotMm(x, y, view)
-        if (clamped.xMm !== lastPoint.x || clamped.yMm !== lastPoint.y) {
-          recordPenSegment(poseToCanvas(lastPoint.x, lastPoint.y, view), poseToCanvas(clamped.xMm, clamped.yMm, view))
-          lastPoint = { x: clamped.xMm, y: clamped.yMm }
+        let next = clampHostRobotMm(playgroundId, x, y, view)
+        if (isRoverRescuePlayground(playgroundId) && roverStateRef?.current) {
+          const resolved = resolveRoverMove(
+            { x: lastPoint.x, y: lastPoint.y },
+            { x: next.xMm, y: next.yMm },
+            roverStateRef.current.index,
+            riverHazardFromState(roverStateRef.current),
+          )
+          roverStateRef.current.blocked = resolved.blocked
+          next = { xMm: resolved.xMm, yMm: resolved.yMm }
+          if (resolved.blocked) {
+            poseRef.current = { x: next.xMm, y: next.yMm, rotation }
+            setRobotState((prev) => ({ ...prev, x: next.xMm, y: next.yMm, rotation }))
+            lastPoint = { x: next.xMm, y: next.yMm }
+            settle()
+            return "blocked" as const
+          }
         }
-        poseRef.current = { x: clamped.xMm, y: clamped.yMm, rotation }
-        setRobotState((prev) => ({ ...prev, x: clamped.xMm, y: clamped.yMm, rotation }))
+        if (next.xMm !== lastPoint.x || next.yMm !== lastPoint.y) {
+          if (!isRoverRescuePlayground(playgroundId)) {
+            recordPenSegment(poseToCanvas(lastPoint.x, lastPoint.y, view), poseToCanvas(next.xMm, next.yMm, view))
+          }
+          lastPoint = { x: next.xMm, y: next.yMm }
+        }
+        poseRef.current = { x: next.xMm, y: next.yMm, rotation }
+        setRobotState((prev) => ({ ...prev, x: next.xMm, y: next.yMm, rotation }))
+        return "ok" as const
       }
 
       const animate = (currentTime: number) => {
@@ -102,7 +129,7 @@ export function useRobotAnimation({
           const delta = shortestRotationDelta(startState.rotation, targetState.rotation)
           current.rotation = normalizeDegrees(startState.rotation + delta * easeProgress)
         }
-        commit(current.x, current.y, current.rotation)
+        if (commit(current.x, current.y, current.rotation) === "blocked") return
 
         if (progress < 1) {
           animationRef.current = requestAnimationFrame(animate)

@@ -9,9 +9,12 @@ import {
 import { installAllBlocks } from "@/blocks/registry"
 import { flyoutContents } from "@/blocks/toolbox"
 import { AIAssistant, type AIAssistantHandle, type SurveyStep } from "@/components/ai-assistant"
+import { CoordinateReadout } from "@/components/playground/CoordinateReadout"
 import { PlaygroundHud } from "@/components/playground/PlaygroundHud"
 import { PlaygroundPicker } from "@/components/playground/PlaygroundPicker"
 import { PlaygroundWindow } from "@/components/playground/PlaygroundWindow"
+import { ZoomControls } from "@/components/playground/ZoomControls"
+import { RoverRescueHud } from "@/playgrounds/rover-rescue/hud"
 import BlocklyCollabOverlay from "@/components/blockly-collab-overlay"
 import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/BlocklyEditor"
 import { CelebrationOverlay } from "@/components/workspace/CelebrationOverlay"
@@ -21,10 +24,13 @@ import {
 } from "@/components/workspace/RobotConfigWindow"
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader"
 import { updateBlocklyNumberField } from "@/components/workspace/update-blockly-field"
+import { isRoverRescuePlayground } from "@/hooks/playground-motion"
 import { usePlaygroundDraw } from "@/hooks/usePlaygroundDraw"
 import { usePlaygroundMission } from "@/hooks/usePlaygroundMission"
 import { usePlaygroundSession } from "@/hooks/usePlaygroundSession"
 import { useProgramRunner } from "@/hooks/useProgramRunner"
+import { useRoverCamera } from "@/hooks/useRoverCamera"
+import { useRoverDebug } from "@/hooks/useRoverDebug"
 import { installVexBlockContextMenu } from "@/lib/blockly-context-menu"
 import { blockToPythonSnippet, generatePythonProgram } from "@/lib/python-generator"
 import { useBlocklyCollab } from "@/lib/use-blockly-collab"
@@ -71,6 +77,7 @@ export function VexWorkbench() {
     setRobotState: session.setRobotState,
     runtimeRef: session.runtimeRef,
     reefStateRef: session.reefStateRef,
+    roverStateRef: session.roverStateRef,
     activePlayground: session.activePlayground,
     robotCapabilities,
     getView: () => reefViewFromMaximized(session.playgroundState.isMaximized),
@@ -84,12 +91,34 @@ export function VexWorkbench() {
     syncTrashItems: session.syncTrashItems,
   })
 
+  const roverField = isRoverRescuePlayground(session.playgroundId)
+  const roverViewport = { widthPx: session.canvasSize.w, heightPx: session.canvasSize.h }
+  const roverCam = useRoverCamera({
+    canvasRef: session.canvasRef,
+    enabled: roverField && session.playgroundState.isVisible && !session.playgroundState.isMinimized,
+    viewport: roverViewport,
+    robot: session.robotState,
+  })
+
+  useRoverDebug({
+    enabled: roverField && session.roverState.debug,
+    canvasRef: session.canvasRef,
+    camera: roverCam.camera,
+    viewport: roverViewport,
+    roverStateRef: session.roverStateRef,
+    commitState: session.setRoverState,
+  })
+
   const { checkCoralCollision, checkTrashCollision, floatAnimationRef } = usePlaygroundDraw({
     canvasRef: session.canvasRef,
+    playgroundId: session.playgroundId,
+    activePlayground: session.activePlayground,
     playgroundState: session.playgroundState,
     robotState: session.robotState,
     reefState: session.reefState,
     reefStateRef: session.reefStateRef,
+    roverStateRef: session.roverStateRef,
+    roverCamera: roverField ? roverCam.camera : null,
     coralPieces: session.coralPieces,
     trashItems: session.trashItems,
     penTrail: session.penTrail,
@@ -99,9 +128,23 @@ export function VexWorkbench() {
     commitReefState: session.commitReefState,
     setGameState: session.setGameState,
     gameState: session.gameState,
+    onRoverMissionOver: (reason) => {
+      stopRequestedRef.current = true
+      session.cancelRobotAnimation()
+      isRunningRef.current = false
+      setIsRunning(false)
+      session.setGameState((prev) => ({
+        ...prev,
+        isGameOver: true,
+        missionEndReason: "river",
+        gameLost: true,
+        runError: reason === "river" ? "The rover entered the river." : reason,
+      }))
+    },
   })
 
   const { handleTrash } = usePlaygroundMission({
+    enabled: !roverField,
     robotState: session.robotState,
     trashItems: session.trashItems,
     gameState: session.gameState,
@@ -225,6 +268,7 @@ export function VexWorkbench() {
           onMinimize={session.handleMinimizePlayground}
           onMaximize={session.handleMaximizePlayground}
           onClose={session.handleClosePlayground}
+          canvasWidth={session.canvasSize.w}
         >
           <PlaygroundHud
             consoleLines={consoleLines}
@@ -246,6 +290,39 @@ export function VexWorkbench() {
             onReset={handleReset}
             aiStep={aiStep}
             onCloseStrategy={() => setAiStep("strategy")}
+            chrome={roverField ? "field" : "reef"}
+            canvasOverlay={
+              roverField ? (
+                <>
+                  <CoordinateReadout
+                    cursorWorld={roverCam.cursorWorld}
+                    rover={{
+                      x: session.robotState.x,
+                      y: session.robotState.y,
+                      heading: session.robotState.rotation,
+                    }}
+                  />
+                  <ZoomControls
+                    userScale={roverCam.userScale}
+                    minZoom={roverCam.minZoom}
+                    maxZoom={roverCam.maxZoom}
+                    follow={roverCam.follow}
+                    onZoomIn={roverCam.zoomIn}
+                    onZoomOut={roverCam.zoomOut}
+                    onFitField={roverCam.fitField}
+                    onToggleFollow={() => roverCam.setFollow((on) => !on)}
+                  />
+                  <RoverRescueHud
+                    stateRef={session.roverStateRef}
+                    robot={{
+                      xMm: session.robotState.x,
+                      yMm: session.robotState.y,
+                      headingDeg: session.robotState.rotation,
+                    }}
+                  />
+                </>
+              ) : null
+            }
           />
         </PlaygroundWindow>
       )}

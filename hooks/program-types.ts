@@ -60,7 +60,7 @@ export interface ProgramGameState {
   gameLost: boolean
   runError: string | null
   showCelebration: boolean
-  missionEndReason: "coral" | "battery" | "complete" | null
+  missionEndReason: "coral" | "battery" | "complete" | "river" | null
 }
 
 export interface RobotCapabilities {
@@ -86,7 +86,8 @@ export interface ProgramRunnerDeps {
   setRobotState: React.Dispatch<React.SetStateAction<HostRobotState>>
   runtimeRef: React.MutableRefObject<ProgramRuntime>
   reefStateRef: React.MutableRefObject<any>
-  activePlayground: { createApi: PlaygroundDefinition<any>["createApi"] }
+  roverStateRef?: React.MutableRefObject<any>
+  activePlayground: Pick<PlaygroundDefinition<any>, "id" | "createApi" | "world">
   robotCapabilities: RobotCapabilities
   getView: () => PlaygroundView
   animateRobotFluidRef: React.MutableRefObject<AnimateRobotFluidFn>

@@ -1,6 +1,6 @@
 import type React from "react"
 import { createRng, type RobotState as EngineRobotState } from "@/engine"
-import { clampRobotMm } from "@/playgrounds/ocean-reef"
+import { driveTargetMm, isRoverRescuePlayground } from "./playground-motion"
 import {
   distanceToPixels,
   driveDurationMs,
@@ -25,6 +25,7 @@ export interface ProgramRobotApiContext {
   runtimeRef: { current: ProgramRuntime }
   robotStateRef: { current: HostRobotPose }
   reefStateRef: { current: any }
+  roverStateRef?: { current: any }
   setRobotState: React.Dispatch<React.SetStateAction<HostRobotState>>
   setConsoleLines: React.Dispatch<React.SetStateAction<ConsoleLine[]>>
   setIsRunning: React.Dispatch<React.SetStateAction<boolean>>
@@ -39,7 +40,7 @@ export interface ProgramRobotApiContext {
   highlightProgramBlock: (blockId: string | null) => void
   cancelRobotAnimation: () => void
   animateRobotFluid: AnimateRobotFluidFn
-  activePlayground: { createApi: PlaygroundDefinition<any>["createApi"] }
+  activePlayground: Pick<PlaygroundDefinition<any>, "id" | "createApi" | "world">
   getView: () => PlaygroundView
 }
 
@@ -47,8 +48,6 @@ export type ProgramRobotAPI = ReturnType<typeof createProgramRobotApi>["robotAPI
 
 export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
   const currentView = () => ctx.getView()
-
-  const clampPosition = (xMm: number, yMm: number) => clampRobotMm(xMm, yMm, currentView())
 
   /** Print precision applies to numeric values only; text passes through. */
   const formatPrint = (value: unknown): string => {
@@ -116,9 +115,12 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
       ctx.robotStateRef.current = { x: next.xMm, y: next.yMm, rotation: next.headingDeg }
     },
   }
+  const worldRef = isRoverRescuePlayground(ctx.activePlayground.id)
+    ? (ctx.roverStateRef ?? ctx.reefStateRef)
+    : ctx.reefStateRef
   const playgroundApi = ctx.activePlayground.createApi({
     robot: engineRobotRef,
-    world: ctx.reefStateRef,
+    world: worldRef,
     writeConsole: (text, color) => pushConsoleLine(text, color),
     stopped: { get current() { return ctx.stopRequestedRef.current } },
     rng: createRng(1),
@@ -148,13 +150,17 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     drive: async (direction: string, distance?: number, unit?: string) =>
       withMotionLock(async () => {
         throwIfStopped()
-        const sign = direction === "forward" ? 1 : -1
         const distanceMm =
           distance === undefined ? 200 : unit === "inches" || unit === "INCHES" ? Number(distance) * 25.4 : Number(distance)
-        const angleRad = (ctx.robotStateRef.current.rotation * Math.PI) / 180
-        const rawX = ctx.robotStateRef.current.x + sign * distanceMm * Math.sin(angleRad)
-        const rawY = ctx.robotStateRef.current.y - sign * distanceMm * Math.cos(angleRad)
-        const { xMm: targetX, yMm: targetY } = clampPosition(rawX, rawY)
+        if (worldRef.current && "driveMoving" in worldRef.current) worldRef.current.driveMoving = true
+        const { xMm: targetX, yMm: targetY } = driveTargetMm(
+          ctx.activePlayground.id,
+          ctx.robotStateRef.current,
+          direction,
+          distanceMm,
+          currentView(),
+          isRoverRescuePlayground(ctx.activePlayground.id) ? worldRef.current : null,
+        )
         const actualMm = Math.hypot(targetX - ctx.robotStateRef.current.x, targetY - ctx.robotStateRef.current.y)
         const duration = driveDurationMs(distanceToPixels(actualMm, "mm"), ctx.runtimeRef.current.driveVelocity)
         const drivePromise = ctx.animateRobotFluid({ x: targetX, y: targetY }, duration, ctx.robotStateRef)
@@ -174,6 +180,8 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
           await drivePromise
         }
         throwIfStopped()
+      }).finally(() => {
+        if (worldRef.current && "driveMoving" in worldRef.current) worldRef.current.driveMoving = false
       }),
     turn: async (direction: string, degrees?: number) =>
       withMotionLock(async () => {
@@ -207,6 +215,10 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
       }),
     stopDriving: () => {
       ctx.cancelRobotAnimation()
+    },
+    driveIsDone: () => {
+      if (typeof playgroundApi.driveIsDone === "function") return playgroundApi.driveIsDone()
+      return true
     },
     setDriveVelocity: (velocity: number) => {
       ctx.runtimeRef.current.driveVelocity = Number(velocity)
@@ -300,6 +312,11 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     },
     getPosition: (axis: string, unit: string) => playgroundApi.getPosition(axis, unit),
     getPositionAngle: () => playgroundApi.getPositionAngle(),
+    sees: (kind: string) => playgroundApi.sees?.(kind) ?? false,
+    detects: (kind: string) => playgroundApi.detects?.(kind) ?? false,
+    roverAngle: (kind: string) => playgroundApi.roverAngle?.(kind) ?? 0,
+    roverDistanceTo: (kind: string, unit: string) => playgroundApi.roverDistanceTo?.(kind, unit) ?? 0,
+    roverLocation: (kind: string, axis: string, unit: string) => playgroundApi.roverLocation?.(kind, axis, unit) ?? 0,
     stop: () => {
       ctx.stopRequestedRef.current = true
       ctx.cancelRobotAnimation()

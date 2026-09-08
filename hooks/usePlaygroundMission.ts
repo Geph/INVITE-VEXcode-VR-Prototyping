@@ -9,6 +9,7 @@ import type { HostRobotState, ProgramGameState } from "./program-types"
 type MissionEndReason = ProgramGameState["missionEndReason"]
 
 export function usePlaygroundMission({
+  enabled = true,
   robotState,
   trashItems,
   gameState,
@@ -26,6 +27,7 @@ export function usePlaygroundMission({
   checkCoralCollision,
   checkTrashCollision,
 }: {
+  enabled?: boolean
   robotState: HostRobotState
   trashItems: { isCollected: boolean }[]
   gameState: ProgramGameState
@@ -88,6 +90,7 @@ export function usePlaygroundMission({
   }, [gameState.showCelebration])
 
   useEffect(() => {
+    if (!enabled) return
     checkTrashCollision()
 
     if (isRunning && performance.now() < coralGraceUntilRef.current) {
@@ -100,12 +103,12 @@ export function usePlaygroundMission({
         cancelAnimationFrame(floatAnimationRef.current)
       }
     }
-  }, [robotState.x, robotState.y, checkTrashCollision, checkCoralCollision, isRunning, endMission])
+  }, [enabled, robotState.x, robotState.y, checkTrashCollision, checkCoralCollision, isRunning, endMission])
 
   useEffect(() => {
     // A program parked on a block is not driving, so reading your code between
     // steps must not cost battery.
-    if (!isRunning || gameState.isGameOver || isPausedOnBlock) return
+    if (!enabled || !isRunning || gameState.isGameOver || isPausedOnBlock) return
     const tickMs = 250
     const drainPerTick = (100 / CORAL_REEF_BATTERY_SEC) * (tickMs / 1000)
     const id = setInterval(() => {
@@ -119,15 +122,15 @@ export function usePlaygroundMission({
       })
     }, tickMs)
     return () => clearInterval(id)
-  }, [isRunning, gameState.isGameOver, isPausedOnBlock, endMission])
+  }, [enabled, isRunning, gameState.isGameOver, isPausedOnBlock, endMission])
 
   useEffect(() => {
-    if (!isRunning || gameState.isGameOver || gameState.trashTotal === 0) return
+    if (!enabled || !isRunning || gameState.isGameOver || gameState.trashTotal === 0) return
     const remaining = trashItems.filter((t) => !t.isCollected).length
     if (remaining === 0) {
       endMission("complete")
     }
-  }, [trashItems, isRunning, gameState.isGameOver, gameState.trashTotal, endMission])
+  }, [enabled, trashItems, isRunning, gameState.isGameOver, gameState.trashTotal, endMission])
 
   return { handleTrash }
 }

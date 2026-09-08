@@ -1,6 +1,6 @@
 "use client"
 
-import type { RefObject } from "react"
+import type { ReactNode, RefObject } from "react"
 import { Gauge, Ruler, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PlaygroundCanvas } from "@/components/playground/PlaygroundCanvas"
@@ -30,6 +30,8 @@ export function PlaygroundHud({
   onReset,
   aiStep,
   onCloseStrategy,
+  chrome = "reef",
+  canvasOverlay,
 }: {
   consoleLines: ConsoleLine[]
   showSensors: boolean
@@ -50,6 +52,8 @@ export function PlaygroundHud({
   onReset: () => void
   aiStep: SurveyStep
   onCloseStrategy: () => void
+  chrome?: "reef" | "field"
+  canvasOverlay?: ReactNode
 }) {
   return (
     <div id="vex-playground-body" className="flex flex-col relative">
@@ -66,7 +70,7 @@ export function PlaygroundHud({
         </div>
       )}
 
-      <div
+      {chrome === "reef" && <div
         id="vex-playground-field-toggles"
         className="absolute top-2 right-2 z-20 flex items-center gap-1.5"
       >
@@ -106,11 +110,14 @@ export function PlaygroundHud({
         >
           <Ruler className="h-4 w-4" />
         </button>
+      </div>}
+
+      <div className="relative">
+        <PlaygroundCanvas canvasRef={canvasRef} width={canvasWidth} height={canvasHeight} />
+        {canvasOverlay}
       </div>
 
-      <PlaygroundCanvas canvasRef={canvasRef} width={canvasWidth} height={canvasHeight} />
-
-      <div
+      {chrome === "reef" && <div
         id="vex-playground-status-bar"
         className="px-3 py-3 space-y-2.5"
       >
@@ -169,7 +176,7 @@ export function PlaygroundHud({
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       <RunToolbar
         isRunning={isRunning}
@@ -189,6 +196,11 @@ export function PlaygroundHud({
                 <h3 className="text-2xl font-bold text-green-600 mb-2">Mission complete!</h3>
                 <p className="text-gray-600 mb-4">All trash collected before the battery ran out.</p>
               </>
+            ) : gameState.missionEndReason === "river" ? (
+              <>
+                <h3 className="text-2xl font-bold text-red-600 mb-2">Mission ended</h3>
+                <p className="text-gray-600 mb-4">The rover entered the river.</p>
+              </>
             ) : gameState.missionEndReason === "battery" ? (
               <>
                 <h3 className="text-2xl font-bold text-amber-600 mb-2">Battery depleted</h3>
@@ -205,10 +217,12 @@ export function PlaygroundHud({
                 <p className="text-gray-600 mb-4">The robot collided with the coral reef.</p>
               </>
             )}
+            {chrome === "reef" && (
             <p id="vex-playground-gameover-score" className="text-lg font-semibold text-orange-500 mb-4">
               Trash collected: {gameState.trashCollected}
               {gameState.trashTotal > 0 ? ` / ${gameState.trashTotal}` : ""}
             </p>
+            )}
             <Button id="vex-playground-gameover-retry" onClick={onReset} className="bg-purple-500 hover:bg-purple-600 text-white">
               Try Again
             </Button>

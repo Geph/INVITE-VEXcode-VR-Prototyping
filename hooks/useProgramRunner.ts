@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from "react"
 import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
-import { START_POSE } from "@/playgrounds/ocean-reef"
 import { createProgramRobotApi, startBumperWatchers } from "./program-robot-api"
 import {
   PRINT_COLORS,
@@ -20,6 +19,7 @@ export function useProgramRunner({
   setRobotState,
   runtimeRef,
   reefStateRef,
+  roverStateRef,
   activePlayground,
   robotCapabilities,
   getView,
@@ -134,7 +134,7 @@ export function useProgramRunner({
       lastPenPoint: null,
     }
 
-    const startPos = { x: START_POSE.xMm, y: START_POSE.yMm }
+    const startPos = { x: activePlayground.world.startPose.xMm, y: activePlayground.world.startPose.yMm }
     setRobotState({
       x: startPos.x,
       y: startPos.y,
@@ -152,6 +152,7 @@ export function useProgramRunner({
       runtimeRef,
       robotStateRef,
       reefStateRef,
+      roverStateRef,
       setRobotState,
       setConsoleLines,
       setIsRunning,
@@ -272,7 +273,7 @@ export function useProgramRunner({
     }
     setIsRunning(false)
     isRunningRef.current = false
-    const resetPos = { x: START_POSE.xMm, y: START_POSE.yMm }
+    const resetPos = { x: activePlayground.world.startPose.xMm, y: activePlayground.world.startPose.yMm }
     setRobotState({
       x: resetPos.x,
       y: resetPos.y,

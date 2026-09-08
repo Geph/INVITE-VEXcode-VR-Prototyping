@@ -31,6 +31,8 @@ import {
   generateWhenStartedJavaScript,
   getDefaultRobotPixelPosition,
   getPlaygroundCanvasSize,
+  playgroundWindowWidthPx,
+  playgroundWindowX,
   isTrashNearEye,
   maxDriveDistanceMm,
   nearestTrashDistanceMm,
@@ -204,6 +206,15 @@ describe("canvas size, spawn, remap, ruler", () => {
   it("sizes the playground at 400 and 600", () => {
     expect(getPlaygroundCanvasSize(false)).toEqual({ w: 400, h: 400 })
     expect(getPlaygroundCanvasSize(true)).toEqual({ w: 600, h: 600 })
+  })
+
+  it("sizes a rectangular world to the field aspect", () => {
+    expect(getPlaygroundCanvasSize(false, { widthMm: 12000, heightMm: 6000 })).toEqual({ w: 800, h: 400 })
+    expect(getPlaygroundCanvasSize(true, { widthMm: 12000, heightMm: 6000 })).toEqual({ w: 1200, h: 600 })
+    expect(getPlaygroundCanvasSize(false, { widthMm: 2000, heightMm: 2000 })).toEqual({ w: 400, h: 400 })
+    expect(playgroundWindowWidthPx(400)).toBe(416)
+    expect(playgroundWindowWidthPx(800)).toBe(816)
+    expect(playgroundWindowX(800, 1400)).toBe(1400 - 816 - 104)
   })
 
   it("spawns the robot at the Coral Reef start, clamped", () => {

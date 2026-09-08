@@ -6,6 +6,8 @@ import {
   DISTANCE_SENSOR_MAX_MM,
   EYE_NEAR_MM,
   getPlaygroundCanvasSize,
+  playgroundWindowWidthPx,
+  playgroundWindowX,
   isTrashNearEye,
   nearestTrashInFrontMm,
   normalizeDegrees,
@@ -27,6 +29,8 @@ import {
   resolvePlaygroundId,
 } from "@/playgrounds/registry"
 import { PLAYGROUND_OPTIONS, type PlaygroundId } from "@/components/playground/PlaygroundPicker"
+import { createRoverRescueState, resetRoverRescueState, type RoverRescueState } from "@/playgrounds/rover-rescue"
+import { isRoverRescuePlayground } from "./playground-motion"
 import { useRobotAnimation } from "./useRobotAnimation"
 import type { HostRobotPose, HostRobotState, ProgramGameState } from "./program-types"
 import {
@@ -40,6 +44,18 @@ import {
   type PlaygroundChromeState,
   type TrashItem,
 } from "./playground-host"
+
+function pickerToRegistryId(id: PlaygroundId): string {
+  if (id === "rescue-rover") return "rover-rescue"
+  if (id === "ocean-cleanup") return "ocean-reef"
+  return DEFAULT_PLAYGROUND_ID
+}
+
+function registryToPickerId(id: string): PlaygroundId | null {
+  if (id === "rover-rescue") return "rescue-rover"
+  if (id === "ocean-reef") return "ocean-cleanup"
+  return null
+}
 
 export function usePlaygroundSession(eyeSensor: boolean) {
   const playgroundRef = useRef<HTMLDivElement>(null)
@@ -75,19 +91,48 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   const trashSpawnIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const deployTrashFieldRef = useRef<() => void>(() => {})
 
+  const [roverState, setRoverState] = useState<RoverRescueState>(() => createRoverRescueState(1))
+  const roverStateRef = useRef(roverState)
+
   const { cancelRobotAnimation, animateRobotFluidRef } = useRobotAnimation({
+    playgroundId,
     playgroundMaximized: playgroundState.isMaximized,
+    roverStateRef,
     setRobotState,
     runtimeRef,
     setPenTrail,
   })
 
+  const applyStartPose = useCallback((id: string) => {
+    const playground = getPlayground(id) ?? getPlayground(DEFAULT_PLAYGROUND_ID)!
+    const pose = playground.world.startPose
+    robotStateRef.current = { x: pose.xMm, y: pose.yMm, rotation: pose.headingDeg }
+    setRobotState(initialHostRobot(pose.xMm, pose.yMm))
+  }, [])
+
+  useEffect(() => {
+    roverStateRef.current = roverState
+  }, [roverState])
+
   useEffect(() => {
     setIsMounted(true)
-    const playgroundX = Math.max(16, window.innerWidth - 520)
-    setPlaygroundState((prev) => ({ ...prev, x: playgroundX }))
-    setPlaygroundId(resolvePlaygroundId(new URLSearchParams(window.location.search).get("playground")))
-  }, [])
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get("playground")
+    const id = resolvePlaygroundId(raw)
+    const debug = params.get("debug") === "1"
+    const playground = getPlayground(id) ?? getPlayground(DEFAULT_PLAYGROUND_ID)!
+    const canvas = getPlaygroundCanvasSize(false, playground.world)
+    const playgroundX = playgroundWindowX(canvas.w, window.innerWidth)
+    setPlaygroundId(id)
+    applyStartPose(id)
+    setRoverState(createRoverRescueState(1, debug))
+    setSelectedPlaygroundId(registryToPickerId(id))
+    setPlaygroundState((prev) => ({
+      ...prev,
+      x: playgroundX,
+      isVisible: prev.isVisible || isRoverRescuePlayground(id),
+    }))
+  }, [applyStartPose])
 
   const syncTrashItems = useCallback((items: TrashItem[]) => {
     trashItemsRef.current = items
@@ -123,12 +168,13 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   }, [commitReefState])
 
   useEffect(() => {
-    if (!isMounted) return
+    if (!isMounted || isRoverRescuePlayground(playgroundId)) return
     initializeCoralBorders(playgroundState.isMaximized)
-  }, [isMounted, playgroundState.isMaximized, initializeCoralBorders])
+  }, [isMounted, playgroundId, playgroundState.isMaximized, initializeCoralBorders])
 
   const handlePlaygroundMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return
+    if ((e.target as HTMLElement).closest("#vex-playground-canvas, #vex-playground-zoom-controls, #vex-playground-coord-readout")) return
     if ((e.target as HTMLElement).closest(".playground-header")) {
       setPlaygroundState((prev) => ({
         ...prev,
@@ -171,6 +217,24 @@ export function usePlaygroundSession(eyeSensor: boolean) {
       trashSpawnIntervalRef.current = null
     }
 
+    if (isRoverRescuePlayground(playgroundId)) {
+      setRoverState((prev) => resetRoverRescueState(prev, prev.seed))
+      applyStartPose(playgroundId)
+      setGameState((prev) => ({
+        ...prev,
+        trashTotal: 0,
+        trashCollected: 0,
+        isSpawningTrash: false,
+        batteryPercent: 100,
+        missionEndReason: null,
+        showCelebration: false,
+        isGameOver: false,
+        gameLost: false,
+        runError: null,
+      }))
+      return
+    }
+
     const view = reefViewFromMaximized(playgroundState.isMaximized)
     const next = createOceanReefState(1, view)
     commitReefState(next)
@@ -186,7 +250,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
       gameLost: false,
       runError: null,
     }))
-  }, [playgroundState.isMaximized, commitReefState])
+  }, [playgroundId, playgroundState.isMaximized, commitReefState, applyStartPose])
   deployTrashFieldRef.current = deployTrashField
 
   const handleOpenPlayground = () => {
@@ -200,14 +264,26 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   const handleChoosePlayground = useCallback((id: PlaygroundId) => {
     const option = PLAYGROUND_OPTIONS.find((item) => item.id === id)
     if (!option?.available) return
+    const registryId = pickerToRegistryId(id)
+    setPlaygroundId(registryId)
     setSelectedPlaygroundId(id)
+    applyStartPose(registryId)
+    setPenTrail([])
+    if (isRoverRescuePlayground(registryId)) {
+      setRoverState((prev) => createRoverRescueState(prev.seed, prev.debug))
+    }
+    const playground = getPlayground(registryId) ?? getPlayground(DEFAULT_PLAYGROUND_ID)!
     setPlaygroundPickerOpen(false)
-    setPlaygroundState((prev) => ({
-      ...prev,
-      isVisible: true,
-      isMinimized: false,
-    }))
-  }, [])
+    setPlaygroundState((prev) => {
+      const canvas = getPlaygroundCanvasSize(prev.isMaximized, playground.world)
+      return {
+        ...prev,
+        x: playgroundWindowX(canvas.w, window.innerWidth),
+        isVisible: true,
+        isMinimized: false,
+      }
+    })
+  }, [applyStartPose])
 
   const handleClosePlayground = () => {
     setPlaygroundState((prev) => ({ ...prev, isVisible: false }))
@@ -220,24 +296,29 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   const handleMaximizePlayground = () => {
     const fromMaximized = playgroundState.isMaximized
     const toMaximized = !fromMaximized
-    const from = getPlaygroundCanvasSize(fromMaximized)
-    const to = getPlaygroundCanvasSize(toMaximized)
-    const remap = (x: number, y: number) =>
-      remapPixelAcrossCanvas(x, y, from.w, from.h, to.w, to.h)
+    const from = getPlaygroundCanvasSize(fromMaximized, activePlayground.world)
+    const to = getPlaygroundCanvasSize(toMaximized, activePlayground.world)
+    if (!isRoverRescuePlayground(playgroundId)) {
+      const remap = (x: number, y: number) =>
+        remapPixelAcrossCanvas(x, y, from.w, from.h, to.w, to.h)
 
-    setPenTrail((segs) =>
-      segs.map((seg) => {
-        const a = remap(seg.x1, seg.y1)
-        const b = remap(seg.x2, seg.y2)
-        return { ...seg, x1: a.x, y1: a.y, x2: b.x, y2: b.y }
-      }),
-    )
+      setPenTrail((segs) =>
+        segs.map((seg) => {
+          const a = remap(seg.x1, seg.y1)
+          const b = remap(seg.x2, seg.y2)
+          return { ...seg, x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+        }),
+      )
+    }
 
-    setPlaygroundState((prev) => ({ ...prev, isMaximized: toMaximized }))
+    setPlaygroundState((prev) => {
+      const maxX = Math.max(16, window.innerWidth - playgroundWindowWidthPx(to.w) - 16)
+      return { ...prev, isMaximized: toMaximized, x: Math.min(prev.x, maxX) }
+    })
   }
 
   const liveSensors: LiveSensors = useMemo(() => {
-    const { w, h } = getPlaygroundCanvasSize(playgroundState.isMaximized)
+    const { w, h } = getPlaygroundCanvasSize(playgroundState.isMaximized, activePlayground.world)
     const field = { x: Math.round(robotState.x), y: Math.round(robotState.y) }
     const robotPx = poseToCanvas(robotState.x, robotState.y, reefViewFromMaximized(playgroundState.isMaximized))
     const borderMm = raycastToBorder(robotPx.x, robotPx.y, robotState.rotation, w, h, coralPieces, DISTANCE_SENSOR_MAX_MM)
@@ -261,18 +342,24 @@ export function usePlaygroundSession(eyeSensor: boolean) {
       rotation: Math.round(normalizeDegrees(robotState.rotation)),
       trashRemaining,
     }
-  }, [robotState, trashItems, coralPieces, playgroundState.isMaximized, eyeSensor])
+  }, [robotState, trashItems, coralPieces, playgroundState.isMaximized, eyeSensor, activePlayground.world])
 
-  const canvasSize = getPlaygroundCanvasSize(playgroundState.isMaximized)
+  const canvasSize = getPlaygroundCanvasSize(playgroundState.isMaximized, activePlayground.world)
   const selectedPlaygroundName =
-    PLAYGROUND_OPTIONS.find((option) => option.id === selectedPlaygroundId)?.name ?? "Playground"
+    PLAYGROUND_OPTIONS.find((option) => option.id === selectedPlaygroundId)?.name ??
+    activePlayground.name ??
+    "Playground"
 
   return {
+    playgroundId,
     playgroundRef,
     canvasRef,
     robotStateRef,
     runtimeRef,
     reefStateRef,
+    roverState,
+    roverStateRef,
+    setRoverState,
     activePlayground,
     reefState,
     coralPieces,
