@@ -40,7 +40,7 @@ export function useRoverDebug({
     }
 
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return
+      if (event.button !== 0 || event.target !== canvas) return
       const state = roverStateRef.current
       const hit = hitDebugHandle(
         pointOnCanvas(event.clientX, event.clientY),
@@ -109,12 +109,13 @@ export function useRoverDebug({
       void riverHazardFromState(state)
     }
 
-    canvas.addEventListener("pointerdown", onPointerDown)
+    // Capture on window so grabbing a handle wins over the camera's drag-to-pan.
+    window.addEventListener("pointerdown", onPointerDown, true)
     window.addEventListener("pointermove", onPointerMove)
     window.addEventListener("pointerup", onPointerUp)
     window.addEventListener("keydown", onKeyDown)
     return () => {
-      canvas.removeEventListener("pointerdown", onPointerDown)
+      window.removeEventListener("pointerdown", onPointerDown, true)
       window.removeEventListener("pointermove", onPointerMove)
       window.removeEventListener("pointerup", onPointerUp)
       window.removeEventListener("keydown", onKeyDown)

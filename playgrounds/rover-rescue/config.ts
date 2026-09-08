@@ -26,14 +26,16 @@ export const FIELD_BOUNDS: WorldBounds = {
 /** Nominal SW corner of the field. */
 export const BASE_NOMINAL_MM = { x: -6000, y: -3000 }
 
-/** Drawn research-base pad centre from the spec. */
-export const BASE_PAD_CENTRE_MM = { x: -5750, y: -2650 }
+export const BASE_PAD_RADIUS_MM = 250
 
 /**
- * Pad radius is the distance from the drawn centre to the west field edge,
- * so the disc stays inside the spec field rectangle.
+ * The spec draws the pad tangent to the SW corner, which clips the disc and
+ * its "BASE" label at the field edge. One pad radius of inset keeps both clear.
  */
-export const BASE_PAD_RADIUS_MM = BASE_PAD_CENTRE_MM.x - FIELD_MIN_X_MM
+export const BASE_PAD_CENTRE_MM = {
+  x: FIELD_MIN_X_MM + BASE_PAD_RADIUS_MM * 2,
+  y: FIELD_MIN_Y_MM + BASE_PAD_RADIUS_MM * 2,
+}
 
 export const ROVER_LENGTH_MM = 191
 export const ROVER_WIDTH_MM = 147
@@ -53,9 +55,10 @@ export const START_POSE = {
  * `initialZoom: 0` is the fit-to-window sentinel — the host computes the
  * actual px/mm from the canvas size at mount.
  */
-export const MIN_USER_ZOOM = 0.25
-export const MAX_USER_ZOOM = 3
 export const FIT_USER_ZOOM = 1
+/** Fit is the floor: zooming out past it would only reveal void off-field. */
+export const MIN_USER_ZOOM = FIT_USER_ZOOM
+export const MAX_USER_ZOOM = 3
 export const FIT_ZOOM_SENTINEL = 0
 export const FOLLOW_ROVER = true
 

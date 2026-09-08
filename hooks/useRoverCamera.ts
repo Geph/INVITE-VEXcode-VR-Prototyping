@@ -14,14 +14,36 @@ import {
 import {
   cameraFromUserScale,
   clampRoverCamera,
-  clampUserScale,
   fitFieldCamera,
+  panRoverCamera,
   zoomRoverAt,
   zoomToUserScale,
 } from "@/playgrounds/rover-rescue/camera"
 import type { HostRobotPose } from "./program-types"
 
 const ZOOM_STEP = 1.25
+/** A drag shorter than this stays a click, so a tap does not cancel follow mode. */
+const PAN_SLOP_PX = 3
+
+/** Capture keeps the drag alive off-canvas; a stale pointer id must not throw. */
+function capturePointer(canvas: HTMLCanvasElement, pointerId: number): void {
+  try {
+    canvas.setPointerCapture(pointerId)
+  } catch {
+    // Pointer already released.
+  }
+}
+
+function sameCamera(a: Camera, b: Camera): boolean {
+  return a.zoom === b.zoom && a.centerMm.x === b.centerMm.x && a.centerMm.y === b.centerMm.y
+}
+
+interface PanGesture {
+  x: number
+  y: number
+  cam: Camera
+  active: boolean
+}
 
 export function useRoverCamera({
   canvasRef,
@@ -40,30 +62,41 @@ export function useRoverCamera({
   const [camera, setCamera] = useState<Camera>(() =>
     cameraFromUserScale(FIT_USER_ZOOM, { x: 0, y: 0 }, viewport),
   )
-  const spaceHeldRef = useRef(false)
-  const panningRef = useRef<{ x: number; y: number; cam: Camera } | null>(null)
+  const panningRef = useRef<PanGesture | null>(null)
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null)
   const cameraRef = useRef(camera)
   cameraRef.current = camera
   const viewportRef = useRef(viewport)
+  viewportRef.current = viewport
+  const followRef = useRef(follow)
+  followRef.current = follow
+  const robotRef = useRef(robot)
+  robotRef.current = robot
   const wasEnabledRef = useRef(false)
 
   const applyCamera = useCallback((next: Camera) => {
-    const clamped = clampRoverCamera(next, viewport)
+    const view = viewportRef.current
+    const clamped = clampRoverCamera(next, view)
     cameraRef.current = clamped
-    setCamera(clamped)
-    setUserScale(zoomToUserScale(clamped.zoom, viewport))
-  }, [viewport])
+    // Same pose means no state change; re-setting it would spin the follow effect.
+    setCamera((prev) => (sameCamera(prev, clamped) ? prev : clamped))
+    setUserScale(zoomToUserScale(clamped.zoom, view))
+  }, [])
 
   const fitField = useCallback(() => {
     setFollow(false)
-    applyCamera(fitFieldCamera(viewport))
-  }, [applyCamera, viewport])
+    applyCamera(fitFieldCamera(viewportRef.current))
+  }, [applyCamera])
 
   const zoomBy = useCallback((factor: number, screenPoint?: Vec2) => {
-    const origin = screenPoint ?? { x: viewport.widthPx / 2, y: viewport.heightPx / 2 }
-    applyCamera(zoomRoverAt(cameraRef.current, origin, factor, viewport))
-  }, [applyCamera, viewport])
+    const view = viewportRef.current
+    const origin = screenPoint ?? { x: view.widthPx / 2, y: view.heightPx / 2 }
+    const zoomed = zoomRoverAt(cameraRef.current, origin, factor, view)
+    const pose = robotRef.current
+    applyCamera(
+      followRef.current ? { centerMm: { x: pose.x, y: pose.y }, zoom: zoomed.zoom } : zoomed,
+    )
+  }, [applyCamera])
 
   useEffect(() => {
     if (!enabled) {
@@ -82,7 +115,7 @@ export function useRoverCamera({
   }, [enabled, viewport.widthPx, viewport.heightPx])
 
   useEffect(() => {
-    if (!enabled || !follow) return
+    if (!enabled || !follow || panningRef.current?.active) return
     applyCamera({
       centerMm: { x: robot.x, y: robot.y },
       zoom: cameraRef.current.zoom,
@@ -103,38 +136,50 @@ export function useRoverCamera({
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault()
+      const view = viewportRef.current
       const point = pointOnCanvas(event.clientX, event.clientY)
       const factor = event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP
-      applyCamera(zoomRoverAt(cameraRef.current, point, factor, viewport))
+      const zoomed = zoomRoverAt(cameraRef.current, point, factor, view)
+      const pose = robotRef.current
+      applyCamera(
+        followRef.current ? { centerMm: { x: pose.x, y: pose.y }, zoom: zoomed.zoom } : zoomed,
+      )
     }
 
     const onPointerDown = (event: PointerEvent) => {
-      const pan = event.button === 1 || (event.button === 0 && spaceHeldRef.current)
-      if (!pan) return
-      event.preventDefault()
-      setFollow(false)
-      panningRef.current = { x: event.clientX, y: event.clientY, cam: cameraRef.current }
-      canvas.setPointerCapture(event.pointerId)
+      if (event.button !== 0 && event.button !== 1) return
+      // Middle-drag would otherwise start the browser autoscroll cursor.
+      if (event.button === 1) event.preventDefault()
+      const start = pointOnCanvas(event.clientX, event.clientY)
+      panningRef.current = { x: start.x, y: start.y, cam: cameraRef.current, active: false }
+      capturePointer(canvas, event.pointerId)
     }
 
     const onPointerMove = (event: PointerEvent) => {
+      const view = viewportRef.current
       const point = pointOnCanvas(event.clientX, event.clientY)
-      setCursorWorld(screenToWorld(point, cameraRef.current, viewport))
       const pan = panningRef.current
+      if (!pan?.active) {
+        setCursorWorld(screenToWorld(point, cameraRef.current, view))
+      }
       if (!pan) return
-      const zoom = Math.max(cameraRef.current.zoom, 1e-9)
-      applyCamera({
-        centerMm: {
-          x: pan.cam.centerMm.x - (event.clientX - pan.x) / zoom,
-          y: pan.cam.centerMm.y + (event.clientY - pan.y) / zoom,
-        },
-        zoom: pan.cam.zoom,
-      })
+      const dx = point.x - pan.x
+      const dy = point.y - pan.y
+      if (!pan.active) {
+        if (Math.hypot(dx, dy) < PAN_SLOP_PX) return
+        // Re-anchor so the field does not jump by the slop distance.
+        panningRef.current = { x: point.x, y: point.y, cam: cameraRef.current, active: true }
+        setFollow(false)
+        canvas.style.cursor = "grabbing"
+        return
+      }
+      applyCamera(panRoverCamera(pan.cam, { x: dx, y: dy }, view))
     }
 
     const endPan = (event: PointerEvent) => {
       if (panningRef.current) {
         panningRef.current = null
+        canvas.style.cursor = "grab"
         if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
       }
     }
@@ -150,6 +195,8 @@ export function useRoverCamera({
 
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length === 2) {
+        // A second finger turns the one-finger pan into a pinch zoom.
+        panningRef.current = null
         pinchRef.current = { distance: touchDistance(event.touches), zoom: cameraRef.current.zoom }
       }
     }
@@ -165,19 +212,22 @@ export function useRoverCamera({
         y: ((event.touches[0].clientY + event.touches[1].clientY) / 2 - rect.top) * (canvas.height / Math.max(1, rect.height)),
       }
       const factor = distance / pinchRef.current.distance
-      applyCamera(zoomRoverAt({ ...cameraRef.current, zoom: pinchRef.current.zoom }, mid, factor, viewport))
+      applyCamera(zoomRoverAt({ ...cameraRef.current, zoom: pinchRef.current.zoom }, mid, factor, viewportRef.current))
     }
 
     const onTouchEnd = () => {
       pinchRef.current = null
     }
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === "Space") spaceHeldRef.current = true
+    const priorStyle = {
+      cursor: canvas.style.cursor,
+      touchAction: canvas.style.touchAction,
+      userSelect: canvas.style.userSelect,
     }
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.code === "Space") spaceHeldRef.current = false
-    }
+    canvas.style.cursor = "grab"
+    // Let one finger drag the field instead of scrolling the page.
+    canvas.style.touchAction = "none"
+    canvas.style.userSelect = "none"
 
     canvas.addEventListener("wheel", onWheel, { passive: false })
     canvas.addEventListener("pointerdown", onPointerDown)
@@ -188,9 +238,11 @@ export function useRoverCamera({
     canvas.addEventListener("touchstart", onTouchStart, { passive: true })
     canvas.addEventListener("touchmove", onTouchMove, { passive: false })
     canvas.addEventListener("touchend", onTouchEnd)
-    window.addEventListener("keydown", onKeyDown)
-    window.addEventListener("keyup", onKeyUp)
     return () => {
+      panningRef.current = null
+      canvas.style.cursor = priorStyle.cursor
+      canvas.style.touchAction = priorStyle.touchAction
+      canvas.style.userSelect = priorStyle.userSelect
       canvas.removeEventListener("wheel", onWheel)
       canvas.removeEventListener("pointerdown", onPointerDown)
       canvas.removeEventListener("pointermove", onPointerMove)
@@ -200,10 +252,8 @@ export function useRoverCamera({
       canvas.removeEventListener("touchstart", onTouchStart)
       canvas.removeEventListener("touchmove", onTouchMove)
       canvas.removeEventListener("touchend", onTouchEnd)
-      window.removeEventListener("keydown", onKeyDown)
-      window.removeEventListener("keyup", onKeyUp)
     }
-  }, [enabled, canvasRef, viewport, applyCamera])
+  }, [enabled, canvasRef, applyCamera])
 
   return {
     camera,
