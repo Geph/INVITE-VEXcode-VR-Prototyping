@@ -71,6 +71,16 @@ export const oceanReef: PlaygroundDefinition<OceanReefState> = {
       won: state.missionReason === "complete",
     }
   },
+  outcomeParameters(state) {
+    return {
+      trash_collected: state.trashCollected,
+      coral_damaged: state.missionReason === "coral",
+      battery_remaining: Math.round(state.batteryPercent),
+      project_stopped_by_user: state.projectStoppedByUser,
+      gps_x_position: state.gpsXMm,
+      gps_y_position: state.gpsYMm,
+    }
+  },
 }
 
 export function startRobot(): RobotState {

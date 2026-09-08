@@ -7,7 +7,7 @@ import {
   type CoralPiece,
 } from "@/lib/robot-runtime"
 import { CORAL_COLORS, CORAL_KINDS } from "./art"
-import { MM_PER_PIXEL, TRASH_COUNT } from "./config"
+import { MM_PER_PIXEL, START_POSE, TRASH_COUNT } from "./config"
 
 export type TrashType = "bottle" | "can" | "wrapper" | "bag"
 
@@ -46,6 +46,9 @@ export interface OceanReefState {
   magnetEnergized: boolean
   missionOver: boolean
   missionReason?: "coral" | "battery" | "complete"
+  gpsXMm: number
+  gpsYMm: number
+  projectStoppedByUser: boolean
 }
 
 function pxToMm(px: number, canvasSize: number): number {
@@ -157,5 +160,8 @@ export function createOceanReefState(seed: number, view?: Partial<OceanReefView>
     batteryPercent: 100,
     magnetEnergized: false,
     missionOver: false,
+    gpsXMm: Math.round(START_POSE.xMm),
+    gpsYMm: Math.round(START_POSE.yMm),
+    projectStoppedByUser: false,
   }
 }

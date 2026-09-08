@@ -38,4 +38,6 @@ export interface PlaygroundDefinition<S = unknown> {
   createApi(deps: PlaygroundApiDeps<S>): Record<string, (...args: any[]) => unknown>
   hud?: ComponentType<{ state: S; robot: RobotState }>
   isMissionOver(state: S): { over: boolean; reason?: string; won?: boolean }
+  /** End-of-run summary. Telemetry is the only consumer. */
+  outcomeParameters?(state: S): Record<string, unknown>
 }

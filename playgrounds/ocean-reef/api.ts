@@ -122,7 +122,8 @@ export function tickOceanReef(state: OceanReefState, dtMs: number, robot: RobotS
   if (!next.missionOver && hitsCoral(next, robot)) {
     next = { ...next, missionOver: true, missionReason: "coral" }
   }
-  return next
+  const gps = reportedPositionMm(robot)
+  return { ...next, gpsXMm: gps.x, gpsYMm: gps.y }
 }
 
 export function createOceanReefApi(deps: PlaygroundApiDeps<OceanReefState>): Record<string, (...args: any[]) => unknown> {
