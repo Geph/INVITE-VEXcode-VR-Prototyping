@@ -1,6 +1,7 @@
 "use client"
 
-import { HelpCircle, Play, RotateCcw, Settings, StepForward, StopCircle } from "lucide-react"
+import type { ReactNode } from "react"
+import { HelpCircle, Play, RotateCcw, StepForward, StopCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export function CodeViewToggle({
@@ -26,13 +27,11 @@ export function HeaderActions({
   playgroundPickerOpen,
   onOpenPlayground,
   onGetHelp,
-  onOpenRobotConfig,
 }: {
   playgroundVisible: boolean
   playgroundPickerOpen: boolean
   onOpenPlayground: () => void
   onGetHelp: () => void
-  onOpenRobotConfig: () => void
 }) {
   return (
     <div id="vex-header-actions" className="flex items-center gap-2">
@@ -61,16 +60,6 @@ export function HeaderActions({
         <HelpCircle className="h-4 w-4" />
         Get Help
       </Button>
-      <Button
-        id="vex-btn-robot-config"
-        variant="secondary"
-        size="sm"
-        className="bg-blue-500 hover:bg-blue-600 text-white border-0 flex items-center gap-1"
-        onClick={onOpenRobotConfig}
-      >
-        <Settings className="h-4 w-4" />
-        Robot
-      </Button>
     </div>
   )
 }
@@ -83,6 +72,7 @@ export function RunToolbar({
   onStep,
   onStop,
   onReset,
+  trailing,
 }: {
   isRunning: boolean
   isStepping: boolean
@@ -91,6 +81,7 @@ export function RunToolbar({
   onStep: () => void
   onStop: () => void
   onReset: () => void
+  trailing?: ReactNode
 }) {
   return (
     <div id="vex-playground-run-controls" className="flex flex-wrap items-center gap-2 px-3 py-3">
@@ -136,10 +127,15 @@ export function RunToolbar({
         <RotateCcw className="h-4 w-4 mr-1" />
         RESET
       </Button>
-      {isStepping && (
-        <span id="vex-playground-step-status" className="ml-auto text-[11px] font-medium text-sky-700">
-          {isPausedOnBlock ? "Paused on highlighted block" : "Stepping…"}
-        </span>
+      {(isStepping || trailing) && (
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+          {isStepping && (
+            <span id="vex-playground-step-status" className="text-[11px] font-medium text-sky-700">
+              {isPausedOnBlock ? "Paused on highlighted block" : "Stepping…"}
+            </span>
+          )}
+          {trailing}
+        </div>
       )}
     </div>
   )

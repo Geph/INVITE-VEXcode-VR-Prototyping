@@ -48,7 +48,7 @@ function workspace(...blocks: MockBlock[]) {
 }
 
 function hat(next?: MockBlock | null) {
-  return block("when_started", { next: next ?? null })
+  return block("pg_events_when_started", { next: next ?? null })
 }
 
 const EMPTY_ANALYSIS: ProgramAnalysis = {
@@ -69,9 +69,9 @@ const EMPTY_ANALYSIS: ProgramAnalysis = {
 }
 
 describe("analyzeBlocklyWorkspace characterisation", () => {
-  it("returns the empty analysis when there is no workspace or no when_started hat", () => {
+  it("returns the empty analysis when there is no workspace or no pg_events_when_started hat", () => {
     expect(analyzeBlocklyWorkspace(null)).toEqual(EMPTY_ANALYSIS)
-    expect(analyzeBlocklyWorkspace(workspace(block("drive_distance")))).toEqual(EMPTY_ANALYSIS)
+    expect(analyzeBlocklyWorkspace(workspace(block("pg_drivetrain_drive_for")))).toEqual(EMPTY_ANALYSIS)
   })
 
   it("sets hasWhenStarted but not hasProgramBody for a bare hat", () => {
@@ -83,7 +83,7 @@ describe("analyzeBlocklyWorkspace characterisation", () => {
 
   it("flags drive and counts drive blocks", () => {
     const program = hat(
-      block("drive_simple", { next: block("drive_distance") }),
+      block("pg_drivetrain_drive", { next: block("pg_drivetrain_drive_for") }),
     )
     expect(analyzeBlocklyWorkspace(workspace(program))).toEqual({
       ...EMPTY_ANALYSIS,
@@ -97,8 +97,8 @@ describe("analyzeBlocklyWorkspace characterisation", () => {
 
   it("flags turn types", () => {
     const program = hat(
-      block("turn_simple", {
-        next: block("turn_degrees", { next: block("turn_to_heading", { next: block("turn_to_rotation") }) }),
+      block("pg_drivetrain_turn", {
+        next: block("pg_drivetrain_turn_for", { next: block("pg_drivetrain_turn_to_heading", { next: block("pg_drivetrain_turn_to_rotation") }) }),
       }),
     )
     expect(analyzeBlocklyWorkspace(workspace(program))).toEqual({
@@ -111,7 +111,7 @@ describe("analyzeBlocklyWorkspace characterisation", () => {
   })
 
   it("flags loops including forever aliases and sets onlyForeverNoSensing", () => {
-    const program = hat(block("forever_loop", { inputs: { DO: block("repeat_times") } }))
+    const program = hat(block("pg_control_forever", { inputs: { DO: block("pg_control_repeat") } }))
     expect(analyzeBlocklyWorkspace(workspace(program))).toEqual({
       ...EMPTY_ANALYSIS,
       hasWhenStarted: true,
@@ -125,12 +125,12 @@ describe("analyzeBlocklyWorkspace characterisation", () => {
   it("flags if/then and distance, eye, bumper, and position sensors", () => {
     // Value sockets are not walked — sensors must appear on the statement spine.
     const program = hat(
-      block("if_then", {
+      block("pg_control_if_then", {
         inputs: {
-          DO: block("drive_distance", {
-            next: block("distance_found_object", {
-              next: block("eye_is_near", {
-                next: block("bumper_pressed", { next: block("position_x") }),
+          DO: block("pg_drivetrain_drive_for", {
+            next: block("pg_sensing_distance_found", {
+              next: block("pg_sensing_eye_near", {
+                next: block("pg_sensing_bumper_pressed", { next: block("position_x") }),
               }),
             }),
           }),
@@ -153,7 +153,7 @@ describe("analyzeBlocklyWorkspace characterisation", () => {
   })
 
   it("flags a control body snapped below the block instead of in the mouth", () => {
-    const program = hat(block("if_then", { next: block("drive_simple") }))
+    const program = hat(block("pg_control_if_then", { next: block("pg_drivetrain_drive") }))
     expect(analyzeBlocklyWorkspace(workspace(program))).toEqual({
       ...EMPTY_ANALYSIS,
       hasWhenStarted: true,
@@ -191,7 +191,7 @@ describe("buildCodeReview characterisation", () => {
   })
 
   it("scores a drive-only stack as needs_work", () => {
-    const review = buildCodeReview(analyzeBlocklyWorkspace(workspace(hat(block("drive_distance")))))
+    const review = buildCodeReview(analyzeBlocklyWorkspace(workspace(hat(block("pg_drivetrain_drive_for")))))
     expect(review.verdict).toBe("needs_work")
     expect(review.headline).toBe("Your program needs more structure")
     expect(review.score).toBe(45)
@@ -211,7 +211,7 @@ describe("buildCodeReview characterisation", () => {
   it("scores a forever-without-sensors stack and the efficiency criterion", () => {
     const review = buildCodeReview(
       analyzeBlocklyWorkspace(
-        workspace(hat(block("forever_loop", { inputs: { DO: block("drive_simple") } }))),
+        workspace(hat(block("pg_control_forever", { inputs: { DO: block("pg_drivetrain_drive") } }))),
       ),
     )
     expect(review.verdict).toBe("needs_work")
@@ -227,11 +227,11 @@ describe("buildCodeReview characterisation", () => {
       analyzeBlocklyWorkspace(
         workspace(
           hat(
-            block("forever_loop", {
+            block("pg_control_forever", {
               inputs: {
-                DO: block("if_then", {
+                DO: block("pg_control_if_then", {
                   inputs: {
-                    DO: block("drive_distance", { next: block("distance_found_object") }),
+                    DO: block("pg_drivetrain_drive_for", { next: block("pg_sensing_distance_found") }),
                   },
                 }),
               },
@@ -250,7 +250,7 @@ describe("buildCodeReview characterisation", () => {
 
   it("suggests snapping into the mouth when a control body is misplaced", () => {
     const review = buildCodeReview(
-      analyzeBlocklyWorkspace(workspace(hat(block("if_then", { next: block("drive_simple") })))),
+      analyzeBlocklyWorkspace(workspace(hat(block("pg_control_if_then", { next: block("pg_drivetrain_drive") })))),
     )
     expect(review.suggestions).toContain(
       "Snap blocks into the then / repeat mouth on if and loop blocks — blocks below the block always run, even when the condition is false.",

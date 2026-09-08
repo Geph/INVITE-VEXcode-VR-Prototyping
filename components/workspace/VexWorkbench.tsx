@@ -18,10 +18,7 @@ import { RoverRescueHud } from "@/playgrounds/rover-rescue/hud"
 import BlocklyCollabOverlay from "@/components/blockly-collab-overlay"
 import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/BlocklyEditor"
 import { CelebrationOverlay } from "@/components/workspace/CelebrationOverlay"
-import {
-  DEFAULT_ROBOT_CAPABILITIES,
-  RobotConfigWindow,
-} from "@/components/workspace/RobotConfigWindow"
+import { DEFAULT_ROBOT_CAPABILITIES } from "@/components/workspace/RobotConfigWindow"
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader"
 import { updateBlocklyNumberField } from "@/components/workspace/update-blockly-field"
 import { isRoverRescuePlayground } from "@/hooks/playground-motion"
@@ -45,8 +42,8 @@ export function VexWorkbench() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
   const [aiStep, setAiStep] = useState<SurveyStep>("main")
   const [codeView, setCodeView] = useState<"blocks" | "python">("blocks")
-  const [robotConfigOpen, setRobotConfigOpen] = useState(false)
-  const [robotCapabilities, setRobotCapabilities] = useState(DEFAULT_ROBOT_CAPABILITIES)
+  // Rover Rescue ships without the Robot config window, so devices stay stock.
+  const robotCapabilities = DEFAULT_ROBOT_CAPABILITIES
   const blocklyPickerRef = useRef<{ blockId: string; fieldName: string } | null>(null)
   const [anglePickerState, setAnglePickerState] = useState({ isOpen: false, angle: 90, x: 0, y: 0 })
   const [compassPickerState, setCompassPickerState] = useState({ isOpen: false, heading: 0, x: 0, y: 0 })
@@ -92,7 +89,10 @@ export function VexWorkbench() {
   })
 
   const roverField = isRoverRescuePlayground(session.playgroundId)
-  const roverViewport = { widthPx: session.canvasSize.w, heightPx: session.canvasSize.h }
+  const roverViewport = useMemo(
+    () => ({ widthPx: session.canvasSize.w, heightPx: session.canvasSize.h }),
+    [session.canvasSize.w, session.canvasSize.h],
+  )
   const roverCam = useRoverCamera({
     canvasRef: session.canvasRef,
     enabled: roverField && session.playgroundState.isVisible && !session.playgroundState.isMinimized,
@@ -182,21 +182,21 @@ export function VexWorkbench() {
 
   const handleFieldPicker = useCallback((event: FieldPickerEvent) => {
     blocklyPickerRef.current = { blockId: event.blockId, fieldName: event.fieldName }
-    if (event.blockType === "turn_degrees" || event.blockType === "turn_to_rotation" || event.blockType === "set_drive_rotation") {
+    if (event.blockType === "pg_drivetrain_turn_for" || event.blockType === "pg_drivetrain_turn_to_rotation" || event.blockType === "pg_drivetrain_set_rotation") {
       setAnglePickerState({
         isOpen: true,
         angle: Number(event.value) || 0,
         x: event.clientX,
         y: event.clientY,
       })
-    } else if (event.blockType === "turn_to_heading" || event.blockType === "set_drive_heading") {
+    } else if (event.blockType === "pg_drivetrain_turn_to_heading" || event.blockType === "pg_drivetrain_set_heading") {
       setCompassPickerState({
         isOpen: true,
         heading: Number(event.value) || 0,
         x: event.clientX,
         y: event.clientY,
       })
-    } else if (event.blockType === "drive_distance") {
+    } else if (event.blockType === "pg_drivetrain_drive_for") {
       setDistancePickerState({
         isOpen: true,
         distance: Number(event.value) || 200,
@@ -231,7 +231,6 @@ export function VexWorkbench() {
         playgroundPickerOpen={session.playgroundPickerOpen}
         onOpenPlayground={session.handleOpenPlayground}
         onGetHelp={() => aiAssistantRef.current?.open()}
-        onOpenRobotConfig={() => setRobotConfigOpen(true)}
       />
 
       <div id="vex-main" className="flex flex-1 overflow-hidden">
@@ -291,17 +290,21 @@ export function VexWorkbench() {
             aiStep={aiStep}
             onCloseStrategy={() => setAiStep("strategy")}
             chrome={roverField ? "field" : "reef"}
+            toolbarTrailing={
+              roverField ? (
+                <CoordinateReadout
+                  cursorWorld={roverCam.cursorWorld}
+                  rover={{
+                    x: session.robotState.x,
+                    y: session.robotState.y,
+                    heading: session.robotState.rotation,
+                  }}
+                />
+              ) : null
+            }
             canvasOverlay={
               roverField ? (
                 <>
-                  <CoordinateReadout
-                    cursorWorld={roverCam.cursorWorld}
-                    rover={{
-                      x: session.robotState.x,
-                      y: session.robotState.y,
-                      heading: session.robotState.rotation,
-                    }}
-                  />
                   <ZoomControls
                     userScale={roverCam.userScale}
                     minZoom={roverCam.minZoom}
@@ -312,14 +315,7 @@ export function VexWorkbench() {
                     onFitField={roverCam.fitField}
                     onToggleFollow={() => roverCam.setFollow((on) => !on)}
                   />
-                  <RoverRescueHud
-                    stateRef={session.roverStateRef}
-                    robot={{
-                      xMm: session.robotState.x,
-                      yMm: session.robotState.y,
-                      headingDeg: session.robotState.rotation,
-                    }}
-                  />
+                  <RoverRescueHud stateRef={session.roverStateRef} />
                 </>
               ) : null
             }
@@ -332,13 +328,6 @@ export function VexWorkbench() {
         workspace={workspace}
         surveyStep={aiStep}
         onSurveyStepChange={setAiStep}
-      />
-
-      <RobotConfigWindow
-        open={robotConfigOpen}
-        capabilities={robotCapabilities}
-        onCapabilitiesChange={setRobotCapabilities}
-        onClose={() => setRobotConfigOpen(false)}
       />
 
       <CelebrationOverlay show={session.gameState.showCelebration} trashCollected={session.gameState.trashCollected} />

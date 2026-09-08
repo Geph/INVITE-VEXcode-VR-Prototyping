@@ -1,8 +1,9 @@
 import { vexRunArrowField } from "@/lib/vex-blockly-theme"
+import { attachAndDontWaitField, isAndDontWait, syncAndDontWaitLabel } from "./anddontwait"
 import type { CommonBlockCategory, PythonGenerators } from "./types"
 
 function defineBlocks(Blockly: any) {
-  Blockly.Blocks["drive_simple"] = {
+  Blockly.Blocks["pg_drivetrain_drive"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("drive")
@@ -20,7 +21,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["drive_distance"] = {
+  Blockly.Blocks["pg_drivetrain_drive_for"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("drive")
@@ -50,14 +51,18 @@ function defineBlocks(Blockly: any) {
           "UNIT",
         )
         .appendField(vexRunArrowField(Blockly), "RUN_ARROW")
+      attachAndDontWaitField(this, Blockly)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#4A90E2")
       this.setTooltip("Drive the robot a specific distance")
+      this.onchange = function () {
+        syncAndDontWaitLabel(this)
+      }
     },
   }
 
-  Blockly.Blocks["turn_simple"] = {
+  Blockly.Blocks["pg_drivetrain_turn"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("turn")
@@ -75,7 +80,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["turn_degrees"] = {
+  Blockly.Blocks["pg_drivetrain_turn_for"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("turn")
@@ -90,14 +95,18 @@ function defineBlocks(Blockly: any) {
         .appendField(new Blockly.FieldNumber(90, 0, 360, 1), "DEGREES")
         .appendField("degrees")
         .appendField(vexRunArrowField(Blockly), "RUN_ARROW")
+      attachAndDontWaitField(this, Blockly)
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#4A90E2")
       this.setTooltip("Turn the robot a specific number of degrees")
+      this.onchange = function () {
+        syncAndDontWaitLabel(this)
+      }
     },
   }
 
-  Blockly.Blocks["turn_to_heading"] = {
+  Blockly.Blocks["pg_drivetrain_turn_to_heading"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("turn to heading")
@@ -111,7 +120,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["turn_to_rotation"] = {
+  Blockly.Blocks["pg_drivetrain_turn_to_rotation"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("turn to rotation")
@@ -125,7 +134,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["stop_driving"] = {
+  Blockly.Blocks["pg_drivetrain_stop_driving"] = {
     init: function () {
       this.appendDummyInput().appendField("stop driving")
       this.setPreviousStatement(true, null)
@@ -135,7 +144,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["set_drive_velocity"] = {
+  Blockly.Blocks["pg_drivetrain_set_drive_velocity"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("set drive velocity to")
@@ -148,7 +157,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["set_turn_velocity"] = {
+  Blockly.Blocks["pg_drivetrain_set_turn_velocity"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("set turn velocity to")
@@ -161,7 +170,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["set_drive_heading"] = {
+  Blockly.Blocks["pg_drivetrain_set_heading"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("set drive heading to")
@@ -174,7 +183,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["set_drive_rotation"] = {
+  Blockly.Blocks["pg_drivetrain_set_rotation"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("set drive rotation to")
@@ -187,7 +196,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["drive_is_done"] = {
+  Blockly.Blocks["pg_sensing_drive_is_done"] = {
     init: function () {
       this.appendDummyInput().appendField("drive is done?")
       this.setOutput(true, "Boolean")
@@ -196,7 +205,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["set_drive_timeout"] = {
+  Blockly.Blocks["pg_drivetrain_set_timeout"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("set drive timeout to")
@@ -211,102 +220,110 @@ function defineBlocks(Blockly: any) {
 }
 
 const jsGenerators = {
-  drive_simple: (block: any) => {
+  pg_drivetrain_drive: (block: any) => {
     const direction = block.getFieldValue("DIRECTION")
     return `await robot.drive('${direction}');\n`
   },
-  drive_distance: (block: any) => {
+  pg_drivetrain_drive_for: (block: any) => {
     const direction = block.getFieldValue("DIRECTION")
     const distance = Number(block.getFieldValue("DISTANCE")) || 0
     const unit = block.getFieldValue("UNIT")
-    return `await robot.drive('${direction}', ${distance}, '${unit}');\n`
+    const waitArg = isAndDontWait(block) ? ", false" : ""
+    const call = `robot.drive('${direction}', ${distance}, '${unit}'${waitArg})`
+    return isAndDontWait(block) ? `${call};\n` : `await ${call};\n`
   },
-  turn_simple: (block: any) => {
+  pg_drivetrain_turn: (block: any) => {
     const direction = block.getFieldValue("DIRECTION")
     return `await robot.turn('${direction}');\n`
   },
-  turn_degrees: (block: any) => {
+  pg_drivetrain_turn_for: (block: any) => {
     const direction = block.getFieldValue("DIRECTION")
     const degrees = block.getFieldValue("DEGREES")
-    return `await robot.turn('${direction}', ${degrees});\n`
+    const waitArg = isAndDontWait(block) ? ", false" : ""
+    const call = `robot.turn('${direction}', ${degrees}${waitArg})`
+    return isAndDontWait(block) ? `${call};\n` : `await ${call};\n`
   },
-  turn_to_heading: (block: any) => {
+  pg_drivetrain_turn_to_heading: (block: any) => {
     const heading = block.getFieldValue("HEADING")
     return `await robot.turnToHeading(${heading});\n`
   },
-  turn_to_rotation: (block: any) => {
+  pg_drivetrain_turn_to_rotation: (block: any) => {
     const rotation = block.getFieldValue("ROTATION")
     return `await robot.turnToRotation(${rotation});\n`
   },
-  stop_driving: () => `robot.stopDriving();\n`,
-  set_drive_velocity: (block: any) => {
+  pg_drivetrain_stop_driving: () => `robot.stopDriving();\n`,
+  pg_drivetrain_set_drive_velocity: (block: any) => {
     const velocity = block.getFieldValue("VELOCITY")
     return `robot.setDriveVelocity(${velocity});\n`
   },
-  set_turn_velocity: (block: any) => {
+  pg_drivetrain_set_turn_velocity: (block: any) => {
     const velocity = block.getFieldValue("VELOCITY")
     return `robot.setTurnVelocity(${velocity});\n`
   },
-  set_drive_heading: (block: any) => {
+  pg_drivetrain_set_heading: (block: any) => {
     const heading = block.getFieldValue("HEADING")
     return `robot.setDriveHeading(${heading});\n`
   },
-  set_drive_rotation: (block: any) => {
+  pg_drivetrain_set_rotation: (block: any) => {
     const rotation = block.getFieldValue("ROTATION")
     return `robot.setDriveRotation(${rotation});\n`
   },
-  set_drive_timeout: (block: any) => {
+  pg_drivetrain_set_timeout: (block: any) => {
     const timeout = block.getFieldValue("TIMEOUT")
     return `await robot.setDriveTimeout(${timeout});\n`
   },
-  drive_is_done: () => ["robot.driveIsDone()", 99],
+  pg_sensing_drive_is_done: () => ["robot.driveIsDone()", 99],
 }
 
 const pythonGenerators: PythonGenerators = {
   expressions: {
-    drive_is_done: () => "drivetrain.is_done()",
+    pg_sensing_drive_is_done: () => "drivetrain.is_done()",
   },
   statements: {
-    drive_simple: (block, indent, { constant }) =>
+    pg_drivetrain_drive: (block, indent, { constant }) =>
       `${indent}drivetrain.drive(${constant(block.getFieldValue("DIRECTION"))})\n`,
-    drive_distance: (block, indent, { constant, pyNumber }) =>
-      `${indent}drivetrain.drive_for(${constant(block.getFieldValue("DIRECTION"))}, ${pyNumber(block.getFieldValue("DISTANCE"), 200)}, ${constant(block.getFieldValue("UNIT"))})\n`,
-    turn_simple: (block, indent, { constant }) =>
+    pg_drivetrain_drive_for: (block, indent, { constant, pyNumber }) => {
+      const wait = isAndDontWait(block) ? ", wait=False" : ""
+      return `${indent}drivetrain.drive_for(${constant(block.getFieldValue("DIRECTION"))}, ${pyNumber(block.getFieldValue("DISTANCE"), 200)}, ${constant(block.getFieldValue("UNIT"))}${wait})\n`
+    },
+    pg_drivetrain_turn: (block, indent, { constant }) =>
       `${indent}drivetrain.turn(${constant(block.getFieldValue("DIRECTION"))})\n`,
-    turn_degrees: (block, indent, { constant, pyNumber }) =>
-      `${indent}drivetrain.turn_for(${constant(block.getFieldValue("DIRECTION"))}, ${pyNumber(block.getFieldValue("DEGREES"), 90)}, DEGREES)\n`,
-    turn_to_heading: (block, indent, { pyNumber }) =>
+    pg_drivetrain_turn_for: (block, indent, { constant, pyNumber }) => {
+      const wait = isAndDontWait(block) ? ", wait=False" : ""
+      return `${indent}drivetrain.turn_for(${constant(block.getFieldValue("DIRECTION"))}, ${pyNumber(block.getFieldValue("DEGREES"), 90)}, DEGREES${wait})\n`
+    },
+    pg_drivetrain_turn_to_heading: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.turn_to_heading(${pyNumber(block.getFieldValue("HEADING"))}, DEGREES)\n`,
-    turn_to_rotation: (block, indent, { pyNumber }) =>
+    pg_drivetrain_turn_to_rotation: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.turn_to_rotation(${pyNumber(block.getFieldValue("ROTATION"))}, DEGREES)\n`,
-    stop_driving: (_block, indent) => `${indent}drivetrain.stop()\n`,
-    set_drive_velocity: (block, indent, { pyNumber }) =>
+    pg_drivetrain_stop_driving: (_block, indent) => `${indent}drivetrain.stop()\n`,
+    pg_drivetrain_set_drive_velocity: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.set_drive_velocity(${pyNumber(block.getFieldValue("VELOCITY"), 50)}, PERCENT)\n`,
-    set_turn_velocity: (block, indent, { pyNumber }) =>
+    pg_drivetrain_set_turn_velocity: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.set_turn_velocity(${pyNumber(block.getFieldValue("VELOCITY"), 50)}, PERCENT)\n`,
-    set_drive_heading: (block, indent, { pyNumber }) =>
+    pg_drivetrain_set_heading: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.set_heading(${pyNumber(block.getFieldValue("HEADING"))}, DEGREES)\n`,
-    set_drive_rotation: (block, indent, { pyNumber }) =>
+    pg_drivetrain_set_rotation: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.set_rotation(${pyNumber(block.getFieldValue("ROTATION"))}, DEGREES)\n`,
-    set_drive_timeout: (block, indent, { pyNumber }) =>
+    pg_drivetrain_set_timeout: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.set_timeout(${pyNumber(block.getFieldValue("TIMEOUT"), 1)}, SECONDS)\n`,
   },
 }
 
 export const toolboxEntries = [
-  { kind: "block", type: "drive_simple" },
-  { kind: "block", type: "drive_distance" },
-  { kind: "block", type: "turn_simple" },
-  { kind: "block", type: "turn_degrees" },
-  { kind: "block", type: "turn_to_heading" },
-  { kind: "block", type: "turn_to_rotation" },
-  { kind: "block", type: "stop_driving" },
-  { kind: "block", type: "drive_is_done" },
-  { kind: "block", type: "set_drive_velocity" },
-  { kind: "block", type: "set_turn_velocity" },
-  { kind: "block", type: "set_drive_heading" },
-  { kind: "block", type: "set_drive_rotation" },
-  { kind: "block", type: "set_drive_timeout" },
+  { kind: "block", type: "pg_drivetrain_drive" },
+  { kind: "block", type: "pg_drivetrain_drive_for" },
+  { kind: "block", type: "pg_drivetrain_turn" },
+  { kind: "block", type: "pg_drivetrain_turn_for" },
+  { kind: "block", type: "pg_drivetrain_turn_to_heading" },
+  { kind: "block", type: "pg_drivetrain_turn_to_rotation" },
+  { kind: "block", type: "pg_drivetrain_stop_driving" },
+  { kind: "block", type: "pg_sensing_drive_is_done" },
+  { kind: "block", type: "pg_drivetrain_set_drive_velocity" },
+  { kind: "block", type: "pg_drivetrain_set_turn_velocity" },
+  { kind: "block", type: "pg_drivetrain_set_heading" },
+  { kind: "block", type: "pg_drivetrain_set_rotation" },
+  { kind: "block", type: "pg_drivetrain_set_timeout" },
 ]
 
 export const drivetrain: CommonBlockCategory = {

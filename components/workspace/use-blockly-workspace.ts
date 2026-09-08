@@ -92,7 +92,7 @@ export function useBlocklyInjection(
     onReadyRef.current(ws)
 
     setTimeout(() => {
-      const whenStartedBlock = ws.newBlock("when_started")
+      const whenStartedBlock = ws.newBlock("pg_events_when_started")
       whenStartedBlock.initSvg()
       whenStartedBlock.render()
       whenStartedBlock.moveBy(50, 50)

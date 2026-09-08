@@ -212,9 +212,9 @@ describe("canvas size, spawn, remap, ruler", () => {
     expect(getPlaygroundCanvasSize(false, { widthMm: 12000, heightMm: 6000 })).toEqual({ w: 800, h: 400 })
     expect(getPlaygroundCanvasSize(true, { widthMm: 12000, heightMm: 6000 })).toEqual({ w: 1200, h: 600 })
     expect(getPlaygroundCanvasSize(false, { widthMm: 2000, heightMm: 2000 })).toEqual({ w: 400, h: 400 })
-    expect(playgroundWindowWidthPx(400)).toBe(416)
-    expect(playgroundWindowWidthPx(800)).toBe(816)
-    expect(playgroundWindowX(800, 1400)).toBe(1400 - 816 - 104)
+    expect(playgroundWindowWidthPx(400)).toBe(400)
+    expect(playgroundWindowWidthPx(800)).toBe(800)
+    expect(playgroundWindowX(800, 1400)).toBe(1400 - 800 - 104)
   })
 
   it("spawns the robot at the Coral Reef start, clamped", () => {
@@ -397,29 +397,29 @@ describe("forEachProgramBlock", () => {
     }
   }
 
-  it("skips the when_started hat and walks the next stack", () => {
-    const drive = block("drive_distance")
-    const turn = block("turn_degrees")
+  it("skips the pg_events_when_started hat and walks the next stack", () => {
+    const drive = block("pg_drivetrain_drive_for")
+    const turn = block("pg_drivetrain_turn_for")
     drive.getNextBlock = () => turn
-    const hat = block("when_started", { getNextBlock: () => drive })
+    const hat = block("pg_events_when_started", { getNextBlock: () => drive })
     const seen: string[] = []
     forEachProgramBlock(hat, (b) => seen.push(b.type))
-    expect(seen).toEqual(["drive_distance", "turn_degrees"])
+    expect(seen).toEqual(["pg_drivetrain_drive_for", "pg_drivetrain_turn_for"])
   })
 
   it("visits nothing for a bare hat", () => {
     const seen: string[] = []
-    forEachProgramBlock(block("when_started"), (b) => seen.push(b.type))
+    forEachProgramBlock(block("pg_events_when_started"), (b) => seen.push(b.type))
     expect(seen).toEqual([])
   })
 
   it("walks DO / DO1 / DO2 / ELSE mouths and ignores cycles", () => {
-    const inner = block("drive_simple")
-    const loop = block("forever", { getInputTargetBlock: (name) => (name === "DO" ? inner : null) })
+    const inner = block("pg_drivetrain_drive")
+    const loop = block("pg_control_forever", { getInputTargetBlock: (name) => (name === "DO" ? inner : null) })
     loop.getNextBlock = () => loop
     const seen: string[] = []
     forEachProgramBlock(loop, (b) => seen.push(b.type))
-    expect(seen).toEqual(["forever", "drive_simple"])
+    expect(seen).toEqual(["pg_control_forever", "pg_drivetrain_drive"])
   })
 })
 
@@ -432,7 +432,7 @@ describe("generateWhenStartedJavaScript", () => {
     expect(generateWhenStartedJavaScript(null, js)).toBe("")
     expect(
       generateWhenStartedJavaScript(
-        { getAllBlocks: () => [{ type: "when_started", body: "   " }] },
+        { getAllBlocks: () => [{ type: "pg_events_when_started", body: "   " }] },
         js,
       ),
     ).toBe("")
@@ -441,7 +441,7 @@ describe("generateWhenStartedJavaScript", () => {
   it("emits a single body with a trailing newline", () => {
     expect(
       generateWhenStartedJavaScript(
-        { getAllBlocks: () => [{ type: "when_started", body: "await robot.drive();\n" }] },
+        { getAllBlocks: () => [{ type: "pg_events_when_started", body: "await robot.drive();\n" }] },
         js,
       ),
     ).toBe("await robot.drive();\n")
@@ -451,10 +451,10 @@ describe("generateWhenStartedJavaScript", () => {
     const code = generateWhenStartedJavaScript(
       {
         getAllBlocks: () => [
-          { type: "when_started", isEnabled: () => false, body: "await a();\n" },
-          { type: "when_started", body: "await b();\n" },
-          { type: "when_started", body: "await c();\n" },
-          { type: "drive_distance", body: "ignored" },
+          { type: "pg_events_when_started", isEnabled: () => false, body: "await a();\n" },
+          { type: "pg_events_when_started", body: "await b();\n" },
+          { type: "pg_events_when_started", body: "await c();\n" },
+          { type: "pg_drivetrain_drive_for", body: "ignored" },
         ],
       },
       js,
@@ -470,7 +470,7 @@ describe("generateWhenStartedJavaScript", () => {
   it("accepts a [code, order] tuple from the generator", () => {
     expect(
       generateWhenStartedJavaScript(
-        { getAllBlocks: () => [{ type: "when_started" }] },
+        { getAllBlocks: () => [{ type: "pg_events_when_started" }] },
         { blockToCode: () => ["await robot.drive();", 0] },
       ),
     ).toBe("await robot.drive();\n")
@@ -536,19 +536,19 @@ describe("shadow helpers / registerBlockGenerator", () => {
   })
 
   it("builds flyout JSON with default 0 unless overridden", () => {
-    expect(flyoutBlockWithNumberShadows("repeat", ["TIMES"], { TIMES: 10 })).toEqual({
+    expect(flyoutBlockWithNumberShadows("example_loop", ["TIMES"], { TIMES: 10 })).toEqual({
       kind: "block",
-      type: "repeat",
+      type: "example_loop",
       inputs: { TIMES: { shadow: { type: "math_number", fields: { NUM: 10 } } } },
     })
-    expect(flyoutBlockWithNumberShadows("wait", ["SECS"]).inputs.SECS.shadow.fields.NUM).toBe(0)
+    expect(flyoutBlockWithNumberShadows("example_wait", ["SECS"]).inputs.SECS.shadow.fields.NUM).toBe(0)
   })
 
   it("registers a JS generator on the Blockly object", () => {
     const Blockly = { JavaScript: { forBlock: {} as Record<string, unknown> } }
     const fn = () => "ok"
-    registerBlockGenerator(Blockly, "drive_simple", fn)
-    expect(Blockly.JavaScript.forBlock.drive_simple).toBe(fn)
+    registerBlockGenerator(Blockly, "pg_drivetrain_drive", fn)
+    expect(Blockly.JavaScript.forBlock.pg_drivetrain_drive).toBe(fn)
   })
 })
 

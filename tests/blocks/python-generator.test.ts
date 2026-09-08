@@ -28,44 +28,44 @@ function workspace(...blocks: PyBlock[]) {
 const HEADER = "# VEXcode VR Python\nfrom vexcode import *\nimport math\nimport random\n\n"
 
 describe("generatePythonProgram characterisation", () => {
-  it("emits the empty stub when there is no when_started hat", () => {
+  it("emits the empty stub when there is no pg_events_when_started hat", () => {
     expect(generatePythonProgram(null)).toBe(
       "# No code yet\n# Add blocks under when started to see Python code",
     )
-    expect(generatePythonProgram(workspace(block("drive_distance")))).toBe(
+    expect(generatePythonProgram(workspace(block("pg_drivetrain_drive_for")))).toBe(
       "# No code yet\n# Add blocks under when started to see Python code",
     )
   })
 
-  it("emits pass for a bare when_started hat", () => {
-    expect(generatePythonProgram(workspace(block("when_started")))).toBe(
+  it("emits pass for a bare pg_events_when_started hat", () => {
+    expect(generatePythonProgram(workspace(block("pg_events_when_started")))).toBe(
       `${HEADER}def main():\n    pass\n\nvr_thread(main)\n`,
     )
   })
 
   it("emits one statement from each common category plus Ocean Reef sensing", () => {
-    const stack = block("when_started", {
-      next: block("drive_distance", {
+    const stack = block("pg_events_when_started", {
+      next: block("pg_drivetrain_drive_for", {
         fields: { DIRECTION: "forward", DISTANCE: "200", UNIT: "mm" },
-        next: block("wait_seconds", {
+        next: block("pg_control_wait", {
           fields: { SECONDS: "1" },
-          next: block("if_then", {
+          next: block("pg_control_if_then", {
             inputs: {
-              CONDITION: block("compare", {
+              CONDITION: block("pg_operator_comparison", {
                 fields: { OP: "EQ" },
                 inputs: {
                   A: block("math_number", { fields: { NUM: "1" } }),
                   B: block("math_number", { fields: { NUM: "1" } }),
                 },
               }),
-              DO: block("set_pen_width", {
+              DO: block("pg_looks_set_pen_width", {
                 fields: { WIDTH: "medium" },
-                next: block("print_text", {
-                  inputs: { TEXT: block("text_string", { fields: { TEXT: "hi" } }) },
+                next: block("pg_looks_print", {
+                  inputs: { TEXT: block("pg_operator_string", { fields: { TEXT: "hi" } }) },
                 }),
               }),
             },
-            next: block("energize_magnet", {
+            next: block("pg_magnet_energize", {
               fields: { DEVICE: "magnet", MODE: "boost" },
             }),
           }),
@@ -85,33 +85,34 @@ describe("generatePythonProgram characterisation", () => {
   })
 
   it("emits Python for all eight Rover Rescue sensing blocks and drive_is_done", () => {
-    const stack = block("when_started", {
-      next: block("if_then", {
+    const stack = block("pg_events_when_started", {
+      next: block("pg_control_if_then", {
         inputs: {
-          CONDITION: block("boolean_and", {
+          CONDITION: block("pg_operator_and_or", {
+            fields: { OP: "AND" },
             inputs: {
-              A: block("rover_sees", { fields: { KIND: "minerals" } }),
-              B: block("rover_detects", { fields: { KIND: "enemy" } }),
+              A: block("pg_sensing_ai_sees", { fields: { KIND: "minerals" } }),
+              B: block("pg_sensing_ai_smells", { fields: { KIND: "enemy" } }),
             },
           }),
-          DO: block("print_text", {
+          DO: block("pg_looks_print", {
             inputs: {
-              TEXT: block("rover_distance", { fields: { KIND: "base", UNIT: "mm" } }),
+              TEXT: block("pg_sensing_ai_sees_distance", { fields: { KIND: "base", UNIT: "mm" } }),
             },
-            next: block("print_text", {
+            next: block("pg_looks_print", {
               inputs: {
-                TEXT: block("rover_direction", { fields: { KIND: "minerals" } }),
+                TEXT: block("pg_sensing_ai_sees_direction", { fields: { KIND: "minerals" } }),
               },
-              next: block("print_text", {
+              next: block("pg_looks_print", {
                 inputs: {
-                  TEXT: block("rover_location", { fields: { KIND: "enemy", AXIS: "X", UNIT: "mm" } }),
+                  TEXT: block("pg_sensing_ai_sees_location", { fields: { KIND: "enemy", AXIS: "X", UNIT: "mm" } }),
                 },
-                next: block("print_text", {
-                  inputs: { TEXT: block("rover_distance_found_object") },
-                  next: block("print_text", {
-                    inputs: { TEXT: block("rover_object_distance", { fields: { UNIT: "mm" } }) },
-                    next: block("print_text", {
-                      inputs: { TEXT: block("drive_is_done") },
+                next: block("pg_looks_print", {
+                  inputs: { TEXT: block("pg_sensing_distance_found") },
+                  next: block("pg_looks_print", {
+                    inputs: { TEXT: block("pg_sensing_object_distance", { fields: { UNIT: "mm" } }) },
+                    next: block("pg_looks_print", {
+                      inputs: { TEXT: block("pg_sensing_drive_is_done") },
                     }),
                   }),
                 }),
@@ -135,12 +136,12 @@ describe("generatePythonProgram characterisation", () => {
   })
 
   it("emits a bumper hat alongside the main thread", () => {
-    const whenStarted = block("when_started", {
-      next: block("stop_driving"),
+    const whenStarted = block("pg_events_when_started", {
+      next: block("pg_drivetrain_stop_driving"),
     })
-    const bumper = block("when_bumper", {
+    const bumper = block("pg_events_when_bumper", {
       fields: { BUMPER: "left", STATE: "pressed" },
-      inputs: { DO: block("turn_simple", { fields: { DIRECTION: "right" } }) },
+              inputs: { DO: block("pg_drivetrain_turn", { fields: { DIRECTION: "right" } }) },
     })
     expect(generatePythonProgram(workspace(whenStarted, bumper))).toBe(
       `${HEADER}def when_left_bumper_pressed_1():\n` +
@@ -153,20 +154,21 @@ describe("generatePythonProgram characterisation", () => {
   })
 
   it("emits operators that the rename later remaps (and/or/not/random)", () => {
-    const stack = block("when_started", {
-      next: block("if_then", {
+    const stack = block("pg_events_when_started", {
+      next: block("pg_control_if_then", {
         inputs: {
-          CONDITION: block("boolean_not", {
+          CONDITION: block("pg_operator_not", {
             inputs: {
-              BOOL: block("boolean_or", {
+              BOOL: block("pg_operator_and_or", {
+                fields: { OP: "OR" },
                 inputs: {
-                  A: block("random_int", { fields: { FROM: "1", TO: "4" } }),
-                  B: block("bumper_pressed", { fields: { BUMPER: "left" } }),
+                  A: block("pg_operator_random", { fields: { FROM: "1", TO: "4" } }),
+                  B: block("pg_sensing_bumper_pressed", { fields: { BUMPER: "left" } }),
                 },
               }),
             },
           }),
-          DO: block("forever", { inputs: { DO: block("wait", { inputs: { SECONDS: block("math_number", { fields: { NUM: "1" } }) } }) } }),
+          DO: block("pg_control_forever", { inputs: { DO: block("pg_control_wait", { inputs: { SECONDS: block("math_number", { fields: { NUM: "1" } }) } }) } }),
         },
       }),
     })

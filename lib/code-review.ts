@@ -49,25 +49,23 @@ type BlocklyWorkspace = {
   getAllBlocks: (ordered: boolean) => BlocklyBlock[]
 }
 
-const DRIVE_TYPES = new Set(["drive_simple", "drive_distance"])
-const TURN_TYPES = new Set(["turn_simple", "turn_degrees", "turn_to_heading", "turn_to_rotation"])
-const LOOP_TYPES = new Set(["forever", "forever_loop", "repeat", "repeat_times", "while_loop", "repeat_until"])
-const IF_TYPES = new Set(["if_then", "if_then_else", "if_elseif_else"])
+const DRIVE_TYPES = new Set(["pg_drivetrain_drive", "pg_drivetrain_drive_for"])
+const TURN_TYPES = new Set(["pg_drivetrain_turn", "pg_drivetrain_turn_for", "pg_drivetrain_turn_to_heading", "pg_drivetrain_turn_to_rotation"])
+const LOOP_TYPES = new Set(["pg_control_forever", "pg_control_repeat", "pg_control_while", "pg_control_repeat_until"])
+const IF_TYPES = new Set(["pg_control_if_then", "pg_control_if_then_else", "pg_control_if_elseif_else"])
 const CONTROL_DO_INPUTS: Record<string, string> = {
-  if_then: "DO",
-  if_then_else: "DO",
-  if_elseif_else: "DO1",
-  repeat_times: "DO",
-  forever_loop: "DO",
-  repeat_until: "DO",
-  while_loop: "DO",
-  forever: "DO",
-  repeat: "DO",
+  pg_control_if_then: "DO",
+  pg_control_if_then_else: "DO",
+  pg_control_if_elseif_else: "DO1",
+  pg_control_repeat: "DO",
+  pg_control_forever: "DO",
+  pg_control_repeat_until: "DO",
+  pg_control_while: "DO",
 }
-const DISTANCE_TYPES = new Set(["distance_found_object", "distance_in_units", "when_distance"])
-const EYE_TYPES = new Set(["eye_is_near", "eye_detects_color", "eye_brightness"])
-const BUMPER_TYPES = new Set(["bumper_pressed", "when_bumper"])
-const POSITION_TYPES = new Set(["position_x", "position_y", "position_angle", "get_position"])
+const DISTANCE_TYPES = new Set(["pg_sensing_distance_found", "pg_sensing_distance", "when_distance"])
+const EYE_TYPES = new Set(["pg_sensing_eye_near", "pg_sensing_eye_color", "pg_sensing_eye_brightness"])
+const BUMPER_TYPES = new Set(["pg_sensing_bumper_pressed", "pg_events_when_bumper"])
+const POSITION_TYPES = new Set(["position_x", "position_y", "pg_sensing_position_angle", "get_position", "pg_sensing_position"])
 
 export function analyzeBlocklyWorkspace(workspace: BlocklyWorkspace | null): ProgramAnalysis {
   const empty: ProgramAnalysis = {
@@ -91,7 +89,7 @@ export function analyzeBlocklyWorkspace(workspace: BlocklyWorkspace | null): Pro
 
   const whenStartedHats = workspace
     .getAllBlocks(false)
-    .filter((b) => b.type === "when_started" && (typeof b.isEnabled !== "function" || b.isEnabled()))
+    .filter((b) => b.type === "pg_events_when_started" && (typeof b.isEnabled !== "function" || b.isEnabled()))
   if (whenStartedHats.length === 0) return empty
 
   const analysis: ProgramAnalysis = {

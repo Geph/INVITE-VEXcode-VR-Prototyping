@@ -35,6 +35,7 @@ describe("Blockly editor smoke", () => {
       "sensing",
       "console",
       "loops",
+      "variables",
     ])
   })
 })

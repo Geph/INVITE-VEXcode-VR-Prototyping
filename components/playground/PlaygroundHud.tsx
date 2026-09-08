@@ -32,6 +32,7 @@ export function PlaygroundHud({
   onCloseStrategy,
   chrome = "reef",
   canvasOverlay,
+  toolbarTrailing,
 }: {
   consoleLines: ConsoleLine[]
   showSensors: boolean
@@ -54,6 +55,7 @@ export function PlaygroundHud({
   onCloseStrategy: () => void
   chrome?: "reef" | "field"
   canvasOverlay?: ReactNode
+  toolbarTrailing?: ReactNode
 }) {
   return (
     <div id="vex-playground-body" className="flex flex-col relative">
@@ -186,6 +188,7 @@ export function PlaygroundHud({
         onStep={onStep}
         onStop={onStop}
         onReset={onReset}
+        trailing={toolbarTrailing}
       />
 
       {gameState.isGameOver && (

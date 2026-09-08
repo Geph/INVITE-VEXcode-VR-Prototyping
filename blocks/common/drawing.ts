@@ -7,7 +7,7 @@ const PEN_WIDTHS: Record<string, string> = {
 }
 
 function defineBlocks(Blockly: any) {
-  Blockly.Blocks["move_pen"] = {
+  Blockly.Blocks["pg_looks_move_pen"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("Move Pen")
@@ -25,7 +25,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["set_pen_width"] = {
+  Blockly.Blocks["pg_looks_set_pen_width"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("set pen to width")
@@ -44,7 +44,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["set_pen_color"] = {
+  Blockly.Blocks["pg_looks_set_pen_color"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("set pen to color")
@@ -69,15 +69,15 @@ function defineBlocks(Blockly: any) {
 }
 
 const jsGenerators = {
-  move_pen: (block: any) => {
+  pg_looks_move_pen: (block: any) => {
     const position = block.getFieldValue("POSITION")
     return `robot.movePen('${position}');\n`
   },
-  set_pen_width: (block: any) => {
+  pg_looks_set_pen_width: (block: any) => {
     const width = block.getFieldValue("WIDTH")
     return `robot.setPenWidth('${width}');\n`
   },
-  set_pen_color: (block: any) => {
+  pg_looks_set_pen_color: (block: any) => {
     const color = block.getFieldValue("COLOR")
     return `robot.setPenColor('${color}');\n`
   },
@@ -85,17 +85,17 @@ const jsGenerators = {
 
 const pythonGenerators: PythonGenerators = {
   statements: {
-    move_pen: (block, indent, { constant }) => `${indent}pen.move(${constant(block.getFieldValue("POSITION"))})\n`,
-    set_pen_width: (block, indent) =>
+    pg_looks_move_pen: (block, indent, { constant }) => `${indent}pen.move(${constant(block.getFieldValue("POSITION"))})\n`,
+    pg_looks_set_pen_width: (block, indent) =>
       `${indent}pen.set_pen_width(${PEN_WIDTHS[block.getFieldValue("WIDTH")] ?? "MEDIUM"})\n`,
-    set_pen_color: (block, indent, { constant }) => `${indent}pen.set_pen_color(${constant(block.getFieldValue("COLOR"))})\n`,
+    pg_looks_set_pen_color: (block, indent, { constant }) => `${indent}pen.set_pen_color(${constant(block.getFieldValue("COLOR"))})\n`,
   },
 }
 
 export const toolboxEntries = [
-  { kind: "block", type: "move_pen" },
-  { kind: "block", type: "set_pen_width" },
-  { kind: "block", type: "set_pen_color" },
+  { kind: "block", type: "pg_looks_move_pen" },
+  { kind: "block", type: "pg_looks_set_pen_width" },
+  { kind: "block", type: "pg_looks_set_pen_color" },
 ]
 
 export const drawing: CommonBlockCategory = {

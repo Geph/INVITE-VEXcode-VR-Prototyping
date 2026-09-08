@@ -2,7 +2,8 @@
 
 import { useCallback, useRef, useState } from "react"
 import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
-import { createProgramRobotApi, startBumperWatchers } from "./program-robot-api"
+import { createProgramRobotApi } from "./program-robot-api"
+import { startBumperWatchers } from "./program-watchers"
 import {
   PRINT_COLORS,
   ProgramStopped,
@@ -105,15 +106,23 @@ export function useProgramRunner({
       jsGen.init(workspace)
     }
     const code = generateWhenStartedJavaScript(workspace, jsGen)
-    // `when_bumper` stacks are separate hats, so they are collected and polled
+    // `pg_events_when_bumper` stacks are separate hats, so they are collected and polled
     // alongside the main program rather than inlined into it.
     const bumperEvents = workspace
       .getAllBlocks(false)
-      .filter((b: { type: string }) => b.type === "when_bumper")
+      .filter((b: { type: string }) => b.type === "pg_events_when_bumper")
       .map((b: any) => ({
         bumper: b.getFieldValue("BUMPER"),
         state: b.getFieldValue("STATE"),
         body: jsGen.statementToCode(b, "DO"),
+      }))
+      .filter((handler: { body: string }) => handler.body.trim().length > 0)
+    const broadcastEvents = workspace
+      .getAllBlocks(false)
+      .filter((b: { type: string }) => b.type === "pg_events_when_broadcasted")
+      .map((b: any) => ({
+        message: String(b.getFieldValue("OBJECT") || ""),
+        body: jsGen.statementToCode(b, "SUBSTACK"),
       }))
       .filter((handler: { body: string }) => handler.body.trim().length > 0)
     if (typeof jsGen.finish === "function") {
@@ -148,7 +157,7 @@ export function useProgramRunner({
 
     robotStateRef.current = { x: startPos.x, y: startPos.y, rotation: 0 }
 
-    const { robotAPI, pushConsoleLine } = createProgramRobotApi({
+    const { robotAPI, pushConsoleLine, registerBroadcastHandlers } = createProgramRobotApi({
       runtimeRef,
       robotStateRef,
       reefStateRef,
@@ -174,9 +183,10 @@ export function useProgramRunner({
     const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
 
     const stopBumperWatchers = startBumperWatchers(bumperEvents, robotAPI, stopRequestedRef)
+    registerBroadcastHandlers(broadcastEvents)
 
     try {
-      if (!code.trim() && bumperEvents.length === 0) {
+      if (!code.trim() && bumperEvents.length === 0 && broadcastEvents.length === 0) {
         pushConsoleLine("Add blocks under when started to run your program.")
         return
       }

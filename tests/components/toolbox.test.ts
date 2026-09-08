@@ -21,6 +21,6 @@ describe("toolbox smoke", () => {
       ...COMMON_CATEGORIES.map((category) => category.id),
       ...oceanReef.blocks.map((category) => category.id),
     ]
-    expect(ids).toEqual(expect.arrayContaining(["drivetrain", "operators", "logic", "drawing", "console", "loops", "magnet", "sensing"]))
+    expect(ids).toEqual(expect.arrayContaining(["drivetrain", "operators", "logic", "drawing", "console", "loops", "variables", "magnet", "sensing"]))
   })
 })

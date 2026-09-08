@@ -88,9 +88,12 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     if (ctx.stopRequestedRef.current) throw new ProgramStopped()
   }
 
-  // Serialize drivetrain motion so concurrent when_started threads queue
+  // Serialize drivetrain motion so concurrent when-started threads queue
   // instead of fighting over the same animation.
   let motionQueue: Promise<void> = Promise.resolve()
+  let outstandingMotion = 0
+  const variables = new Map<string, unknown>()
+  const broadcastHandlers: Array<{ message: string; run: (robot: unknown) => Promise<void>; busy: boolean }> = []
   const withMotionLock = async <T,>(fn: () => Promise<T>): Promise<T> => {
     const run = motionQueue.then(fn, fn)
     motionQueue = run.then(
@@ -147,8 +150,9 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
       ctx.setIsPausedOnBlock(false)
       throwIfStopped()
     },
-    drive: async (direction: string, distance?: number, unit?: string) =>
-      withMotionLock(async () => {
+    drive: async (direction: string, distance?: number, unit?: string, wait = true) => {
+      outstandingMotion += 1
+      const run = withMotionLock(async () => {
         throwIfStopped()
         const distanceMm =
           distance === undefined ? 200 : unit === "inches" || unit === "INCHES" ? Number(distance) * 25.4 : Number(distance)
@@ -181,10 +185,15 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
         }
         throwIfStopped()
       }).finally(() => {
+        outstandingMotion -= 1
         if (worldRef.current && "driveMoving" in worldRef.current) worldRef.current.driveMoving = false
-      }),
-    turn: async (direction: string, degrees?: number) =>
-      withMotionLock(async () => {
+      })
+      if (!wait) return
+      await run
+    },
+    turn: async (direction: string, degrees?: number, wait = true) => {
+      outstandingMotion += 1
+      const run = withMotionLock(async () => {
         throwIfStopped()
         const multiplier = direction === "right" ? 1 : -1
         const turnAmount = degrees === undefined ? 90 : Number(degrees)
@@ -193,7 +202,12 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
         const duration = turnDurationMs(delta, ctx.runtimeRef.current.turnVelocity)
         await ctx.animateRobotFluid({ rotation: targetRotation }, duration, ctx.robotStateRef)
         throwIfStopped()
-      }),
+      }).finally(() => {
+        outstandingMotion -= 1
+      })
+      if (!wait) return
+      await run
+    },
     turnToHeading: async (heading: number) =>
       withMotionLock(async () => {
         throwIfStopped()
@@ -217,8 +231,28 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
       ctx.cancelRobotAnimation()
     },
     driveIsDone: () => {
+      if (outstandingMotion > 0) return false
       if (typeof playgroundApi.driveIsDone === "function") return playgroundApi.driveIsDone()
       return true
+    },
+    setVariable: (name: string, value: unknown) => {
+      variables.set(String(name), value)
+    },
+    getVariable: (name: string) => variables.get(String(name)),
+    broadcast: (message: string) => {
+      const wanted = String(message)
+      for (const handler of broadcastHandlers) {
+        if (handler.message !== wanted || handler.busy) continue
+        handler.busy = true
+        handler
+          .run(robotAPI)
+          .catch((error: unknown) => {
+            if (!(error instanceof ProgramStopped)) console.error("Broadcast handler error:", error)
+          })
+          .finally(() => {
+            handler.busy = false
+          })
+      }
     },
     setDriveVelocity: (velocity: number) => {
       ctx.runtimeRef.current.driveVelocity = Number(velocity)
@@ -331,47 +365,18 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     },
   }
 
-  return { robotAPI, pushConsoleLine }
-}
-
-/** Poll bumper state and fire each `when_bumper` stack on its edge. */
-export function startBumperWatchers(
-  bumperEvents: { bumper: string; state: string; body: string }[],
-  robotAPI: ProgramRobotAPI,
-  stopRequestedRef: { current: boolean },
-) {
-  if (bumperEvents.length === 0) return () => {}
-
-  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
-
-  const watchers = bumperEvents.map((handler: { bumper: string; state: string; body: string }) => ({
-    matches: (was: boolean, now: boolean) =>
-      handler.state === "pressed" ? now && !was : was && !now,
-    run: new AsyncFunction("robot", handler.body) as (robot: unknown) => Promise<void>,
-    bumper: handler.bumper,
-    was: false,
-    busy: false,
-  }))
-
-  const timer = setInterval(() => {
-    if (stopRequestedRef.current) return
-    for (const watcher of watchers) {
-      const now = robotAPI.bumperPressed(watcher.bumper)
-      const fire = watcher.matches(watcher.was, now)
-      watcher.was = now
-      // Skip re-entry so a slow handler cannot stack up on itself.
-      if (!fire || watcher.busy) continue
-      watcher.busy = true
-      watcher
-        .run(robotAPI)
-        .catch((error: unknown) => {
-          if (!(error instanceof ProgramStopped)) console.error("Bumper handler error:", error)
-        })
-        .finally(() => {
-          watcher.busy = false
-        })
+  const registerBroadcastHandlers = (handlers: { message: string; body: string }[]) => {
+    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
+    broadcastHandlers.length = 0
+    for (const handler of handlers) {
+      if (!handler.body.trim()) continue
+      broadcastHandlers.push({
+        message: handler.message,
+        run: new AsyncFunction("robot", handler.body) as (robot: unknown) => Promise<void>,
+        busy: false,
+      })
     }
-  }, 50)
+  }
 
-  return () => clearInterval(timer)
+  return { robotAPI, pushConsoleLine, registerBroadcastHandlers }
 }

@@ -5,13 +5,13 @@ import { initialHostRobot } from "@/hooks/playground-host"
 
 describe("program runner smoke", () => {
   it("Start emits a two-block when-started program", () => {
-    const hat = { type: "when_started", isEnabled: () => true }
+    const hat = { type: "pg_events_when_started", isEnabled: () => true }
     const workspace = {
       getAllBlocks: () => [hat],
     }
     const js = {
       blockToCode: (block: { type: string }) => {
-        if (block.type !== "when_started") return ""
+        if (block.type !== "pg_events_when_started") return ""
         return "await robot.drive('forward', 200, 'mm');\nawait robot.turn('right', 90);"
       },
     }

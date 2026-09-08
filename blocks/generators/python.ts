@@ -93,19 +93,26 @@ export function generatePythonProgram(workspace: PyWorkspace | null): string {
   if (!workspace) return EMPTY
 
   const blocks = workspace.getAllBlocks(false)
-  const whenStartedHats = blocks.filter((b) => b.type === "when_started")
+  const whenStartedHats = blocks.filter((b) => b.type === "pg_events_when_started")
   if (whenStartedHats.length === 0) return EMPTY
 
   let out = HEADER
 
-  // `when_bumper` hats become their own callbacks, mirroring how the simulator
-  // runs them alongside the main program.
-  const bumperEvents = blocks.filter((b) => b.type === "when_bumper")
+  // `pg_events_when_bumper` hats become their own callbacks, mirroring how the
+  // simulator runs them alongside the main program.
+  const bumperEvents = blocks.filter((b) => b.type === "pg_events_when_bumper")
   bumperEvents.forEach((event, index) => {
     const bumper = event.getFieldValue("BUMPER")
     const state = event.getFieldValue("STATE")
     const name = `when_${bumper}_bumper_${state}_${index + 1}`
     out += `def ${name}():\n${body(event, "DO", INDENT)}\n`
+  })
+
+  const broadcastEvents = blocks.filter((b) => b.type === "pg_events_when_broadcasted")
+  broadcastEvents.forEach((event, index) => {
+    const raw = String(event.getFieldValue("OBJECT") || "message1").replace(/\W/g, "_") || "message"
+    const name = `when_broadcasted_${raw}_${index + 1}`
+    out += `def ${name}():\n${body(event, "SUBSTACK", INDENT)}\n`
   })
 
   whenStartedHats.forEach((hat, index) => {
@@ -117,6 +124,11 @@ export function generatePythonProgram(workspace: PyWorkspace | null): string {
     const bumper = event.getFieldValue("BUMPER")
     const state = event.getFieldValue("STATE")
     out += `vr_thread(when_${bumper}_bumper_${state}_${index + 1})\n`
+  })
+
+  broadcastEvents.forEach((event, index) => {
+    const raw = String(event.getFieldValue("OBJECT") || "message1").replace(/\W/g, "_") || "message"
+    out += `vr_thread(when_broadcasted_${raw}_${index + 1})\n`
   })
 
   whenStartedHats.forEach((_, index) => {

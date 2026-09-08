@@ -4,14 +4,16 @@ import type React from "react"
 import { useEffect, useRef, useState } from "react"
 import { ChevronDown, FilePlus, FolderOpen, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { migrateWorkspaceXml } from "@/blocks/block-type-migration"
 
 /**
- * `when_started` used to be a C-block whose program lived in a "DO" mouth. That
- * input is gone, so projects saved before the change would load as a bare hat
- * with the whole stack discarded. Rehome the mouth onto the next connection.
+ * `pg_events_when_started` used to be a C-block whose program lived in a "DO"
+ * mouth. That input is gone, so projects saved before the change would load as
+ * a bare hat with the whole stack discarded. Rehome the mouth onto the next
+ * connection.
  */
 function migrateWhenStartedMouths(dom: Element): void {
-  for (const hat of Array.from(dom.querySelectorAll('block[type="when_started"]'))) {
+  for (const hat of Array.from(dom.querySelectorAll('block[type="pg_events_when_started"]'))) {
     const mouth = Array.from(hat.children).find(
       (child) => child.tagName === "statement" && child.getAttribute("name") === "DO",
     )
@@ -67,7 +69,7 @@ export function FileMenu({ workspace }: { workspace: any }) {
   const loadWorkspaceFromXmlText = (xmlText: string) => {
     if (!workspace || !window.Blockly) return
     const Blockly = window.Blockly
-    const xml = Blockly.utils.xml.textToDom(xmlText)
+    const xml = Blockly.utils.xml.textToDom(migrateWorkspaceXml(xmlText))
     migrateWhenStartedMouths(xml)
     workspace.clear()
     Blockly.Xml.domToWorkspace(xml, workspace)
@@ -105,7 +107,7 @@ export function FileMenu({ workspace }: { workspace: any }) {
     if (!confirmed) return
 
     workspace.clear()
-    const whenStartedBlock = workspace.newBlock("when_started")
+    const whenStartedBlock = workspace.newBlock("pg_events_when_started")
     whenStartedBlock.initSvg()
     whenStartedBlock.render()
     whenStartedBlock.moveBy(50, 50)

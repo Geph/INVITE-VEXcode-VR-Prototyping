@@ -224,7 +224,7 @@ export function isTrashNearEye(
   return frontMm !== null
 }
 
-/** Walk the statement chain under when_started (and nested C-blocks). */
+/** Walk the statement chain under pg_events_when_started (and nested C-blocks). */
 export function forEachProgramBlock(
   startBlock: { type: string; getInputTargetBlock?: (name: string) => unknown; getNextBlock?: () => unknown },
   visit: (block: {
@@ -245,7 +245,7 @@ export function forEachProgramBlock(
       getNextBlock: () => unknown
     }
     visit(b)
-    const statementInputs = ["DO", "DO1", "DO2", "ELSE"]
+    const statementInputs = ["DO", "DO1", "DO2", "ELSE", "SUBSTACK"]
     for (const input of statementInputs) {
       if (typeof b.getInputTargetBlock === "function") {
         walk(b.getInputTargetBlock(input))
@@ -256,14 +256,14 @@ export function forEachProgramBlock(
 
   // The hat contributes no behaviour, so start below it. Skipping it also keeps
   // a bare hat reading as an empty program rather than a one-block one.
-  if (startBlock.type === "when_started" && startBlock.getNextBlock) {
+  if (startBlock.type === "pg_events_when_started" && startBlock.getNextBlock) {
     walk(startBlock.getNextBlock())
   } else {
     walk(startBlock)
   }
 }
 
-/** JavaScript for every when_started stack, run as concurrent threads. */
+/** JavaScript for every pg_events_when_started stack, run as concurrent threads. */
 export function generateWhenStartedJavaScript(
   workspace: { getAllBlocks: (ordered: boolean) => { type: string; isEnabled?: () => boolean }[] } | null,
   js: { blockToCode: (block: { type: string }) => string | [string, number] },
@@ -271,7 +271,7 @@ export function generateWhenStartedJavaScript(
   if (!workspace) return ""
   const hats = workspace
     .getAllBlocks(false)
-    .filter((b) => b.type === "when_started" && (typeof b.isEnabled !== "function" || b.isEnabled()))
+    .filter((b) => b.type === "pg_events_when_started" && (typeof b.isEnabled !== "function" || b.isEnabled()))
 
   const bodies = hats
     .map((hat) => {
@@ -342,8 +342,6 @@ export function flyoutBlockWithNumberShadows(
 
 export const PLAYGROUND_CANVAS_SHORT_PX = 400
 export const PLAYGROUND_CANVAS_SHORT_MAXIMIZED_PX = 600
-/** White frame around the canvas inside `#vex-playground-window`. */
-export const PLAYGROUND_WINDOW_FRAME_X_PX = 16
 /** Keep the floating window off the right edge of the workbench. */
 export const PLAYGROUND_WINDOW_RIGHT_GUTTER_PX = 104
 
@@ -365,8 +363,9 @@ export function getPlaygroundCanvasSize(
   return { w: short, h: short }
 }
 
+/** The canvas spans the window, so the field edge meets the window edge. */
 export function playgroundWindowWidthPx(canvasWidth: number): number {
-  return canvasWidth + PLAYGROUND_WINDOW_FRAME_X_PX
+  return canvasWidth
 }
 
 export function playgroundWindowX(canvasWidth: number, viewportWidth: number): number {

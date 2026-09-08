@@ -36,12 +36,12 @@ export interface BlocklyEditorProps {
 }
 
 const PICKER_FIELDS: Record<string, string> = {
-  turn_degrees: "DEGREES",
-  turn_to_rotation: "ROTATION",
-  set_drive_rotation: "ROTATION",
-  turn_to_heading: "HEADING",
-  set_drive_heading: "HEADING",
-  drive_distance: "DISTANCE",
+  pg_drivetrain_turn_for: "DEGREES",
+  pg_drivetrain_turn_to_rotation: "ROTATION",
+  pg_drivetrain_set_rotation: "ROTATION",
+  pg_drivetrain_turn_to_heading: "HEADING",
+  pg_drivetrain_set_heading: "HEADING",
+  pg_drivetrain_drive_for: "DISTANCE",
 }
 
 export function BlocklyEditor({
@@ -64,9 +64,13 @@ export function BlocklyEditor({
   const workspace = useBlocklyInjection(blocklyLoaded, blocklyDivRef, onWorkspaceReady)
   useBlocklyWidgetFix(blocklyLoaded)
 
+  // Held in a ref so an inline parent callback cannot re-fire this every render.
+  const onLoadedRef = useRef(onBlocklyLoaded)
+  onLoadedRef.current = onBlocklyLoaded
+
   useEffect(() => {
-    if (blocklyLoaded) onBlocklyLoaded?.()
-  }, [blocklyLoaded, onBlocklyLoaded])
+    if (blocklyLoaded) onLoadedRef.current?.()
+  }, [blocklyLoaded])
 
   const [deletedBlocks, setDeletedBlocks] = useState<string | null>(null)
   const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
@@ -123,7 +127,7 @@ export function BlocklyEditor({
         blockType: block.type,
         fieldName,
         value: block.getFieldValue(fieldName),
-        direction: block.type === "drive_distance" ? block.getFieldValue("DIRECTION") || "forward" : undefined,
+        direction: block.type === "pg_drivetrain_drive_for" ? block.getFieldValue("DIRECTION") || "forward" : undefined,
         clientX: e.clientX,
         clientY: e.clientY,
       })

@@ -11,6 +11,7 @@ import {
   Pencil,
   Terminal,
   ToggleLeft,
+  Variable,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -87,6 +88,14 @@ export const RAIL_CATEGORIES: RailCategory[] = [
     selectedClass: "bg-[#2ECC71] text-white",
     idleClass: "bg-[#2ECC71]/20 text-[#2ECC71] hover:bg-[#2ECC71]/30",
     Icon: ToggleLeft,
+  },
+  {
+    id: "variables",
+    label: "Variables",
+    buttonId: "vex-category-variables",
+    selectedClass: "bg-[#FF8C1A] text-white",
+    idleClass: "bg-[#FF8C1A]/20 text-[#FF8C1A] hover:bg-[#FF8C1A]/30",
+    Icon: Variable,
   },
 ]
 

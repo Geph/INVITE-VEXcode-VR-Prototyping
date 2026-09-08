@@ -1,3 +1,5 @@
+import { AND_DONT_WAIT_BLOCK_TYPES, isAndDontWait, setAndDontWait } from "@/blocks/common/anddontwait"
+
 /** VEXcode VR–style block context menu for Blockly. */
 
 type BlocklyScope = {
@@ -13,7 +15,7 @@ type RegistryItem = {
   callback: (scope: BlocklyScope) => void
 }
 
-const HAT_TYPES = new Set(["when_started", "when_bumper"])
+const HAT_TYPES = new Set(["pg_events_when_started", "pg_events_when_bumper", "pg_events_when_broadcasted"])
 
 function speak(text: string) {
   if (typeof window === "undefined" || !window.speechSynthesis) return
@@ -63,6 +65,7 @@ export function installVexBlockContextMenu(Blockly: {
     "vexHelp",
     "vexConvertSwitch",
     "vexRead",
+    "vexAndDontWait",
   ]) {
     safeUnregister(registry, id)
   }
@@ -134,8 +137,8 @@ export function installVexBlockContextMenu(Blockly: {
       const block = scope.block
       if (!block || block.isShadow?.()) return "hidden"
       if (!block.isDeletable()) return "disabled"
-      if (block.type === "when_started") {
-        const hats = block.workspace.getAllBlocks(false).filter((b: { type: string }) => b.type === "when_started")
+      if (block.type === "pg_events_when_started") {
+        const hats = block.workspace.getAllBlocks(false).filter((b: { type: string }) => b.type === "pg_events_when_started")
         if (hats.length <= 1) return "disabled"
       }
       return "enabled"
@@ -202,7 +205,7 @@ export function installVexBlockContextMenu(Blockly: {
       block.unplug?.(true)
       block.dispose(false)
 
-      const switchBlock = ws.newBlock("switch_code")
+      const switchBlock = ws.newBlock("pg_control_switch")
       switchBlock.setFieldValue(python || `# python`, "CODE")
       switchBlock.initSvg?.()
       switchBlock.render?.()
@@ -216,6 +219,28 @@ export function installVexBlockContextMenu(Blockly: {
         switchBlock.nextConnection.connect(nextBlock.previousConnection)
       }
 
+      Blockly.Events?.setGroup?.(false)
+    },
+  })
+
+  register({
+    id: "vexAndDontWait",
+    scopeType: ScopeType.BLOCK,
+    weight: 5.5,
+    displayText(scope) {
+      return isAndDontWait(scope.block) ? "Wait for completion" : "And don't wait"
+    },
+    preconditionFn(scope) {
+      const block = scope.block
+      if (!block || block.isShadow?.() || block.isInFlyout) return "hidden"
+      if (!(AND_DONT_WAIT_BLOCK_TYPES as readonly string[]).includes(block.type)) return "hidden"
+      return "enabled"
+    },
+    callback(scope) {
+      const block = scope.block
+      if (!block) return
+      Blockly.Events?.setGroup?.(true)
+      setAndDontWait(block, !isAndDontWait(block))
       Blockly.Events?.setGroup?.(false)
     },
   })

@@ -38,7 +38,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["math_arithmetic"] = {
+  Blockly.Blocks["pg_operator_arithmetic"] = {
     init: function () {
       this.appendValueInput("A").setCheck("Number")
       this.appendDummyInput().appendField(
@@ -59,7 +59,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["compare"] = {
+  Blockly.Blocks["pg_operator_comparison"] = {
     init: function () {
       this.appendValueInput("A").setCheck("Number")
       this.appendDummyInput().appendField(
@@ -82,7 +82,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["range_compare"] = {
+  Blockly.Blocks["pg_operator_range"] = {
     init: function () {
       this.appendValueInput("A").setCheck("Number")
       this.appendDummyInput().appendField(
@@ -110,7 +110,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["random_int"] = {
+  Blockly.Blocks["pg_operator_random"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("pick random")
@@ -123,7 +123,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["round_number"] = {
+  Blockly.Blocks["pg_operator_round"] = {
     init: function () {
       this.appendDummyInput().appendField("round")
       this.appendValueInput("NUM").setCheck("Number")
@@ -138,7 +138,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["math_function"] = {
+  Blockly.Blocks["pg_operator_math"] = {
     init: function () {
       this.appendDummyInput().appendField(
         new Blockly.FieldDropdown([
@@ -159,7 +159,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["atan2_function"] = {
+  Blockly.Blocks["pg_operator_atan2"] = {
     init: function () {
       this.appendDummyInput().appendField("atan2 of x:")
       this.appendValueInput("X").setCheck("Number")
@@ -173,7 +173,7 @@ function defineBlocks(Blockly: any) {
     },
   }
 
-  Blockly.Blocks["modulo"] = {
+  Blockly.Blocks["pg_operator_modulo"] = {
     init: function () {
       this.appendDummyInput().appendField("remainder of")
       this.appendValueInput("A").setCheck("Number")
@@ -195,21 +195,21 @@ const jsGenerators = {
     const order = safe < 0 ? js().ORDER_UNARY_NEGATION : js().ORDER_ATOMIC
     return [String(safe), order]
   },
-  math_arithmetic: (block: any) => {
+  pg_operator_arithmetic: (block: any) => {
     const a = js().valueToCode(block, "A", js().ORDER_ATOMIC) || "0"
     const b = js().valueToCode(block, "B", js().ORDER_ATOMIC) || "0"
     const op = block.getFieldValue("OP")
     const operators: Record<string, string> = { ADD: "+", MINUS: "-", MULTIPLY: "*", DIVIDE: "/" }
     return [`(${a} ${operators[op]} ${b})`, js().ORDER_ATOMIC]
   },
-  compare: (block: any) => {
+  pg_operator_comparison: (block: any) => {
     const a = js().valueToCode(block, "A", js().ORDER_RELATIONAL) || "0"
     const b = js().valueToCode(block, "B", js().ORDER_RELATIONAL) || "0"
     const op = block.getFieldValue("OP")
     const operators: Record<string, string> = { EQ: "===", NEQ: "!==", LT: "<", GT: ">", LTE: "<=", GTE: ">=" }
     return [`(${a} ${operators[op]} ${b})`, js().ORDER_RELATIONAL]
   },
-  range_compare: (block: any) => {
+  pg_operator_range: (block: any) => {
     const a = js().valueToCode(block, "A", js().ORDER_RELATIONAL) || "0"
     const b = js().valueToCode(block, "B", js().ORDER_RELATIONAL) || "0"
     const c = js().valueToCode(block, "C", js().ORDER_RELATIONAL) || "0"
@@ -218,19 +218,19 @@ const jsGenerators = {
     const operators: Record<string, string> = { LT: "<", LTE: "<=" }
     return [`(${a} ${operators[op1]} ${b} && ${b} ${operators[op2]} ${c})`, js().ORDER_LOGICAL_AND]
   },
-  random_int: (block: any) => {
+  pg_operator_random: (block: any) => {
     const from = Number(block.getFieldValue("FROM"))
     const to = Number(block.getFieldValue("TO"))
     const lo = Math.min(Number.isFinite(from) ? from : 0, Number.isFinite(to) ? to : 0)
     const hi = Math.max(Number.isFinite(from) ? from : 0, Number.isFinite(to) ? to : 0)
     return [`(Math.floor(Math.random() * (${hi} - ${lo} + 1)) + ${lo})`, js().ORDER_ATOMIC]
   },
-  round_number: (block: any) => {
+  pg_operator_round: (block: any) => {
     const num = js().valueToCode(block, "NUM", js().ORDER_ATOMIC) || "0"
     const places = js().valueToCode(block, "PLACES", js().ORDER_ATOMIC) || "0"
     return [`(Math.round(${num} * Math.pow(10, ${places})) / Math.pow(10, ${places}))`, js().ORDER_ATOMIC]
   },
-  math_function: (block: any) => {
+  pg_operator_math: (block: any) => {
     const num = js().valueToCode(block, "NUM", js().ORDER_ATOMIC) || "0"
     const func = block.getFieldValue("FUNC")
     const functions: Record<string, string> = {
@@ -242,12 +242,12 @@ const jsGenerators = {
     }
     return [`${functions[func]}(${num})`, js().ORDER_FUNCTION_CALL]
   },
-  atan2_function: (block: any) => {
+  pg_operator_atan2: (block: any) => {
     const x = js().valueToCode(block, "X", js().ORDER_ATOMIC) || "1"
     const y = js().valueToCode(block, "Y", js().ORDER_ATOMIC) || "1"
     return [`Math.atan2(${y}, ${x})`, js().ORDER_FUNCTION_CALL]
   },
-  modulo: (block: any) => {
+  pg_operator_modulo: (block: any) => {
     const a = js().valueToCode(block, "A", js().ORDER_MODULUS) || "0"
     const b = js().valueToCode(block, "B", js().ORDER_MODULUS) || "1"
     return [`(${a} % ${b})`, js().ORDER_MODULUS]
@@ -257,33 +257,33 @@ const jsGenerators = {
 const pythonGenerators: PythonGenerators = {
   expressions: {
     math_number: (block, { pyNumber }) => pyNumber(block.getFieldValue("NUM")),
-    math_arithmetic: (block, { input }) => {
+    pg_operator_arithmetic: (block, { input }) => {
       const op = ARITHMETIC_OPS[block.getFieldValue("OP")] ?? "+"
       return `(${input(block, "A", "0")} ${op} ${input(block, "B", "0")})`
     },
-    compare: (block, { input }) => {
+    pg_operator_comparison: (block, { input }) => {
       const op = COMPARE_OPS[block.getFieldValue("OP")] ?? "=="
       return `(${input(block, "A", "0")} ${op} ${input(block, "B", "0")})`
     },
-    range_compare: (block, { input }) => {
+    pg_operator_range: (block, { input }) => {
       const op1 = RANGE_OPS[block.getFieldValue("OP1")] ?? "<"
       const op2 = RANGE_OPS[block.getFieldValue("OP2")] ?? "<"
       return `(${input(block, "A", "0")} ${op1} ${input(block, "B", "0")} ${op2} ${input(block, "C", "0")})`
     },
-    random_int: (block) => {
+    pg_operator_random: (block) => {
       const from = Number(block.getFieldValue("FROM"))
       const to = Number(block.getFieldValue("TO"))
       const lo = Math.min(Number.isFinite(from) ? from : 0, Number.isFinite(to) ? to : 0)
       const hi = Math.max(Number.isFinite(from) ? from : 0, Number.isFinite(to) ? to : 0)
       return `random.randint(${lo}, ${hi})`
     },
-    round_number: (block, { input }) => `round(${input(block, "NUM", "0")}, ${input(block, "PLACES", "0")})`,
-    math_function: (block, { input }) => {
+    pg_operator_round: (block, { input }) => `round(${input(block, "NUM", "0")}, ${input(block, "PLACES", "0")})`,
+    pg_operator_math: (block, { input }) => {
       const fn = MATH_FUNCS[block.getFieldValue("FUNC")] ?? "abs"
       return `${fn}(${input(block, "NUM", "0")})`
     },
-    atan2_function: (block, { input }) => `math.atan2(${input(block, "Y", "1")}, ${input(block, "X", "1")})`,
-    modulo: (block, { input }) => `(${input(block, "A", "0")} % ${input(block, "B", "1")})`,
+    pg_operator_atan2: (block, { input }) => `math.atan2(${input(block, "Y", "1")}, ${input(block, "X", "1")})`,
+    pg_operator_modulo: (block, { input }) => `(${input(block, "A", "0")} % ${input(block, "B", "1")})`,
   },
 }
 

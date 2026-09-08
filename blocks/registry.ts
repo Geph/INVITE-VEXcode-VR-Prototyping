@@ -5,6 +5,7 @@ import { drivetrain } from "./common/drivetrain"
 import { events } from "./common/events"
 import { logic } from "./common/logic"
 import { operators } from "./common/operators"
+import { variables } from "./common/variables"
 import { installCategory, type CommonBlockCategory } from "./common/types"
 import type { BlockCategory } from "@/playgrounds/types"
 
@@ -52,10 +53,16 @@ export const COMMON_CATEGORIES: RegisteredCategory[] = [
     heading: { title: "Switch", subtitle: "Switch - Functions" },
     categories: [events, control],
   },
+  {
+    id: "variables",
+    label: "Variables",
+    heading: { title: "Variables", subtitle: "Variables - Data" },
+    categories: [variables],
+  },
 ]
 
 export function commonCategoriesToInstall(): CommonBlockCategory[] {
-  return [drivetrain, operators, logic, drawing, consoleBlocks, events, control]
+  return [drivetrain, operators, logic, drawing, consoleBlocks, events, control, variables]
 }
 
 export function toolboxEntriesFor(

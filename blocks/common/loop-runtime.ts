@@ -7,10 +7,8 @@ export const LOOP_YIELD = "await robot.wait(0);\n"
 
 /** Block types that create a JS loop, so `break` is legal inside them. */
 export const LOOP_BLOCK_TYPES = new Set([
-  "repeat_times",
-  "forever_loop",
-  "repeat_until",
-  "while_loop",
-  "repeat",
-  "forever",
+  "pg_control_repeat",
+  "pg_control_forever",
+  "pg_control_repeat_until",
+  "pg_control_while",
 ])

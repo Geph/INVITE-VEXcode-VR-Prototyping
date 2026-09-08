@@ -2,7 +2,7 @@ import type { PythonGenerators } from "@/blocks/common/types"
 import type { BlockCategory } from "../types"
 
 function defineMagnetBlocks(Blockly: any) {
-  Blockly.Blocks["energize_magnet"] = {
+  Blockly.Blocks["pg_magnet_energize"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("energize")
@@ -29,7 +29,7 @@ function defineMagnetBlocks(Blockly: any) {
     },
   }
 
-  Blockly.JavaScript.forBlock["energize_magnet"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_magnet_energize"] = (block: any) => {
     const device = block.getFieldValue("DEVICE")
     const mode = block.getFieldValue("MODE")
     return `robot.energize('${device}', '${mode}');\n`
@@ -37,7 +37,7 @@ function defineMagnetBlocks(Blockly: any) {
 }
 
 function defineSensingBlocks(Blockly: any) {
-  Blockly.Blocks["bumper_pressed"] = {
+  Blockly.Blocks["pg_sensing_bumper_pressed"] = {
     init: function () {
       this.appendDummyInput()
         .appendField(
@@ -53,12 +53,12 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Check if bumper is pressed")
     },
   }
-  Blockly.JavaScript.forBlock["bumper_pressed"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_sensing_bumper_pressed"] = (block: any) => {
     const bumper = block.getFieldValue("BUMPER")
     return [`robot.bumperPressed('${bumper}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["when_bumper"] = {
+  Blockly.Blocks["pg_events_when_bumper"] = {
     init: function () {
       this.appendDummyInput()
         .appendField("when")
@@ -81,9 +81,9 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Runs the blocks inside whenever the bumper changes state")
     },
   }
-  Blockly.JavaScript.forBlock["when_bumper"] = () => ""
+  Blockly.JavaScript.forBlock["pg_events_when_bumper"] = () => ""
 
-  Blockly.Blocks["distance_found_object"] = {
+  Blockly.Blocks["pg_sensing_distance_found"] = {
     init: function () {
       this.appendDummyInput()
         .appendField(
@@ -99,12 +99,12 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Check if distance sensor found an object")
     },
   }
-  Blockly.JavaScript.forBlock["distance_found_object"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_sensing_distance_found"] = (block: any) => {
     const sensor = block.getFieldValue("SENSOR")
     return [`robot.distanceFoundObject('${sensor}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["distance_in_units"] = {
+  Blockly.Blocks["pg_sensing_distance"] = {
     init: function () {
       this.appendDummyInput()
         .appendField(
@@ -127,13 +127,13 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Get distance sensor reading")
     },
   }
-  Blockly.JavaScript.forBlock["distance_in_units"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_sensing_distance"] = (block: any) => {
     const sensor = block.getFieldValue("SENSOR")
     const unit = block.getFieldValue("UNIT")
     return [`robot.getDistance('${sensor}', '${unit}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["eye_is_near"] = {
+  Blockly.Blocks["pg_sensing_eye_near"] = {
     init: function () {
       this.appendDummyInput()
         .appendField(
@@ -149,12 +149,12 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Check if eye sensor is near an object")
     },
   }
-  Blockly.JavaScript.forBlock["eye_is_near"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_sensing_eye_near"] = (block: any) => {
     const sensor = block.getFieldValue("SENSOR")
     return [`robot.eyeIsNear('${sensor}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["eye_detects_color"] = {
+  Blockly.Blocks["pg_sensing_eye_color"] = {
     init: function () {
       this.appendDummyInput()
         .appendField(
@@ -182,13 +182,13 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Check if eye sensor detects a color")
     },
   }
-  Blockly.JavaScript.forBlock["eye_detects_color"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_sensing_eye_color"] = (block: any) => {
     const sensor = block.getFieldValue("SENSOR")
     const color = block.getFieldValue("COLOR")
     return [`robot.eyeDetectsColor('${sensor}', '${color}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["eye_brightness"] = {
+  Blockly.Blocks["pg_sensing_eye_brightness"] = {
     init: function () {
       this.appendDummyInput()
         .appendField(
@@ -204,12 +204,12 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Get eye sensor brightness percentage")
     },
   }
-  Blockly.JavaScript.forBlock["eye_brightness"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_sensing_eye_brightness"] = (block: any) => {
     const sensor = block.getFieldValue("SENSOR")
     return [`robot.eyeBrightness('${sensor}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["position_value"] = {
+  Blockly.Blocks["pg_sensing_position"] = {
     init: function () {
       this.appendDummyInput().appendField("position")
       this.appendDummyInput()
@@ -233,13 +233,13 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Get robot position")
     },
   }
-  Blockly.JavaScript.forBlock["position_value"] = (block: any) => {
+  Blockly.JavaScript.forBlock["pg_sensing_position"] = (block: any) => {
     const axis = block.getFieldValue("AXIS")
     const unit = block.getFieldValue("UNIT")
     return [`robot.getPosition('${axis}', '${unit}')`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 
-  Blockly.Blocks["position_angle"] = {
+  Blockly.Blocks["pg_sensing_position_angle"] = {
     init: function () {
       this.appendDummyInput().appendField("position angle in degrees")
       this.setOutput(true, "Number")
@@ -247,27 +247,27 @@ function defineSensingBlocks(Blockly: any) {
       this.setTooltip("Get robot angle")
     },
   }
-  Blockly.JavaScript.forBlock["position_angle"] = () => {
+  Blockly.JavaScript.forBlock["pg_sensing_position_angle"] = () => {
     return [`robot.getPositionAngle()`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
 }
 
 export const oceanReefPythonGenerators: PythonGenerators = {
   expressions: {
-    bumper_pressed: (block) => `${block.getFieldValue("BUMPER")}_bumper.pressed()`,
-    distance_found_object: (block) => `${block.getFieldValue("SENSOR")}_distance.found_object()`,
-    distance_in_units: (block, { constant }) =>
+    pg_sensing_bumper_pressed: (block) => `${block.getFieldValue("BUMPER")}_bumper.pressed()`,
+    pg_sensing_distance_found: (block) => `${block.getFieldValue("SENSOR")}_distance.found_object()`,
+    pg_sensing_distance: (block, { constant }) =>
       `${block.getFieldValue("SENSOR")}_distance.get_distance(${constant(block.getFieldValue("UNIT"))})`,
-    eye_is_near: (block) => `${block.getFieldValue("SENSOR")}_eye.near_object()`,
-    eye_detects_color: (block, { constant }) =>
+    pg_sensing_eye_near: (block) => `${block.getFieldValue("SENSOR")}_eye.near_object()`,
+    pg_sensing_eye_color: (block, { constant }) =>
       `${block.getFieldValue("SENSOR")}_eye.detect(${constant(block.getFieldValue("COLOR"))})`,
-    eye_brightness: (block) => `${block.getFieldValue("SENSOR")}_eye.brightness(PERCENT)`,
-    position_value: (block, { constant }) =>
+    pg_sensing_eye_brightness: (block) => `${block.getFieldValue("SENSOR")}_eye.brightness(PERCENT)`,
+    pg_sensing_position: (block, { constant }) =>
       `location.position(${constant(block.getFieldValue("AXIS"))}, ${constant(block.getFieldValue("UNIT"))})`,
-    position_angle: () => "location.position_angle(DEGREES)",
+    pg_sensing_position_angle: () => "location.position_angle(DEGREES)",
   },
   statements: {
-    energize_magnet: (block, indent, { constant }) =>
+    pg_magnet_energize: (block, indent, { constant }) =>
       `${indent}magnet.energize(${constant(block.getFieldValue("MODE"))})\n`,
   },
 }
@@ -278,7 +278,7 @@ export const oceanReefBlocks: BlockCategory[] = [
     label: "Magnet",
     colour: "#9B59B6",
     define: defineMagnetBlocks,
-    toolbox: [{ kind: "block", type: "energize_magnet" }],
+    toolbox: [{ kind: "block", type: "pg_magnet_energize" }],
   },
   {
     id: "sensing",
@@ -286,15 +286,15 @@ export const oceanReefBlocks: BlockCategory[] = [
     colour: "#14B8A6",
     define: defineSensingBlocks,
     toolbox: [
-      { kind: "block", type: "bumper_pressed" },
-      { kind: "block", type: "when_bumper" },
-      { kind: "block", type: "distance_found_object" },
-      { kind: "block", type: "distance_in_units" },
-      { kind: "block", type: "eye_is_near" },
-      { kind: "block", type: "eye_detects_color" },
-      { kind: "block", type: "eye_brightness" },
-      { kind: "block", type: "position_value" },
-      { kind: "block", type: "position_angle" },
+      { kind: "block", type: "pg_sensing_bumper_pressed" },
+      { kind: "block", type: "pg_events_when_bumper" },
+      { kind: "block", type: "pg_sensing_distance_found" },
+      { kind: "block", type: "pg_sensing_distance" },
+      { kind: "block", type: "pg_sensing_eye_near" },
+      { kind: "block", type: "pg_sensing_eye_color" },
+      { kind: "block", type: "pg_sensing_eye_brightness" },
+      { kind: "block", type: "pg_sensing_position" },
+      { kind: "block", type: "pg_sensing_position_angle" },
     ],
   },
 ]

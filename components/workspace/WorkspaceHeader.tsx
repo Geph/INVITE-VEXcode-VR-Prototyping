@@ -14,7 +14,6 @@ export function WorkspaceHeader({
   playgroundPickerOpen,
   onOpenPlayground,
   onGetHelp,
-  onOpenRobotConfig,
 }: {
   workspace: any
   codeView: "blocks" | "python"
@@ -24,7 +23,6 @@ export function WorkspaceHeader({
   playgroundPickerOpen: boolean
   onOpenPlayground: () => void
   onGetHelp: () => void
-  onOpenRobotConfig: () => void
 }) {
   return (
     <div id="vex-header" className="h-14 flex items-center justify-between px-4 text-white">
@@ -97,7 +95,6 @@ export function WorkspaceHeader({
         playgroundPickerOpen={playgroundPickerOpen}
         onOpenPlayground={onOpenPlayground}
         onGetHelp={onGetHelp}
-        onOpenRobotConfig={onOpenRobotConfig}
       />
     </div>
   )

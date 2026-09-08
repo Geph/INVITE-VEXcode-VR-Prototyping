@@ -77,22 +77,22 @@ export function drawPredictionOnCanvas(canvas: HTMLCanvasElement | null, workspa
   const pathPoints: { x: number; y: number }[] = [{ x: currentX, y: currentY }]
 
   const allBlocks = workspace.getAllBlocks()
-  const startBlocks = allBlocks.filter((b: { type: string }) => b.type === "when_started")
+  const startBlocks = allBlocks.filter((b: { type: string }) => b.type === "pg_events_when_started")
 
   for (const startBlock of startBlocks) {
     forEachProgramBlock(startBlock, (block) => {
       const blockType = block.type
 
-      if (blockType === "turn_degrees" || blockType === "turn_simple") {
+      if (blockType === "pg_drivetrain_turn_for" || blockType === "pg_drivetrain_turn") {
         const direction = block.getFieldValue("DIRECTION")
         const degrees =
-          blockType === "turn_simple" ? 90 : Number.parseFloat(block.getFieldValue("DEGREES")) || 90
+          blockType === "pg_drivetrain_turn" ? 90 : Number.parseFloat(block.getFieldValue("DEGREES")) || 90
         currentRotation += direction === "right" ? degrees : -degrees
-      } else if (blockType === "turn_to_heading") {
+      } else if (blockType === "pg_drivetrain_turn_to_heading") {
         currentRotation = Number.parseFloat(block.getFieldValue("HEADING")) || 0
-      } else if (blockType === "turn_to_rotation") {
+      } else if (blockType === "pg_drivetrain_turn_to_rotation") {
         currentRotation = Number.parseFloat(block.getFieldValue("ROTATION")) || 0
-      } else if (blockType === "drive_distance") {
+      } else if (blockType === "pg_drivetrain_drive_for") {
         const direction = block.getFieldValue("DIRECTION")
         const distance = Number.parseFloat(block.getFieldValue("DISTANCE")) || 200
         const unit = block.getFieldValue("UNIT") || "mm"
@@ -102,7 +102,7 @@ export function drawPredictionOnCanvas(canvas: HTMLCanvasElement | null, workspa
         currentX += sign * pixels * Math.sin(angleRad)
         currentY -= sign * pixels * Math.cos(angleRad)
         pathPoints.push({ x: currentX, y: currentY })
-      } else if (blockType === "drive_simple") {
+      } else if (blockType === "pg_drivetrain_drive") {
         const direction = block.getFieldValue("DIRECTION")
         const pixels = distanceToPixels(200, "mm") * scale
         const sign = direction === "forward" ? 1 : -1

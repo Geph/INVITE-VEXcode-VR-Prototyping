@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
+import { migrateWorkspaceXml } from "@/blocks/block-type-migration"
 
 export interface CollabPeer {
   id: string
@@ -66,9 +67,9 @@ type BlocklyWorkspace = {
 }
 
 function ensureWhenStarted(Blockly: typeof window.Blockly, workspace: BlocklyWorkspace) {
-  const hasStart = workspace.getAllBlocks(false).some((b) => b.type === "when_started")
+  const hasStart = workspace.getAllBlocks(false).some((b) => b.type === "pg_events_when_started")
   if (hasStart) return
-  const whenStarted = workspace.newBlock("when_started")
+  const whenStarted = workspace.newBlock("pg_events_when_started")
   whenStarted.initSvg()
   whenStarted.render()
   whenStarted.moveBy(50, 50)
@@ -141,7 +142,7 @@ export function useBlocklyCollab(
       try {
         workspace.clear()
         if (xmlText) {
-          const dom = Blockly.Xml.textToDom(xmlText)
+          const dom = Blockly.Xml.textToDom(migrateWorkspaceXml(xmlText))
           Blockly.Xml.domToWorkspace(dom, workspace)
         }
         ensureWhenStarted(Blockly, workspace)
