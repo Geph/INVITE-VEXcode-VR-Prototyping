@@ -18,33 +18,79 @@ export function drawEnemy(world: DrawWorld, enemy: EnemyEntity): void {
 export function batchEnemies(world: DrawWorld, enemies: readonly EnemyEntity[]): void {
   const { ctx } = world
   ctx.save()
+  ctx.strokeStyle = "#17110e"
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  for (const enemy of enemies) {
+    if (enemy.kind !== "spider" || enemy.state === "neutralized") continue
+    if (!circleVisible(enemy.posMm, enemy.radiusMm, world.visible)) continue
+    addSpiderLegs(world, enemy)
+  }
+  ctx.stroke()
   ctx.fillStyle = "#1a1410"
   ctx.beginPath()
   for (const enemy of enemies) {
     if (enemy.kind !== "spider" || enemy.state === "neutralized") continue
     if (!circleVisible(enemy.posMm, enemy.radiusMm, world.visible)) continue
-    addDot(world, enemy, 0.7)
+    addSpiderBody(world, enemy)
   }
   ctx.fill()
   for (const color of Object.keys(SERPENT_TINT) as SerpentColor[]) {
-    ctx.fillStyle = SERPENT_TINT[color]
+    ctx.strokeStyle = SERPENT_TINT[color]
+    ctx.lineCap = "round"
+    ctx.lineJoin = "round"
+    ctx.lineWidth = 3.2
     ctx.beginPath()
     let any = false
     for (const enemy of enemies) {
       if (enemy.kind !== "serpent" || enemy.serpentColor !== color || enemy.state === "neutralized") continue
       if (!circleVisible(enemy.posMm, enemy.radiusMm, world.visible)) continue
-      addDot(world, enemy, 0.85)
+      addSerpent(world, enemy)
       any = true
     }
-    if (any) ctx.fill()
+    if (any) ctx.stroke()
   }
   ctx.restore()
 }
 
-function addDot(world: DrawWorld, enemy: EnemyEntity, scale: number): void {
+function addSpiderLegs(world: DrawWorld, enemy: EnemyEntity): void {
   const p = toScreen(world, enemy.posMm)
-  const r = Math.max(1.8, enemy.radiusMm * world.cam.zoom * scale)
-  world.ctx.rect(p.x - r, p.y - r, r * 2, r * 2)
+  const r = Math.max(3.5, enemy.radiusMm * world.cam.zoom)
+  for (const side of [-1, 1]) {
+    for (let i = -1; i <= 1; i++) {
+      world.ctx.moveTo(p.x + side * r * 0.28, p.y + i * r * 0.25)
+      world.ctx.lineTo(p.x + side * r, p.y + i * r * 0.5)
+    }
+  }
+}
+
+function addSpiderBody(world: DrawWorld, enemy: EnemyEntity): void {
+  const p = toScreen(world, enemy.posMm)
+  const r = Math.max(3.5, enemy.radiusMm * world.cam.zoom)
+  world.ctx.moveTo(p.x + r * 0.45, p.y)
+  world.ctx.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2)
+  world.ctx.moveTo(p.x + r * 0.24, p.y - r * 0.42)
+  world.ctx.arc(p.x, p.y - r * 0.42, r * 0.24, 0, Math.PI * 2)
+}
+
+function addSerpent(world: DrawWorld, enemy: EnemyEntity): void {
+  const p = toScreen(world, enemy.posMm)
+  const r = Math.max(4.5, enemy.radiusMm * world.cam.zoom)
+  const heading = ((enemy.artSeed % 360) * Math.PI) / 180
+  const cos = Math.cos(heading)
+  const sin = Math.sin(heading)
+  const point = (along: number, across: number) => ({
+    x: p.x + cos * along - sin * across,
+    y: p.y + sin * along + cos * across,
+  })
+  const start = point(-r, 0)
+  world.ctx.moveTo(start.x, start.y)
+  for (let i = 1; i <= 4; i++) {
+    const along = -r + (i / 4) * r * 2
+    const across = Math.sin(i * 1.8 + enemy.wanderPhase) * r * 0.28
+    const next = point(along, across)
+    world.ctx.lineTo(next.x, next.y)
+  }
 }
 
 function drawSpider(world: DrawWorld, enemy: EnemyEntity): void {

@@ -96,10 +96,7 @@ function drawMinimap(
   for (const hit of contacts) {
     const x = cx + (hit.posMm.x - robot.xMm) * pxPerMm
     const y = cy - (hit.posMm.y - robot.yMm) * pxPerMm
-    ctx.beginPath()
-    ctx.arc(x, y, hit.kind === "enemy" ? 3.2 : 2.4, 0, Math.PI * 2)
-    ctx.fillStyle = dotColor(hit)
-    ctx.fill()
+    drawContact(ctx, hit, x, y)
   }
 
   ctx.beginPath()
@@ -127,12 +124,65 @@ function uniqueContacts(state: RoverRescueState): SightReport[] {
   return [...byId.values()]
 }
 
-function dotColor(hit: SightReport): string {
-  if (hit.kind === "mineral") return "#5cecff"
-  if (hit.kind === "enemy") return "#ff6b4a"
-  if (hit.kind === "obstacle") return "#d8d2c4"
-  if (hit.kind === "hazard") return "#3ecf8a"
-  return "#f4d35e"
+function drawContact(ctx: CanvasRenderingContext2D, hit: SightReport, x: number, y: number): void {
+  ctx.save()
+  ctx.translate(x, y)
+  if (hit.kind === "mineral") {
+    ctx.fillStyle = "#5cecff"
+    ctx.fillRect(-2, -3, 4, 6)
+    ctx.fillRect(-0.8, -4, 1.6, 1.2)
+  } else if (hit.entityKind === "spider") {
+    ctx.strokeStyle = "#f3eee7"
+    ctx.lineWidth = 0.8
+    ctx.beginPath()
+    for (const side of [-1, 1]) {
+      for (const yy of [-2, 0, 2]) {
+        ctx.moveTo(side, yy * 0.5)
+        ctx.lineTo(side * 4, yy)
+      }
+    }
+    ctx.stroke()
+    ctx.fillStyle = "#1b1612"
+    ctx.beginPath()
+    ctx.arc(0, 0, 2, 0, Math.PI * 2)
+    ctx.fill()
+  } else if (hit.entityKind === "serpent") {
+    const colors = { orange: "#ff8a35", blue: "#4f8cff", purple: "#a46cff" }
+    ctx.strokeStyle = colors[hit.serpentColor ?? "orange"]
+    ctx.lineWidth = 2.5
+    ctx.lineCap = "round"
+    ctx.beginPath()
+    ctx.moveTo(-4, 2)
+    ctx.lineTo(-2, -2)
+    ctx.lineTo(1, 2)
+    ctx.lineTo(4, -2)
+    ctx.stroke()
+  } else if (hit.entityKind === "plant") {
+    ctx.strokeStyle = "#66c96a"
+    ctx.lineWidth = 1.2
+    ctx.beginPath()
+    ctx.moveTo(0, -3)
+    ctx.lineTo(0, 3)
+    ctx.moveTo(-3, 0)
+    ctx.lineTo(3, 0)
+    ctx.stroke()
+  } else if (hit.kind === "obstacle") {
+    ctx.fillStyle = "#d8d2c4"
+    ctx.beginPath()
+    ctx.moveTo(-3, 2)
+    ctx.lineTo(-2, -2)
+    ctx.lineTo(1, -3)
+    ctx.lineTo(4, 1)
+    ctx.lineTo(2, 3)
+    ctx.closePath()
+    ctx.fill()
+  } else {
+    ctx.beginPath()
+    ctx.arc(0, 0, 2.4, 0, Math.PI * 2)
+    ctx.fillStyle = hit.kind === "hazard" ? "#3ecf8a" : "#f4d35e"
+    ctx.fill()
+  }
+  ctx.restore()
 }
 
 function headingToCanvas(headingDeg: number): number {

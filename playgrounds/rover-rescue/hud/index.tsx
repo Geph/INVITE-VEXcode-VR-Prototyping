@@ -2,9 +2,10 @@
 
 import { useState } from "react"
 import type { RobotState } from "@/engine"
-import { Map as MapIcon } from "lucide-react"
+import { KeyRound, Map as MapIcon } from "lucide-react"
 import type { RoverRescueState } from "../state"
 import { AIOverlay } from "./AIOverlay"
+import { KeyLegend } from "./KeyLegend"
 import { MapView } from "./MapView"
 import { Minimap } from "./Minimap"
 
@@ -25,6 +26,7 @@ export function RoverRescueHud({
 }) {
   const [mapMode, setMapMode] = useState<RoverMapMode>("minimap")
   const [aiOn, setAiOn] = useState(() => stateRef.current.aiVisualisation)
+  const [keyOpen, setKeyOpen] = useState(false)
 
   const mapLabel = mapMode === "minimap" ? "Minimap" : mapMode === "map" ? "Map" : "Map off"
 
@@ -34,6 +36,7 @@ export function RoverRescueHud({
         {mapMode === "minimap" ? <Minimap stateRef={stateRef} robot={robot} /> : null}
         {mapMode === "map" ? <MapView stateRef={stateRef} robot={robot} /> : null}
       </div>
+      {keyOpen ? <KeyLegend /> : null}
       <div
         id="vex-rover-viz-controls"
         className="absolute bottom-[8.75rem] right-2 z-20 flex flex-col items-stretch gap-1"
@@ -63,6 +66,25 @@ export function RoverRescueHud({
         >
           <MapIcon className="h-3.5 w-3.5" />
           {mapLabel}
+        </button>
+        <button
+          id="vex-rover-map-key-toggle"
+          type="button"
+          aria-pressed={keyOpen}
+          aria-label={keyOpen ? "Hide map key" : "Show map key"}
+          title={keyOpen ? "Hide map key" : "Show map key"}
+          className={`flex h-7 items-center justify-center gap-1 rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide shadow-sm backdrop-blur-sm ${
+            keyOpen
+              ? "border-amber-300/70 bg-amber-300/90 text-amber-950"
+              : "border-white/40 bg-black/55 text-white hover:bg-white/15"
+          }`}
+          onClick={(event) => {
+            event.stopPropagation()
+            setKeyOpen((open) => !open)
+          }}
+        >
+          <KeyRound className="h-3.5 w-3.5" />
+          Key
         </button>
       </div>
     </>

@@ -23,6 +23,8 @@ export type SightKind = "mineral" | "enemy" | "obstacle" | "hazard" | "base"
 export interface SightReport {
   id: string
   kind: SightKind
+  entityKind?: RoverEntity["kind"]
+  serpentColor?: EnemyEntity["serpentColor"]
   label: string
   posMm: Vec2
   distanceMm: number
@@ -204,6 +206,7 @@ function toReport(entity: RoverEntity, distanceMm: number, relativeAngleDeg: num
     return {
       id: entity.id,
       kind: "mineral",
+      entityKind: entity.kind,
       label: "Minerals",
       posMm: { x: entity.xMm, y: entity.yMm },
       distanceMm,
@@ -216,6 +219,8 @@ function toReport(entity: RoverEntity, distanceMm: number, relativeAngleDeg: num
     return {
       id: entity.id,
       kind: "enemy",
+      entityKind: entity.kind,
+      serpentColor: enemy.serpentColor,
       label: "Enemy",
       posMm: { x: entity.xMm, y: entity.yMm },
       distanceMm,
@@ -229,6 +234,7 @@ function toReport(entity: RoverEntity, distanceMm: number, relativeAngleDeg: num
   return {
     id: entity.id,
     kind: "obstacle",
+    entityKind: entity.kind,
     label: "Obstacle",
     posMm: { x: entity.xMm, y: entity.yMm },
     distanceMm,

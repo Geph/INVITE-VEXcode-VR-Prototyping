@@ -14,8 +14,8 @@ export function AIOverlay({
       id="vex-rover-ai-overlay"
       type="button"
       aria-pressed={enabled}
-      aria-label={enabled ? "Hide AI visualisation" : "Show AI visualisation"}
-      title={enabled ? "Hide AI visualisation" : "Show AI visualisation"}
+      aria-label={enabled ? "Hide objects overlay" : "Show objects overlay"}
+      title={enabled ? "Hide objects overlay" : "Show objects overlay"}
       className={`flex h-7 items-center justify-center gap-1 rounded-md border px-2 text-[10px] font-semibold uppercase tracking-wide shadow-sm backdrop-blur-sm ${
         enabled
           ? "border-fuchsia-300/70 bg-fuchsia-400/85 text-fuchsia-950"
@@ -27,7 +27,7 @@ export function AIOverlay({
       }}
     >
       <ScanEye className="h-3.5 w-3.5" />
-      AI
+      Objects
     </button>
   )
 }

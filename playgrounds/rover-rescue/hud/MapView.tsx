@@ -6,6 +6,7 @@ import { fitToBounds } from "@/engine"
 import { FIELD_BOUNDS, GRID_MM } from "../config"
 import { drawBase } from "../art/base"
 import { drawBridges } from "../art/bridges"
+import { drawEntities } from "../art/entities"
 import { drawGrid } from "../art/grid"
 import { drawRiver } from "../art/river"
 import { drawTerrain } from "../art/terrain"
@@ -65,6 +66,7 @@ function drawMap(
   drawBridges(world, state.seed, state.bridges)
   drawBase(world)
   drawGrid(world)
+  drawEntities(world, state.index)
   drawRoverMark(world, robot)
   drawScaleBar(ctx, cam.zoom)
   drawCompassRose(ctx)

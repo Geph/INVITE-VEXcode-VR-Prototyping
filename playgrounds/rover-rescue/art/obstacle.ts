@@ -16,7 +16,7 @@ export function batchObstacles(world: DrawWorld, obstacles: readonly ObstacleEnt
   for (const obstacle of obstacles) {
     if (obstacle.kind !== "rock") continue
     if (!circleVisible(obstacle.posMm, obstacle.radiusMm, world.visible)) continue
-    addDot(world, obstacle)
+    addRock(world, obstacle)
   }
   ctx.fill()
   ctx.fillStyle = "#3d6a3a"
@@ -24,16 +24,57 @@ export function batchObstacles(world: DrawWorld, obstacles: readonly ObstacleEnt
   for (const obstacle of obstacles) {
     if (obstacle.kind !== "plant") continue
     if (!circleVisible(obstacle.posMm, obstacle.radiusMm, world.visible)) continue
-    addDot(world, obstacle)
+    addPlantCrown(world, obstacle)
   }
   ctx.fill()
+  ctx.strokeStyle = "#31552f"
+  ctx.lineWidth = 1.2
+  ctx.beginPath()
+  for (const obstacle of obstacles) {
+    if (obstacle.kind !== "plant") continue
+    if (!circleVisible(obstacle.posMm, obstacle.radiusMm, world.visible)) continue
+    addPlantStem(world, obstacle)
+  }
+  ctx.stroke()
   ctx.restore()
 }
 
-function addDot(world: DrawWorld, obstacle: ObstacleEntity): void {
+function addRock(world: DrawWorld, obstacle: ObstacleEntity): void {
   const p = toScreen(world, obstacle.posMm)
-  const r = Math.max(1.6, obstacle.radiusMm * world.cam.zoom)
-  world.ctx.rect(p.x - r, p.y - r, r * 2, r * 2)
+  const r = Math.max(2.2, obstacle.radiusMm * world.cam.zoom)
+  const tilt = ((obstacle.artSeed % 11) / 11) * Math.PI
+  for (let i = 0; i < 6; i++) {
+    const a = tilt + (i / 6) * Math.PI * 2
+    const rr = r * (0.75 + ((obstacle.artSeed + i * 7) % 5) * 0.07)
+    const x = p.x + Math.cos(a) * rr
+    const y = p.y + Math.sin(a) * rr
+    if (i === 0) world.ctx.moveTo(x, y)
+    else world.ctx.lineTo(x, y)
+  }
+  world.ctx.closePath()
+}
+
+function addPlantCrown(world: DrawWorld, obstacle: ObstacleEntity): void {
+  const p = toScreen(world, obstacle.posMm)
+  const r = Math.max(2.4, obstacle.radiusMm * world.cam.zoom)
+  world.ctx.moveTo(p.x, p.y - r)
+  world.ctx.lineTo(p.x + r * 0.34, p.y - r * 0.18)
+  world.ctx.lineTo(p.x + r, p.y - r * 0.08)
+  world.ctx.lineTo(p.x + r * 0.28, p.y + r * 0.18)
+  world.ctx.lineTo(p.x, p.y + r)
+  world.ctx.lineTo(p.x - r * 0.28, p.y + r * 0.18)
+  world.ctx.lineTo(p.x - r, p.y - r * 0.08)
+  world.ctx.lineTo(p.x - r * 0.34, p.y - r * 0.18)
+  world.ctx.closePath()
+}
+
+function addPlantStem(world: DrawWorld, obstacle: ObstacleEntity): void {
+  const p = toScreen(world, obstacle.posMm)
+  const r = Math.max(2.4, obstacle.radiusMm * world.cam.zoom)
+  world.ctx.moveTo(p.x, p.y - r)
+  world.ctx.lineTo(p.x, p.y + r)
+  world.ctx.moveTo(p.x - r, p.y)
+  world.ctx.lineTo(p.x + r, p.y)
 }
 
 function drawRock(world: DrawWorld, obstacle: ObstacleEntity): void {
