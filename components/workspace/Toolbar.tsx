@@ -3,6 +3,8 @@
 import type { ReactNode } from "react"
 import { HelpCircle, Play, RotateCcw, StepForward, StopCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { SessionSettingsMenu } from "@/components/workspace/SessionSettingsMenu"
+import type { SessionLogSnapshot } from "@/lib/session-log"
 
 export function CodeViewToggle({
   codeView,
@@ -27,11 +29,13 @@ export function HeaderActions({
   playgroundPickerOpen,
   onOpenPlayground,
   onGetHelp,
+  getSessionSnapshot,
 }: {
   playgroundVisible: boolean
   playgroundPickerOpen: boolean
   onOpenPlayground: () => void
   onGetHelp: () => void
+  getSessionSnapshot: () => SessionLogSnapshot
 }) {
   return (
     <div id="vex-header-actions" className="flex items-center gap-2">
@@ -60,6 +64,7 @@ export function HeaderActions({
         <HelpCircle className="h-4 w-4" />
         Get Help
       </Button>
+      <SessionSettingsMenu getSnapshot={getSessionSnapshot} />
     </div>
   )
 }

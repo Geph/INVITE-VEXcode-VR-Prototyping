@@ -32,6 +32,7 @@ import { installVexBlockContextMenu } from "@/lib/blockly-context-menu"
 import { blockToPythonSnippet, generatePythonProgram } from "@/lib/python-generator"
 import { useBlocklyCollab } from "@/lib/use-blockly-collab"
 import { reefViewFromMaximized } from "@/hooks/playground-host"
+import { recordSessionEvent, type SessionLogSnapshot } from "@/lib/session-log"
 
 export function VexWorkbench() {
   const blocklyWorkspaceContainerRef = useRef<HTMLDivElement>(null)
@@ -214,6 +215,26 @@ export function VexWorkbench() {
 
   const getPythonCode = useCallback(() => generatePythonProgram(workspace), [workspace])
 
+  const getSessionSnapshot = useCallback((): SessionLogSnapshot => {
+    let workspaceXml: string | undefined
+    try {
+      if (workspace && window.Blockly) {
+        workspaceXml = window.Blockly.Xml.domToText(window.Blockly.Xml.workspaceToDom(workspace))
+      }
+    } catch {
+      workspaceXml = undefined
+    }
+    return {
+      playgroundId: session.playgroundId,
+      console: consoleLines.map((line) => line.text),
+      workspaceXml,
+    }
+  }, [workspace, session.playgroundId, consoleLines])
+
+  useEffect(() => {
+    recordSessionEvent("playground_open", { playgroundId: session.playgroundId })
+  }, [session.playgroundId])
+
   useEffect(() => {
     if (session.gameState.isGameOver) {
       aiAssistantRef.current?.show()
@@ -231,6 +252,7 @@ export function VexWorkbench() {
         playgroundPickerOpen={session.playgroundPickerOpen}
         onOpenPlayground={session.handleOpenPlayground}
         onGetHelp={() => aiAssistantRef.current?.open()}
+        getSessionSnapshot={getSessionSnapshot}
       />
 
       <div id="vex-main" className="flex flex-1 overflow-hidden">

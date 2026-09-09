@@ -129,15 +129,7 @@ export function PlaygroundHud({
             className="bg-gradient-to-r from-[#FF8C00] to-[#FFA500] text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm min-w-[120px]"
           >
             <div className="text-[10px] font-medium uppercase tracking-wide text-orange-100">Trash collected</div>
-            <div className="text-lg leading-tight mt-0.5">
-              {gameState.trashCollected}
-              {gameState.trashTotal > 0 ? ` / ${gameState.trashTotal}` : ""}
-            </div>
-            {liveSensors.trashRemaining > 0 && isRunning && (
-              <div className="text-[10px] font-normal text-orange-100 mt-0.5">
-                {liveSensors.trashRemaining} remaining on field
-              </div>
-            )}
+            <div className="text-lg leading-tight mt-0.5">{gameState.trashCollected}</div>
           </div>
           <div id="vex-playground-battery" className="flex-1 min-w-[160px] max-w-[220px]">
             <div className="flex items-baseline justify-between text-xs text-gray-600 mb-1">
@@ -223,7 +215,6 @@ export function PlaygroundHud({
             {chrome === "reef" && (
             <p id="vex-playground-gameover-score" className="text-lg font-semibold text-orange-500 mb-4">
               Trash collected: {gameState.trashCollected}
-              {gameState.trashTotal > 0 ? ` / ${gameState.trashTotal}` : ""}
             </p>
             )}
             <Button id="vex-playground-gameover-retry" onClick={onReset} className="bg-purple-500 hover:bg-purple-600 text-white">

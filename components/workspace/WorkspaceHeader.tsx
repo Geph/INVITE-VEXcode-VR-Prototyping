@@ -3,6 +3,7 @@
 import { Bot } from "lucide-react"
 import { CodeViewToggle, HeaderActions } from "@/components/workspace/Toolbar"
 import { FileMenu } from "@/components/workspace/FileMenu"
+import type { SessionLogSnapshot } from "@/lib/session-log"
 import type { CollabState } from "@/lib/use-blockly-collab"
 
 export function WorkspaceHeader({
@@ -14,6 +15,7 @@ export function WorkspaceHeader({
   playgroundPickerOpen,
   onOpenPlayground,
   onGetHelp,
+  getSessionSnapshot,
 }: {
   workspace: any
   codeView: "blocks" | "python"
@@ -23,6 +25,7 @@ export function WorkspaceHeader({
   playgroundPickerOpen: boolean
   onOpenPlayground: () => void
   onGetHelp: () => void
+  getSessionSnapshot: () => SessionLogSnapshot
 }) {
   return (
     <div id="vex-header" className="h-14 flex items-center justify-between px-4 text-white">
@@ -95,6 +98,7 @@ export function WorkspaceHeader({
         playgroundPickerOpen={playgroundPickerOpen}
         onOpenPlayground={onOpenPlayground}
         onGetHelp={onGetHelp}
+        getSessionSnapshot={getSessionSnapshot}
       />
     </div>
   )

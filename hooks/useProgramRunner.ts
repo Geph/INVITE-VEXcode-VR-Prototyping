@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react"
 import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
+import { recordSessionEvent } from "@/lib/session-log"
 import { createProgramRobotApi } from "./program-robot-api"
 import { startBumperWatchers } from "./program-watchers"
 import {
@@ -83,6 +84,7 @@ export function useProgramRunner({
     setIsPausedOnBlock(false)
     isRunningRef.current = true
     setIsRunning(true)
+    recordSessionEvent("run_start", { playgroundId: activePlayground.id, step })
     setPenTrail([])
     coralGraceUntilRef.current = performance.now() + 400
     setGameState((prev) => ({
@@ -212,6 +214,7 @@ export function useProgramRunner({
       setIsStepping(false)
       setIsPausedOnBlock(false)
       highlightProgramBlock(null)
+      recordSessionEvent("run_end", { playgroundId: activePlayground.id })
       if (isRunningRef.current) {
         isRunningRef.current = false
         setIsRunning(false)
@@ -267,6 +270,7 @@ export function useProgramRunner({
     isRunningRef.current = false
     setIsRunning(false)
     highlightProgramBlock(null)
+    recordSessionEvent("run_stop", { playgroundId: activePlayground.id })
   }
 
   const handleReset = () => {
@@ -307,6 +311,7 @@ export function useProgramRunner({
     syncTrashItems([])
     setPenTrail([])
     setConsoleLines([])
+    recordSessionEvent("run_reset", { playgroundId: activePlayground.id })
   }
 
   return {
