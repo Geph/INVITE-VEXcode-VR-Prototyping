@@ -1,52 +1,31 @@
-import { createRng } from "@/engine"
 import type { MineralEntity } from "../entities"
 import { circleVisible, toScreen, type DrawWorld } from "./world-draw"
 
 export function drawMineral(world: DrawWorld, mineral: MineralEntity): void {
-  if (mineral.state !== "field") return
-  if (!circleVisible(mineral.posMm, mineral.radiusMm, world.visible)) return
-  const rng = createRng(mineral.id.split("").reduce((h, c) => h + c.charCodeAt(0), 1)).fork("mineral")
-  const p = toScreen(world, mineral.posMm)
-  const r = Math.max(2.5, mineral.radiusMm * world.cam.zoom)
-  const { ctx } = world
-  ctx.save()
-  ctx.translate(p.x, p.y)
-  ctx.rotate((rng.next() - 0.5) * 0.18)
-  ctx.fillStyle = "#1d4e5c"
-  ctx.fillRect(-r * 0.78, -r, r * 1.56, r * 2)
-  ctx.fillRect(-r * 0.28, -r * 1.25, r * 0.56, r * 0.3)
-  ctx.fillStyle = "#3ee0ff"
-  ctx.globalAlpha = 0.92
-  ctx.fillRect(-r * 0.58, -r * 0.78, r * 1.16, r * 1.56)
-  if (world.detail) {
-    ctx.globalAlpha = 0.9
-    ctx.fillStyle = "#e8ffff"
-    ctx.beginPath()
-    ctx.moveTo(r * 0.08, -r * 0.55)
-    ctx.lineTo(-r * 0.32, r * 0.08)
-    ctx.lineTo(-r * 0.02, r * 0.08)
-    ctx.lineTo(-r * 0.12, r * 0.55)
-    ctx.lineTo(r * 0.34, -r * 0.12)
-    ctx.lineTo(r * 0.05, -r * 0.12)
-    ctx.closePath()
-    ctx.fill()
-  }
-  ctx.restore()
+  batchMinerals(world, [mineral])
 }
 
 export function batchMinerals(world: DrawWorld, minerals: readonly MineralEntity[]): void {
+  const visible = minerals.filter(m => m.state === "field" && circleVisible(m.posMm, m.radiusMm, world.visible))
   const { ctx } = world
   ctx.save()
-  ctx.fillStyle = "#3ee0ff"
-  ctx.beginPath()
-  for (const mineral of minerals) {
-    if (mineral.state !== "field") continue
-    if (!circleVisible(mineral.posMm, mineral.radiusMm, world.visible)) continue
-    const p = toScreen(world, mineral.posMm)
-    const r = Math.max(2.3, mineral.radiusMm * world.cam.zoom)
-    ctx.rect(p.x - r * 0.7, p.y - r, r * 1.4, r * 2)
-    ctx.rect(p.x - r * 0.23, p.y - r * 1.28, r * 0.46, r * 0.3)
+  // A steel sample crate with gold straps; cyan remains its identifying accent.
+  for (let layer = 0; layer < 3; layer++) {
+    ctx.fillStyle = ["#263e40", "#b7a049", "#80f1ee"][layer]
+    ctx.beginPath()
+    for (const mineral of visible) {
+      const p = toScreen(world, mineral.posMm)
+      const r = Math.max(3.4, mineral.radiusMm * world.cam.zoom)
+      if (layer === 0) {
+        ctx.rect(p.x - r, p.y - r * 0.7, r * 2, r * 1.4)
+      } else if (layer === 1) {
+        ctx.rect(p.x - r * 0.65, p.y - r * 0.6, r * 0.27, r * 1.2)
+        ctx.rect(p.x + r * 0.38, p.y - r * 0.6, r * 0.27, r * 1.2)
+      } else {
+        ctx.rect(p.x - r * 0.65, p.y - r * 0.85, r * 1.3, Math.max(0.8, r * 0.15))
+      }
+    }
+    ctx.fill()
   }
-  ctx.fill()
   ctx.restore()
 }

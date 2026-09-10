@@ -10,15 +10,15 @@ export function drawBase(world: DrawWorld, base = BASE): void {
   ctx.save()
   ctx.beginPath()
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
-  ctx.fillStyle = "#6d7c88"
+  ctx.fillStyle = "#6f705b"
   ctx.fill()
   ctx.lineWidth = world.detail ? 2.5 : 1.5
-  ctx.strokeStyle = "#d7e0e8"
+  ctx.strokeStyle = "#c4b992"
   ctx.stroke()
 
-  fillWorldCircle(world, base.centreMm, base.radiusMm * 0.72, "#4e5c66")
+  fillWorldCircle(world, base.centreMm, base.radiusMm * 0.72, "#454d43")
 
-  ctx.strokeStyle = "#f4d35e"
+  ctx.strokeStyle = "#fffbea"
   ctx.lineWidth = world.detail ? 3 : 2
   ctx.lineCap = "round"
   ctx.beginPath()
@@ -33,6 +33,6 @@ export function drawBase(world: DrawWorld, base = BASE): void {
   ctx.font = `${world.detail ? 11 : 9}px ui-sans-serif, system-ui, sans-serif`
   ctx.textAlign = "center"
   ctx.textBaseline = "top"
-  ctx.fillText("BASE", p.x, p.y + r + 4)
+  ctx.fillText("Base", p.x, p.y + r + 4)
   ctx.restore()
 }

@@ -14,7 +14,7 @@ export function drawGrid(world: DrawWorld): void {
   ctx.lineCap = "butt"
 
   ctx.beginPath()
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.12)"
+  ctx.strokeStyle = "rgba(25, 30, 22, 0.18)"
   ctx.lineWidth = 1
   for (let x = minX; x <= maxX; x += step) {
     if (x % (step * 2) === 0) continue
@@ -27,8 +27,8 @@ export function drawGrid(world: DrawWorld): void {
   ctx.stroke()
 
   ctx.beginPath()
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)"
-  ctx.lineWidth = 1.4
+  ctx.strokeStyle = "rgba(25, 30, 22, 0.26)"
+  ctx.lineWidth = 1
   for (let x = minX; x <= maxX; x += step) {
     if (x % (step * 2) !== 0 || x === 0) continue
     strokeVertical(world, x, minY, maxY)
@@ -40,7 +40,7 @@ export function drawGrid(world: DrawWorld): void {
   ctx.stroke()
 
   ctx.beginPath()
-  ctx.strokeStyle = "rgba(255, 220, 140, 0.55)"
+  ctx.strokeStyle = "rgba(240, 234, 200, 0.38)"
   ctx.lineWidth = 1.6
   const x0 = worldToScreen({ x: 0, y: Math.max(minY, FIELD_BOUNDS.minY) }, cam, viewport)
   const x1 = worldToScreen({ x: 0, y: Math.min(maxY, FIELD_BOUNDS.maxY) }, cam, viewport)

@@ -1,11 +1,8 @@
 import type { EnemyEntity, MineralEntity, ObstacleEntity, RoverEntity } from "../entities"
 import type { DrawWorld } from "./world-draw"
-import { batchEnemies, drawEnemy } from "./enemy"
-import { batchMinerals, drawMineral } from "./mineral"
-import { batchObstacles, drawObstacle } from "./obstacle"
-
-const DETAIL_ENTITY_CAP = 36
-const DETAIL_USER_SCALE = 1.25
+import { batchEnemies } from "./enemy"
+import { batchMinerals } from "./mineral"
+import { batchObstacles } from "./obstacle"
 
 export function drawEntities(
   world: DrawWorld,
@@ -21,15 +18,8 @@ export function drawEntities(
     else if (item.kind === "mineral") minerals.push(item)
     else if (item.kind === "spider" || item.kind === "serpent") enemies.push(item)
   }
-
-  const detailed = world.detail && world.userScale >= DETAIL_USER_SCALE && items.length <= DETAIL_ENTITY_CAP
-  if (!detailed) {
-    batchObstacles(world, obstacles)
-    batchMinerals(world, minerals)
-    batchEnemies(world, enemies)
-    return
-  }
-  for (const obstacle of obstacles) drawObstacle(world, obstacle)
-  for (const mineral of minerals) drawMineral(world, mineral)
-  for (const enemy of enemies) drawEnemy(world, enemy)
+  // Layer batches retain the same silhouettes when zoom or on-screen counts change.
+  batchObstacles(world, obstacles)
+  batchMinerals(world, minerals)
+  batchEnemies(world, enemies)
 }

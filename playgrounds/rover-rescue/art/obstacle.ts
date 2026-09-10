@@ -1,124 +1,67 @@
-import { createRng } from "@/engine"
 import type { ObstacleEntity } from "../entities"
 import { circleVisible, toScreen, type DrawWorld } from "./world-draw"
 
-export function drawObstacle(world: DrawWorld, obstacle: ObstacleEntity): void {
-  if (!circleVisible(obstacle.posMm, obstacle.radiusMm, world.visible)) return
-  if (obstacle.kind === "plant") drawPlant(world, obstacle)
-  else drawRock(world, obstacle)
-}
-
+// Batched facets keep both the full map and dense close-up views inexpensive.
 export function batchObstacles(world: DrawWorld, obstacles: readonly ObstacleEntity[]): void {
+  const visible = obstacles.filter(o => circleVisible(o.posMm, o.radiusMm, world.visible))
   const { ctx } = world
   ctx.save()
-  ctx.fillStyle = "#4a3c32"
-  ctx.beginPath()
-  for (const obstacle of obstacles) {
-    if (obstacle.kind !== "rock") continue
-    if (!circleVisible(obstacle.posMm, obstacle.radiusMm, world.visible)) continue
-    addRock(world, obstacle)
+  for (let layer = 0; layer < 3; layer++) {
+    ctx.fillStyle = ["#393c35", "#777867", "#a0a087"][layer]
+    ctx.beginPath()
+    for (const o of visible) if (o.kind === "rock") rockPath(world, o, layer)
+    ctx.fill()
   }
-  ctx.fill()
-  ctx.fillStyle = "#3d6a3a"
-  ctx.beginPath()
-  for (const obstacle of obstacles) {
-    if (obstacle.kind !== "plant") continue
-    if (!circleVisible(obstacle.posMm, obstacle.radiusMm, world.visible)) continue
-    addPlantCrown(world, obstacle)
-  }
-  ctx.fill()
-  ctx.strokeStyle = "#31552f"
-  ctx.lineWidth = 1.2
-  ctx.beginPath()
-  for (const obstacle of obstacles) {
-    if (obstacle.kind !== "plant") continue
-    if (!circleVisible(obstacle.posMm, obstacle.radiusMm, world.visible)) continue
-    addPlantStem(world, obstacle)
-  }
-  ctx.stroke()
-  ctx.restore()
-}
-
-function addRock(world: DrawWorld, obstacle: ObstacleEntity): void {
-  const p = toScreen(world, obstacle.posMm)
-  const r = Math.max(2.2, obstacle.radiusMm * world.cam.zoom)
-  const tilt = ((obstacle.artSeed % 11) / 11) * Math.PI
-  for (let i = 0; i < 6; i++) {
-    const a = tilt + (i / 6) * Math.PI * 2
-    const rr = r * (0.75 + ((obstacle.artSeed + i * 7) % 5) * 0.07)
-    const x = p.x + Math.cos(a) * rr
-    const y = p.y + Math.sin(a) * rr
-    if (i === 0) world.ctx.moveTo(x, y)
-    else world.ctx.lineTo(x, y)
-  }
-  world.ctx.closePath()
-}
-
-function addPlantCrown(world: DrawWorld, obstacle: ObstacleEntity): void {
-  const p = toScreen(world, obstacle.posMm)
-  const r = Math.max(2.4, obstacle.radiusMm * world.cam.zoom)
-  world.ctx.moveTo(p.x, p.y - r)
-  world.ctx.lineTo(p.x + r * 0.34, p.y - r * 0.18)
-  world.ctx.lineTo(p.x + r, p.y - r * 0.08)
-  world.ctx.lineTo(p.x + r * 0.28, p.y + r * 0.18)
-  world.ctx.lineTo(p.x, p.y + r)
-  world.ctx.lineTo(p.x - r * 0.28, p.y + r * 0.18)
-  world.ctx.lineTo(p.x - r, p.y - r * 0.08)
-  world.ctx.lineTo(p.x - r * 0.34, p.y - r * 0.18)
-  world.ctx.closePath()
-}
-
-function addPlantStem(world: DrawWorld, obstacle: ObstacleEntity): void {
-  const p = toScreen(world, obstacle.posMm)
-  const r = Math.max(2.4, obstacle.radiusMm * world.cam.zoom)
-  world.ctx.moveTo(p.x, p.y - r)
-  world.ctx.lineTo(p.x, p.y + r)
-  world.ctx.moveTo(p.x - r, p.y)
-  world.ctx.lineTo(p.x + r, p.y)
-}
-
-function drawRock(world: DrawWorld, obstacle: ObstacleEntity): void {
-  const rng = createRng(obstacle.artSeed).fork("rock")
-  const p = toScreen(world, obstacle.posMm)
-  const r = Math.max(2, obstacle.radiusMm * world.cam.zoom)
-  const { ctx } = world
-  ctx.save()
-  ctx.translate(p.x, p.y)
-  ctx.fillStyle = "#5a4a3e"
-  ctx.beginPath()
-  const sides = 6
-  for (let i = 0; i < sides; i++) {
-    const a = (i / sides) * Math.PI * 2 + rng.next() * 0.3
-    const rad = r * (0.75 + rng.next() * 0.35)
-    const x = Math.cos(a) * rad
-    const y = Math.sin(a) * rad
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-  ctx.closePath()
-  ctx.fill()
-  ctx.restore()
-}
-
-function drawPlant(world: DrawWorld, obstacle: ObstacleEntity): void {
-  const rng = createRng(obstacle.artSeed).fork("plant")
-  const p = toScreen(world, obstacle.posMm)
-  const r = Math.max(2, obstacle.radiusMm * world.cam.zoom)
-  const { ctx } = world
-  ctx.save()
-  ctx.translate(p.x, p.y)
-  ctx.fillStyle = "#2f5d32"
-  ctx.beginPath()
-  ctx.arc(0, 0, r * 0.55, 0, Math.PI * 2)
-  ctx.fill()
-  if (world.detail) {
-    ctx.fillStyle = "#4a8a46"
-    for (let i = 0; i < 3; i++) {
-      const a = rng.next() * Math.PI * 2
+  const palettes = [["#786c25", "#b8a33c"], ["#35584d", "#599282"], ["#86493d", "#c77948"]]
+  for (let variant = 0; variant < palettes.length; variant++) {
+    for (let layer = 0; layer < 2; layer++) {
+      ctx.fillStyle = palettes[variant][layer]
       ctx.beginPath()
-      ctx.arc(Math.cos(a) * r * 0.45, Math.sin(a) * r * 0.45, r * 0.32, 0, Math.PI * 2)
+      for (const o of visible) {
+        if (o.kind === "plant" && o.artSeed % 3 === variant) plantPath(world, o, layer)
+      }
       ctx.fill()
     }
   }
   ctx.restore()
+}
+
+export function drawObstacle(world: DrawWorld, obstacle: ObstacleEntity): void {
+  batchObstacles(world, [obstacle])
+}
+
+function rockPath(world: DrawWorld, o: ObstacleEntity, layer: number): void {
+  const p = toScreen(world, o.posMm)
+  const r = Math.max(3, o.radiusMm * world.cam.zoom)
+  const vertices = Array.from({ length: 6 }, (_, i) => {
+    const angle = i * Math.PI / 3 + o.artSeed % 11
+    const radius = r * (0.73 + ((o.artSeed + i * 7) % 5) * 0.06)
+    return { x: p.x + Math.cos(angle) * radius, y: p.y + Math.sin(angle) * radius }
+  })
+  const points = layer === 0 ? vertices : layer === 1
+    ? [vertices[0], vertices[1], vertices[2], vertices[3], { x: p.x - r * 0.12, y: p.y - r * 0.22 }]
+    : [vertices[3], vertices[4], vertices[5], { x: p.x - r * 0.12, y: p.y - r * 0.22 }]
+  const { ctx } = world
+  ctx.moveTo(points[0].x, points[0].y)
+  for (const point of points.slice(1)) ctx.lineTo(point.x, point.y)
+  ctx.closePath()
+}
+
+function plantPath(world: DrawWorld, o: ObstacleEntity, layer: number): void {
+  const p = toScreen(world, o.posMm)
+  const r = Math.max(3.6, o.radiusMm * world.cam.zoom)
+  const { ctx } = world
+  const leaves = 7
+  for (let i = 0; i < leaves; i++) {
+    const a = i * Math.PI * 2 / leaves + o.artSeed % 17
+    const length = r * (0.72 + ((o.artSeed + i) % 4) * 0.09)
+    const tipX = p.x + Math.cos(a) * length
+    const tipY = p.y + Math.sin(a) * length
+    const side = layer === 0 ? -1 : 1
+    ctx.moveTo(p.x, p.y)
+    ctx.quadraticCurveTo(p.x + Math.cos(a + side * 0.65) * length * 0.65,
+      p.y + Math.sin(a + side * 0.65) * length * 0.65, tipX, tipY)
+    ctx.lineTo(p.x + Math.cos(a) * length * 0.36, p.y + Math.sin(a) * length * 0.36)
+    ctx.closePath()
+  }
 }

@@ -1,5 +1,6 @@
 import type { Camera, RobotState } from "@/engine"
 import { drawBase } from "./art/base"
+import { drawCartography } from "./art/cartography"
 import { drawBridges } from "./art/bridges"
 import { drawDebugOverlay } from "./art/debug"
 import { drawGrid } from "./art/grid"
@@ -37,6 +38,7 @@ export function renderRoverRescueOverlay(
 ): void {
   const world = createDrawWorld(ctx, cam)
   drawAiOverlay(world, state, robot)
+  drawCartography(world)
   if (!state.debug) return
   drawDebugOverlay(world, state.zones, riverHazardFromState(state), state.bridges, state.riverCenterline)
 }

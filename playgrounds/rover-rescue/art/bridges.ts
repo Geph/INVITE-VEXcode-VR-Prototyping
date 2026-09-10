@@ -15,25 +15,26 @@ function drawBridge(world: DrawWorld, seed: number, bridge: BridgeSpec): void {
   const { ctx } = world
 
   ctx.save()
-  ctx.fillStyle = "#8b6a3e"
+  ctx.fillStyle = "#686959"
   beginWorldPolygon(world, deck)
   ctx.fill()
 
-  ctx.strokeStyle = "#5a4326"
+  ctx.strokeStyle = "#343a33"
   ctx.lineWidth = world.detail ? 2 : 1
   ctx.stroke()
 
   if (world.detail) {
     drawPlanks(world, bridge, rng.next())
     drawRails(world, bridge)
+    drawDeckPanels(world, bridge)
   }
   ctx.restore()
 }
 
 function drawPlanks(world: DrawWorld, bridge: BridgeSpec, salt: number): void {
-  const planks = 8
+  const planks = 12
   const { ctx } = world
-  ctx.strokeStyle = `rgba(70, 48, 24, ${0.35 + salt * 0.15})`
+  ctx.strokeStyle = `rgba(30, 37, 31, ${0.35 + salt * 0.15})`
   ctx.lineWidth = 1
   ctx.beginPath()
   for (let i = 1; i < planks; i++) {
@@ -50,7 +51,7 @@ function drawPlanks(world: DrawWorld, bridge: BridgeSpec, salt: number): void {
 
 function drawRails(world: DrawWorld, bridge: BridgeSpec): void {
   const { ctx } = world
-  ctx.strokeStyle = "#3a2a16"
+  ctx.strokeStyle = "#a4a28b"
   ctx.lineWidth = 2.5
   ctx.beginPath()
   for (const side of [-1, 1] as const) {
@@ -78,4 +79,22 @@ function plankPoint(bridge: BridgeSpec, along: number, side: -1 | 1) {
     x: bridge.centreMm.x + t * halfAlong,
     y: bridge.centreMm.y + side * halfAcross,
   }
+}
+
+function drawDeckPanels(world: DrawWorld, bridge: BridgeSpec): void {
+  const { ctx } = world
+  ctx.strokeStyle = "rgba(200,202,174,0.45)"
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  for (const side of [-1, 1] as const) {
+    const a = plankPoint(bridge, 0.03, side)
+    const b = plankPoint(bridge, 0.97, side)
+    const centreA = plankPoint(bridge, 0.03, -side as -1 | 1)
+    const centreB = plankPoint(bridge, 0.97, -side as -1 | 1)
+    const sa = toScreen(world, { x: a.x * 0.7 + centreA.x * 0.3, y: a.y * 0.7 + centreA.y * 0.3 })
+    const sb = toScreen(world, { x: b.x * 0.7 + centreB.x * 0.3, y: b.y * 0.7 + centreB.y * 0.3 })
+    ctx.moveTo(sa.x, sa.y)
+    ctx.lineTo(sb.x, sb.y)
+  }
+  ctx.stroke()
 }

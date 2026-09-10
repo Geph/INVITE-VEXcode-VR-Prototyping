@@ -2,18 +2,12 @@ import { createRng, type Vec2 } from "@/engine"
 import { RIVER_CENTERLINE, RIVER_WIDTH_MM, type RiverHazard, riverOuterPolygon } from "../map-spec"
 import { aabbOf, beginWorldPolygon, rectsOverlap, toScreen, type DrawWorld } from "./world-draw"
 
-const HIGHLIGHT_BANDS = 5
-
 export function drawRiver(
-  world: DrawWorld,
-  seed: number,
-  elapsedMs: number,
-  hazard: RiverHazard,
+  world: DrawWorld, seed: number, elapsedMs: number, hazard: RiverHazard,
   centerline: readonly Vec2[] = RIVER_CENTERLINE,
 ): void {
   if (!rectsOverlap(aabbOf(hazard.outer), world.visible, RIVER_WIDTH_MM)) return
-
-  const { ctx } = world
+  const { ctx, cam } = world
   ctx.save()
   beginWorldPolygon(world, hazard.outer)
   for (const hole of hazard.holes) {
@@ -25,64 +19,48 @@ export function drawRiver(
     }
     ctx.closePath()
   }
-  ctx.fillStyle = "#1f6b4a"
+  const gradient = ctx.createLinearGradient(0, 0, world.viewport.widthPx, world.viewport.heightPx)
+  gradient.addColorStop(0, "#58c52c")
+  gradient.addColorStop(0.5, "#35b526")
+  gradient.addColorStop(1, "#79d62c")
+  ctx.fillStyle = gradient
   ctx.fill("evenodd")
-
-  ctx.strokeStyle = "#3d5a3a"
-  ctx.lineWidth = world.detail ? 3 : 1.5
+  // Keep shore shading and flow inside the actual hazard, including bridge holes.
+  if (typeof ctx.clip === "function") ctx.clip("evenodd")
+  ctx.strokeStyle = "#3d5032"
+  ctx.lineWidth = Math.max(2, 170 * cam.zoom)
   ctx.stroke()
+  ctx.strokeStyle = "#54873b"
+  ctx.lineWidth = Math.max(1, 85 * cam.zoom)
+  ctx.stroke()
+  if (world.detail && centerline.length > 1) drawFlow(world, seed, elapsedMs, centerline)
   ctx.restore()
-
-  if (!world.detail || centerline.length < 2) return
-  drawFlowHighlights(world, seed, elapsedMs, centerline)
 }
 
-function drawFlowHighlights(world: DrawWorld, seed: number, elapsedMs: number, centerline: readonly Vec2[]): void {
-  const rng = createRng(seed).fork("river-flow")
+function drawFlow(world: DrawWorld, seed: number, elapsedMs: number, points: readonly Vec2[]): void {
   const { ctx } = world
-  const lengths = segmentLengths(centerline)
-  const total = lengths[lengths.length - 1] || 1
-  const phase = ((elapsedMs / 4000) % 1 + 1) % 1
-
-  ctx.save()
-  ctx.strokeStyle = "rgba(180, 255, 210, 0.35)"
-  ctx.lineWidth = 2
+  const rng = createRng(seed).fork("river-flow")
+  const phase = ((elapsedMs / 6500) % 1 + 1) % 1
+  ctx.strokeStyle = "rgba(197,255,111,0.27)"
+  ctx.lineWidth = Math.max(1, 16 * world.cam.zoom)
   ctx.lineCap = "round"
   ctx.beginPath()
-  for (let i = 0; i < HIGHLIGHT_BANDS; i++) {
-    const t = (phase + i / HIGHLIGHT_BANDS + rng.next() * 0.02) % 1
-    const a = pointAlong(centerline, lengths, total, t)
-    const b = pointAlong(centerline, lengths, total, Math.min(0.999, t + 0.06))
-    const sa = toScreen(world, a)
-    const sb = toScreen(world, b)
-    ctx.moveTo(sa.x, sa.y)
-    ctx.lineTo(sb.x, sb.y)
-  }
-  ctx.stroke()
-  ctx.restore()
-}
-
-function segmentLengths(points: readonly Vec2[]): number[] {
-  const out = [0]
   for (let i = 1; i < points.length; i++) {
-    out.push(out[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y))
-  }
-  return out
-}
-
-function pointAlong(points: readonly Vec2[], lengths: number[], total: number, t: number): Vec2 {
-  const target = t * total
-  for (let i = 1; i < points.length; i++) {
-    if (lengths[i] >= target) {
-      const span = lengths[i] - lengths[i - 1] || 1
-      const u = (target - lengths[i - 1]) / span
-      return {
-        x: points[i - 1].x + (points[i].x - points[i - 1].x) * u,
-        y: points[i - 1].y + (points[i].y - points[i - 1].y) * u,
-      }
+    const a = points[i - 1]
+    const b = points[i]
+    const length = Math.hypot(b.x - a.x, b.y - a.y) || 1
+    for (let j = 0; j < 4; j++) {
+      const t = (phase + j / 4 + rng.next() * 0.15) % 0.8
+      const offset = (rng.next() - 0.5) * RIVER_WIDTH_MM * 0.52
+      const x = a.x + (b.x - a.x) * t - (b.y - a.y) / length * offset
+      const y = a.y + (b.y - a.y) * t + (b.x - a.x) / length * offset
+      const start = toScreen(world, { x, y })
+      const end = toScreen(world, { x: x + (b.x - a.x) * 0.16, y: y + (b.y - a.y) * 0.16 })
+      ctx.moveTo(start.x, start.y)
+      ctx.lineTo(end.x, end.y)
     }
   }
-  return points[points.length - 1]
+  ctx.stroke()
 }
 
 export function riverBankPolygon(centerline: readonly Vec2[] = RIVER_CENTERLINE): Vec2[] {

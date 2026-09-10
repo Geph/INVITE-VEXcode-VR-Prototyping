@@ -45,6 +45,11 @@ function createCountingContext(width = VIEWPORT.widthPx, height = VIEWPORT.heigh
     strokeRect: count,
     fillText: count,
     strokeText: count,
+    clip() {},
+    drawImage() {},
+    shadowColor: "",
+    shadowBlur: 0,
+    globalCompositeOperation: "source-over",
     measureText() {
       return { width: 0 }
     },
