@@ -1,5 +1,11 @@
 import type { SpatialHash, Vec2 } from "@/engine"
-import { ROVER_HIT_RADIUS_MM, START_CLEARANCE_MM, START_POSE, MOVE_STEP_MM } from "../config"
+import {
+  ENEMY_BASE_CLEARANCE_MM,
+  MOVE_STEP_MM,
+  ROVER_HIT_RADIUS_MM,
+  START_CLEARANCE_MM,
+  START_POSE,
+} from "../config"
 import type { RoverEntity } from "../entities"
 import {
   BASE,
@@ -36,6 +42,17 @@ export function isForbiddenSpawn(point: Vec2, hazard: RiverHazard, bridges: read
   if (isOnBasePad(point)) return true
   const start = { x: START_POSE.xMm, y: START_POSE.yMm }
   return Math.hypot(point.x - start.x, point.y - start.y) < START_CLEARANCE_MM
+}
+
+/** Spiders and serpents stay out of the lower-left yard around Base. */
+export function isForbiddenEnemySpawn(
+  point: Vec2,
+  hazard: RiverHazard,
+  bridges: readonly BridgeSpec[] = BRIDGES,
+): boolean {
+  if (isForbiddenSpawn(point, hazard, bridges)) return true
+  const start = { x: START_POSE.xMm, y: START_POSE.yMm }
+  return Math.hypot(point.x - start.x, point.y - start.y) < ENEMY_BASE_CLEARANCE_MM
 }
 
 export function obstacleAt(

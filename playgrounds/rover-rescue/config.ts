@@ -85,8 +85,12 @@ export function canvasSizePx(maximized: boolean): { widthPx: number; heightPx: n
   return { widthPx: Math.round(short * aspect), heightPx: short }
 }
 
-/** Keep these counts inside the Phase 5 bands: 120–180 / 40–60 / 35–50. */
-export const OBSTACLE_COUNT = 150
+/**
+ * Keep these counts inside the Phase 5 bands: 120–180 / 40–60 / 35–50.
+ * TUNABLE: 150 rocks and plants left a median straight run under 1000 mm, so a
+ * drive-for of a few thousand millimetres almost always stopped early.
+ */
+export const OBSTACLE_COUNT = 120
 export const MINERAL_COUNT = 50
 export const ENEMY_COUNT = 42
 
@@ -126,8 +130,19 @@ export const SERPENT_RADIUS_MM = 58
 
 export const OBSTACLE_SPACING_MM = 260
 export const OBSTACLE_SPACING_ROCKY_MM = 170
-export const START_CLEARANCE_MM = 420
-export const ROVER_HIT_RADIUS_MM = Math.max(ROVER_LENGTH_MM, ROVER_WIDTH_MM) / 2
+/**
+ * TUNABLE: the yard around the start pose stays empty. At 420 mm a rock could
+ * sit one rover-length from the Base and stop the first drive after ~350 mm.
+ */
+export const START_CLEARANCE_MM = 1200
+/** TUNABLE: keep enemies out of the starting yard by the Base. */
+export const ENEMY_BASE_CLEARANCE_MM = 2000
+/**
+ * TUNABLE: driving forward sweeps a corridor as wide as the rover (147 mm), so
+ * half the width is the honest collision radius. Half the length inflated every
+ * obstacle by 30% and stopped straight drives within a few hundred millimetres.
+ */
+export const ROVER_HIT_RADIUS_MM = ROVER_WIDTH_MM / 2
 export const MOVE_STEP_MM = 24
 
 /** Spec § Sensing. Detect is a radar; sight is a forward cone. */

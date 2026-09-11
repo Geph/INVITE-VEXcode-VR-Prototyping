@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
+  ENEMY_BASE_CLEARANCE_MM,
   ENEMY_COUNT,
   ENEMY_SPAWN_TABLE,
   MINERAL_COUNT,
   MINERAL_RESPAWN_MS,
   OBSTACLE_COUNT,
+  START_CLEARANCE_MM,
+  START_POSE,
 } from "@/playgrounds/rover-rescue/config"
 import { enemyLevelFromBase } from "@/playgrounds/rover-rescue/entities"
 import { pointInRiverHazard, pointOnBasePad, pointOnBridge, zoneFamilyAt } from "@/playgrounds/rover-rescue/map-spec"
@@ -67,6 +70,28 @@ describe("rover-rescue spawn", () => {
       for (const other of others) {
         const gap = Math.hypot(other.xMm - entity.xMm, other.yMm - entity.yMm)
         expect(gap, `${entity.id} vs ${other.id}`).toBeGreaterThan(12)
+      }
+    }
+  })
+
+  it("leaves the start yard empty so the first drive is not blocked", () => {
+    for (const seed of [1, 7, 21]) {
+      const spawned = createRoverRescueState(seed)
+      const all = [...spawned.obstacles, ...spawned.minerals, ...spawned.enemies]
+      for (const entity of all) {
+        const range = Math.hypot(entity.xMm - START_POSE.xMm, entity.yMm - START_POSE.yMm)
+        expect(range, `${entity.id} seed ${seed}`).toBeGreaterThanOrEqual(START_CLEARANCE_MM)
+      }
+    }
+  })
+
+  it("keeps spiders and serpents out of the lower-left yard by the Base", () => {
+    for (const seed of [1, 7, 8, 21]) {
+      const spawned = createRoverRescueState(seed)
+      for (const enemy of spawned.enemies) {
+        const range = Math.hypot(enemy.xMm - START_POSE.xMm, enemy.yMm - START_POSE.yMm)
+        expect(range, `${enemy.id} seed ${seed}`).toBeGreaterThanOrEqual(ENEMY_BASE_CLEARANCE_MM)
+        expect(enemy.xMm < -4000 && enemy.yMm < -1500, `${enemy.id} in SW yard`).toBe(false)
       }
     }
   })

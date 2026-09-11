@@ -35,7 +35,7 @@ import {
   type ZoneFamily,
   type ZoneSpec,
 } from "../map-spec"
-import { isForbiddenSpawn } from "./physics"
+import { isForbiddenEnemySpawn, isForbiddenSpawn } from "./physics"
 
 export interface SpawnedWorld {
   obstacles: ObstacleEntity[]
@@ -168,7 +168,7 @@ function placeEnemyInZone(
   for (let attempt = 0; attempt < 80; attempt++) {
     const polygon = rng.pick(polygons)
     const pos = samplePolygon(rng, polygon.polygonMm)
-    if (!pos || isForbiddenSpawn(pos, hazard, bridges)) continue
+    if (!pos || isForbiddenEnemySpawn(pos, hazard, bridges)) continue
     if (zoneFamilyAt(pos) !== family) continue
     const radius = kind === "serpent" ? SERPENT_RADIUS_MM : SPIDER_RADIUS_MM
     if (tooClose(pos, radius, radius * 1.6, index)) continue

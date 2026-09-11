@@ -6,7 +6,7 @@ export function drawRover(world: DrawWorld, robot: RobotState, _seed: number): v
   if (!circleVisible({ x: robot.xMm, y: robot.yMm }, ROVER_LENGTH_MM, world.visible)) return
   const { ctx } = world
   const p = toScreen(world, { x: robot.xMm, y: robot.yMm })
-  const scale = Math.max(world.cam.zoom, 20 / ROVER_LENGTH_MM)
+  const scale = world.cam.zoom
   ctx.save()
   ctx.translate(p.x, p.y)
   ctx.rotate(robot.headingDeg * Math.PI / 180)

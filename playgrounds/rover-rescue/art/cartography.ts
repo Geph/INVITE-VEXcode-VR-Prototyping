@@ -32,14 +32,15 @@ export function drawCartography({ ctx, viewport, cam }: DrawWorld): void {
   ctx.fillText("E", 43, 0)
   ctx.fillText("S", 0, 43)
   ctx.fillText("W", -43, 0)
-  const mm = [GRID_MM * 2, GRID_MM, GRID_MM / 2].find(value => value * cam.zoom <= 100) ?? GRID_MM / 2
+  // One grid square, so the bar matches the 500 mm field lines.
+  const mm = GRID_MM
   const width = mm * cam.zoom
   ctx.lineWidth = 1
   ctx.strokeRect(-width / 2, 65, width, 5)
   ctx.fillRect(0, 65, width / 2, 5)
   ctx.font = "10px system-ui, sans-serif"
   ctx.fillText("0", -width / 2, 56)
-  ctx.fillText(String(mm), width / 2, 56)
-  ctx.fillText("Millimeters", 0, 82)
+  ctx.fillText(`${mm}`, width / 2, 56)
+  ctx.fillText("mm · 1 grid", 0, 82)
   ctx.restore()
 }

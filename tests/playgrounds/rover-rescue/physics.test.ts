@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { SpatialHash } from "@/engine"
-import { START_POSE } from "@/playgrounds/rover-rescue/config"
+import { ROVER_HIT_RADIUS_MM, ROVER_WIDTH_MM, START_POSE } from "@/playgrounds/rover-rescue/config"
 import { createObstacle, type RoverEntity } from "@/playgrounds/rover-rescue/entities"
 import { createRoverRescueState, riverHazardFromState } from "@/playgrounds/rover-rescue/state"
 import { RIVER_CENTERLINE, RIVER_HAZARD, pointInRiverHazard } from "@/playgrounds/rover-rescue/map-spec"
@@ -31,6 +31,28 @@ describe("rover-rescue physics", () => {
     expect(deck.blocked).toBe(false)
     expect(deck.xMm).toBe(-3500)
     expect(deck.yMm).toBe(1240)
+  })
+
+  it("sweeps a corridor as wide as the rover, not as long as it", () => {
+    expect(ROVER_HIT_RADIUS_MM).toBe(ROVER_WIDTH_MM / 2)
+  })
+
+  it("drives a clear metre out of the base yard in every direction", () => {
+    for (const seed of [1, 7, 21]) {
+      const world = createRoverRescueState(seed)
+      const hazard = riverHazardFromState(world)
+      const from = { x: START_POSE.xMm, y: START_POSE.yMm }
+      for (let heading = 0; heading < 360; heading += 15) {
+        const rad = (heading * Math.PI) / 180
+        const move = resolveRoverMove(
+          from,
+          { x: from.x + 1000 * Math.sin(rad), y: from.y + 1000 * Math.cos(rad) },
+          world.index,
+          hazard,
+        )
+        expect(move.blocked, `seed ${seed} heading ${heading}`).toBe(false)
+      }
+    }
   })
 
   it("blocks or hazards a long northbound drive from the base through the populated world", () => {
