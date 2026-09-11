@@ -17,11 +17,11 @@ export function terrainTexture(seed: number): OffscreenCanvas | undefined {
   ctx.fillRect(0, 0, WIDTH, HEIGHT)
 
   // Low contrast strata and wind-scoured patches, never collision props.
-  for (let i = 0; i < 650; i++) {
+  for (let i = 0; i < 1100; i++) {
     const x = rng.next() * WIDTH
     const y = rng.next() * HEIGHT
-    const r = 12 + rng.next() * 95
-    ctx.fillStyle = i % 3 === 0 ? "rgba(22,25,20,0.22)" : "rgba(233,225,190,0.19)"
+    const r = 8 + rng.next() * 38
+    ctx.fillStyle = i % 3 === 0 ? "rgba(22,25,20,0.14)" : "rgba(233,225,190,0.13)"
     ctx.beginPath()
     for (let j = 0; j < 8; j++) {
       const a = j * Math.PI / 4

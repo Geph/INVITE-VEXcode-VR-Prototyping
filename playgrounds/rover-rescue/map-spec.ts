@@ -5,6 +5,7 @@
  */
 
 import { pointInPolygon, type Vec2 } from "@/engine"
+import { sampleRiverChannel } from "./river-curve"
 import {
   BASE_PAD_CENTRE_MM,
   BASE_PAD_RADIUS_MM,
@@ -201,7 +202,7 @@ export function offsetPolyline(centerline: readonly Vec2[], halfWidthMm: number)
 }
 
 export function riverOuterPolygon(centerline: readonly Vec2[], widthMm: number): Vec2[] {
-  const { left, right } = offsetPolyline(centerline, widthMm / 2)
+  const { left, right } = offsetPolyline(sampleRiverChannel(centerline, widthMm), widthMm / 2)
   return [...left, ...right.slice().reverse()]
 }
 
