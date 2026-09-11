@@ -33,7 +33,7 @@ function defineBlocks(Blockly: any) {
           "DIRECTION",
         )
         .appendField("for")
-        .appendField(new Blockly.FieldNumber(200, 0, 5000), "DISTANCE")
+        .appendField(new Blockly.FieldNumber(200, 0), "DISTANCE")
         .appendField(
           new Blockly.FieldDropdown(
             [

@@ -1,11 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import {
-  AngleWheelPicker,
-  CompassPicker,
-  DistanceSliderPicker,
-} from "@/blocks/fields"
+import { AngleWheelPicker, CompassPicker } from "@/blocks/fields"
 import { installAllBlocks } from "@/blocks/registry"
 import { flyoutContents } from "@/blocks/toolbox"
 import { AIAssistant, type AIAssistantHandle, type SurveyStep } from "@/components/ai-assistant"
@@ -20,6 +16,7 @@ import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/Blo
 import { CelebrationOverlay } from "@/components/workspace/CelebrationOverlay"
 import { DEFAULT_ROBOT_CAPABILITIES } from "@/components/workspace/RobotConfigWindow"
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader"
+import { PlaygroundDistancePicker } from "@/components/workspace/PlaygroundDistancePicker"
 import { updateBlocklyNumberField } from "@/components/workspace/update-blockly-field"
 import { isRoverRescuePlayground } from "@/hooks/playground-motion"
 import { usePlaygroundDraw } from "@/hooks/usePlaygroundDraw"
@@ -377,12 +374,14 @@ export function VexWorkbench() {
       )}
 
       {distancePickerState.isOpen && (
-        <DistanceSliderPicker
+        <PlaygroundDistancePicker
           value={distancePickerState.distance}
           direction={distancePickerState.direction}
-          playgroundWidth={session.playgroundState.isMaximized ? 600 : 400}
-          playgroundHeight={session.playgroundState.isMaximized ? 600 : 400}
-          robotState={session.robotState}
+          playgroundId={session.playgroundId}
+          playground={session.activePlayground}
+          robot={session.robotState}
+          reefState={session.reefState}
+          roverState={session.roverState}
           onApply={applyPickerValue}
           onClose={() => {
             blocklyPickerRef.current = null
