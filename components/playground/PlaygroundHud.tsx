@@ -204,7 +204,11 @@ export function PlaygroundHud({
             ) : gameState.missionEndReason === "battery" ? (
               <>
                 <h3 className="text-2xl font-bold text-amber-600 mb-2">Battery depleted</h3>
-                <p className="text-gray-600 mb-4">The underwater robot stopped. Collect more trash next run.</p>
+                <p className="text-gray-600 mb-4">
+                  {chrome === "field"
+                    ? "The rover ran out of power. Use mineral samples to recharge."
+                    : "The underwater robot stopped. Collect more trash next run."}
+                </p>
               </>
             ) : gameState.runError ? (
               <>

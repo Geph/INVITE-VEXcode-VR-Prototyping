@@ -17,7 +17,34 @@ export type { MissionReason, RoverRescueState, RoverTickOptions } from "./state"
 export { createRoverRescueState, resetRoverRescueState, tickRoverRescue } from "./state"
 export { clampRoverMm, createRoverRescueApi } from "./api"
 export { daysFromMs, formatDays, missionComplete, msFromDays } from "./mission"
-export { DAY_MS, MISSION_DAYS } from "./config"
+export { useMineralOnGround } from "./state"
+export { batteryEmpty, clampBattery, drainBattery, drainRatePctPerDay } from "./systems/battery"
+export {
+  absorbPctForLevel,
+  capacityForLevel,
+  expWithinLevel,
+  levelFromXp,
+  xpForNextLevel,
+} from "./systems/leveling"
+export { nearestUsableMineral, parseMineralAction } from "./systems/minerals"
+export {
+  BATTERY_START_PCT,
+  DAY_MS,
+  LEVEL_XP_THRESHOLDS,
+  MINERAL_USE_RANGE_MM,
+  MISSION_DAYS,
+  ROVER_LEVEL_MAX,
+  XP_USE_MINERAL,
+} from "./config"
+
+/** What the rover reports to React: the figures the HUD shows, nothing else. */
+export interface RoverStatus {
+  days: number
+  batteryPercent: number
+  level: number
+  /** XP earned toward the next level, matching what the XP block reports. */
+  exp: number
+}
 export { planRoverDrive, pushedMinerals, resolveRoverMove, roverDriveVector } from "./systems/physics"
 export type { DrivePlan, MineralPush } from "./systems/physics"
 export { computeSensing, detect, sight, distanceSensor } from "./systems/sensing"

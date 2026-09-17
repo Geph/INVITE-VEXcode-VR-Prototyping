@@ -1,7 +1,9 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { CategoryRail, RAIL_CATEGORIES } from "@/components/workspace/CategoryRail"
+import { CategoryRail, RAIL_CATEGORIES, railCategoriesFor } from "@/components/workspace/CategoryRail"
+import { oceanReef } from "@/playgrounds/ocean-reef"
+import { roverRescue } from "@/playgrounds/rover-rescue"
 
 describe("Blockly editor smoke", () => {
   it("mounts the category rail", () => {
@@ -31,11 +33,32 @@ describe("Blockly editor smoke", () => {
       "operators",
       "logic",
       "magnet",
+      "resources",
       "drawing",
       "sensing",
       "console",
       "loops",
       "variables",
     ])
+  })
+
+  /**
+   * Magnet is Ocean Reef's and Resources is Rover Rescue's, so the rail is built
+   * per playground. Showing a category whose flyout would be empty reads as a
+   * broken toolbox.
+   */
+  it("shows a playground-owned category only where its blocks exist", () => {
+    const reefIds = railCategoriesFor(oceanReef).map((category) => category.id)
+    expect(reefIds).toContain("magnet")
+    expect(reefIds).not.toContain("resources")
+
+    const roverIds = railCategoriesFor(roverRescue).map((category) => category.id)
+    expect(roverIds).toContain("resources")
+    expect(roverIds).not.toContain("magnet")
+
+    // Common categories are on every rail.
+    for (const ids of [reefIds, roverIds]) {
+      expect(ids).toEqual(expect.arrayContaining(["drivetrain", "operators", "logic", "sensing", "variables"]))
+    }
   })
 })

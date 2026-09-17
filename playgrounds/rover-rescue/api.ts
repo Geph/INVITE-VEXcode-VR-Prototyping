@@ -1,7 +1,9 @@
 import { mmToDistance, normalizeDegrees } from "@/engine"
 import type { PlaygroundApiDeps } from "../types"
 import { AI_MISSING_SIGHT_MM } from "./config"
-import { riverHazardFromState, type RoverRescueState } from "./state"
+import { riverHazardFromState, useMineralOnGround, type RoverRescueState } from "./state"
+import { expWithinLevel } from "./systems/leveling"
+import { parseMineralAction } from "./systems/minerals"
 import { clampRoverMm } from "./systems/physics"
 import {
   baseBearing,
@@ -69,6 +71,26 @@ export function createRoverRescueApi(deps: PlaygroundApiDeps<RoverRescueState>) 
       if (seen) return mmToDistance(seen.distanceMm, unit)
       if (parsed === "obstacle" || parsed === "hazard") return mmToDistance(AI_MISSING_SIGHT_MM, unit)
       return mmToDistance(0, unit)
+    },
+    batteryLevel() {
+      return Math.round(deps.world.current.batteryPercent)
+    },
+    roverLevel() {
+      return deps.world.current.level
+    },
+    roverExp() {
+      return expWithinLevel(deps.world.current.xp).exp
+    },
+    mineralsAction(action: string) {
+      // Pick up and drop are not in the dropdown yet, so anything else is a no-op.
+      if (parseMineralAction(action) !== "use") return false
+      const result = useMineralOnGround(deps.world.current, originOf(deps))
+      if (!result.used) {
+        deps.writeConsole("No mineral sample within reach.", "#F5A623")
+        return false
+      }
+      deps.world.current = result.state
+      return true
     },
     roverLocation(kind: string, axis: string, unit: string) {
       const parsed = parseKind(kind)

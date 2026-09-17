@@ -6,6 +6,7 @@ import {
   Calculator,
   Cog,
   Eye,
+  Gem,
   GitBranch,
   Magnet,
   Pencil,
@@ -14,6 +15,7 @@ import {
   Variable,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { COMMON_CATEGORIES } from "@/blocks/registry"
 
 export interface RailCategory {
   id: string
@@ -58,6 +60,14 @@ export const RAIL_CATEGORIES: RailCategory[] = [
     Icon: Magnet,
   },
   {
+    id: "resources",
+    label: "Resources",
+    buttonId: "vex-category-resources",
+    selectedClass: "bg-[#C0392B] text-white",
+    idleClass: "bg-[#C0392B]/20 text-[#C0392B] hover:bg-[#C0392B]/30",
+    Icon: Gem,
+  },
+  {
     id: "drawing",
     label: "Drawing",
     buttonId: "vex-category-drawing",
@@ -99,18 +109,32 @@ export const RAIL_CATEGORIES: RailCategory[] = [
   },
 ]
 
+const COMMON_RAIL_IDS = new Set(COMMON_CATEGORIES.map((category) => category.id))
+
+/**
+ * Magnet belongs to Ocean Reef and Resources to Rover Rescue, so the rail shows
+ * a playground-owned category only where its blocks exist. An empty flyout
+ * reads as a broken toolbox.
+ */
+export function railCategoriesFor(playground: { blocks: Array<{ id: string }> }): RailCategory[] {
+  const provided = new Set(playground.blocks.map((category) => category.id))
+  return RAIL_CATEGORIES.filter((category) => COMMON_RAIL_IDS.has(category.id) || provided.has(category.id))
+}
+
 export function CategoryRail({
   selectedCategory,
   onSelectCategory,
+  categories = RAIL_CATEGORIES,
   footer,
 }: {
   selectedCategory: string | null
   onSelectCategory: (category: string) => void
+  categories?: RailCategory[]
   footer?: ReactNode
 }) {
   return (
     <div id="vex-category-sidebar" className="w-20 border-r flex flex-col items-center py-4 gap-1 relative">
-      {RAIL_CATEGORIES.map(({ id, label, buttonId, selectedClass, idleClass, Icon }) => (
+      {categories.map(({ id, label, buttonId, selectedClass, idleClass, Icon }) => (
         <Button
           key={id}
           id={buttonId}

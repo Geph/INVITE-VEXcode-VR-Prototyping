@@ -19,7 +19,11 @@ import {
   type RoverEntity,
 } from "./entities"
 import { missionComplete } from "./mission"
+import { BATTERY_START_PCT, XP_USE_MINERAL } from "./config"
+import { batteryEmpty, clampBattery, drainBattery } from "./systems/battery"
 import { wanderEnemies } from "./systems/enemy-ai"
+import { levelFromXp } from "./systems/leveling"
+import { nearestUsableMineral } from "./systems/minerals"
 import { isRiverHazard, pushedMinerals, type MineralPush } from "./systems/physics"
 import {
   computeSensing,
@@ -28,14 +32,18 @@ import {
 } from "./systems/sensing"
 import { applyMineralRespawns, scheduleMineralRespawn, spawnWorld, type MineralRespawn } from "./systems/spawn"
 
-/** `river` ends the mission early; `days` means the full 50 days were survived. */
-export type MissionReason = "river" | "days"
+/** `river` and `battery` end the mission early; `days` means all 50 were survived. */
+export type MissionReason = "river" | "battery" | "days"
 
 export interface RoverRescueState {
   seed: number
   elapsedMs: number
   /** Time the rover has spent on task. Only advances while a program runs. */
   missionMs: number
+  batteryPercent: number
+  /** Lifetime XP. The playground reports progress through the current level. */
+  xp: number
+  level: number
   debug: boolean
   zones: ZoneSpec[]
   riverCenterline: Vec2[]
@@ -63,6 +71,9 @@ export function createRoverRescueState(seed: number, debug = false): RoverRescue
     seed,
     elapsedMs: 0,
     missionMs: 0,
+    batteryPercent: BATTERY_START_PCT,
+    xp: 0,
+    level: 1,
     debug,
     zones,
     riverCenterline,
@@ -100,6 +111,10 @@ export function tickRoverRescue(
   const elapsedMs = state.elapsedMs + Math.max(0, dtMs)
   const running = options.missionRunning === true && !state.missionOver
   const missionMs = running ? state.missionMs + Math.max(0, dtMs) : state.missionMs
+  // Power only leaks while the rover is on task, on the same clock as the days.
+  const batteryPercent = running
+    ? drainBattery(state.batteryPercent, dtMs, state.driveMoving)
+    : state.batteryPercent
   const hazard = riverHazardFromState(state)
   const enemies = wanderEnemies(state.enemies, elapsedMs, state.index, hazard, state.bridges)
   const afterWander = buildEntityIndex({ obstacles: state.obstacles, minerals: state.minerals, enemies })
@@ -133,24 +148,51 @@ export function tickRoverRescue(
     : settled
   const inRiver = robot ? isRiverHazard({ x: robot.xMm, y: robot.yMm }, hazard) : false
   const outOfDays = missionComplete(missionMs)
+  const flat = batteryEmpty(batteryPercent)
   const sensing = robot ? computeSensing(robot, index, hazard, state.bridges) : emptySensing()
   return {
     ...state,
     elapsedMs,
     missionMs,
+    batteryPercent,
     enemies,
     minerals,
     mineralRespawns: respawned.queue,
     index,
     sensing,
-    missionOver: state.missionOver || inRiver || outOfDays,
+    missionOver: state.missionOver || inRiver || flat || outOfDays,
     missionReason: state.missionOver
       ? state.missionReason
       : inRiver
         ? "river"
-        : outOfDays
-          ? "days"
-          : state.missionReason,
+        : flat
+          ? "battery"
+          : outOfDays
+            ? "days"
+            : state.missionReason,
+  }
+}
+
+/**
+ * Consume the sample the rover is standing next to. Per the VEX documentation a
+ * sample is used where it lies, so cargo is not a candidate.
+ */
+export function useMineralOnGround(
+  state: RoverRescueState,
+  rover: Vec2,
+): { state: RoverRescueState; used: boolean } {
+  const target = nearestUsableMineral(state.minerals, rover)
+  if (!target) return { state, used: false }
+  const consumed = markMineralUsed(state, target.id)
+  const xp = state.xp + XP_USE_MINERAL
+  return {
+    state: {
+      ...consumed,
+      batteryPercent: clampBattery(BATTERY_START_PCT),
+      xp,
+      level: levelFromXp(xp),
+    },
+    used: true,
   }
 }
 

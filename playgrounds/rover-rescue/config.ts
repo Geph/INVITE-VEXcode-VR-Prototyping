@@ -162,6 +162,39 @@ export const MINERAL_PUSH_MARGIN_MM = 6
 export const MISSION_DAYS = 50
 export const DAY_MS = 5000
 
+/** DOC: levels 1–5 and the cumulative XP each one needs. Index = level. */
+export const LEVEL_XP_THRESHOLDS = [0, 0, 10, 30, 70, 125] as const
+export const ROVER_LEVEL_MIN = 1
+export const ROVER_LEVEL_MAX = 5
+
+/**
+ * VEX publishes only the level 1 row (Absorb 10%, Capacity 2); the growth curve
+ * is ours. TUNABLE. Index = level.
+ */
+export const ABSORB_PCT_BY_LEVEL = [0, 10, 20, 35, 55, 80] as const
+export const CAPACITY_BY_LEVEL = [0, 2, 3, 4, 6, 8] as const
+
+/** DOC: the published XP awards. */
+export const XP_USE_MINERAL = 2
+export const XP_MINERAL_TO_BASE = 5
+
+export const BATTERY_START_PCT = 100
+
+/**
+ * Drain is not published, so both rates are TUNABLE and expressed per in-game
+ * day to keep them legible: a full battery lasts the whole 50-day mission
+ * parked, or 20 days of continuous driving, so surviving means using minerals.
+ */
+export const BATTERY_DRAIN_IDLE_PCT_PER_DAY = 2
+export const BATTERY_DRAIN_DRIVING_PCT_PER_DAY = 3
+
+/**
+ * TUNABLE: how close the rover must be to use a sample off the ground. The
+ * rover pushes samples to roughly 108 mm from its centre, so this has to clear
+ * that or a sample could never be used once nudged.
+ */
+export const MINERAL_USE_RANGE_MM = 250
+
 /** Spec § Sensing. Detect is a radar; sight is a forward cone. */
 export const AI_DETECT_RANGE_MM = 800
 export const AI_SIGHT_RANGE_MM = 1000

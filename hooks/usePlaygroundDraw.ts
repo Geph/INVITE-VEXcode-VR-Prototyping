@@ -22,7 +22,13 @@ import {
 } from "@/playgrounds/ocean-reef"
 import type { Camera } from "@/engine"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
-import { daysFromMs, tickRoverRescue, type RoverRescueState } from "@/playgrounds/rover-rescue"
+import {
+  daysFromMs,
+  expWithinLevel,
+  tickRoverRescue,
+  type RoverRescueState,
+  type RoverStatus,
+} from "@/playgrounds/rover-rescue"
 import { isRoverRescuePlayground } from "./playground-motion"
 import type { HostRobotState, ProgramGameState, ProgramRuntime } from "./program-types"
 import {
@@ -52,7 +58,7 @@ export function usePlaygroundDraw({
   setGameState,
   gameState,
   onRoverMissionOver,
-  onRoverDayChange,
+  onRoverStatus,
 }: {
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   playgroundId: string
@@ -72,8 +78,8 @@ export function usePlaygroundDraw({
   commitReefState: (next: OceanReefState) => void
   setGameState: React.Dispatch<React.SetStateAction<ProgramGameState>>
   gameState: ProgramGameState
-  onRoverMissionOver?: (reason: string, days: number) => void
-  onRoverDayChange?: (days: number) => void
+  onRoverMissionOver?: (reason: string, status: RoverStatus) => void
+  onRoverStatus?: (status: RoverStatus) => void
 }) {
   const floatAnimationRef = useRef<number | null>(null)
   const roverCameraRef = useRef(roverCamera)
@@ -83,8 +89,8 @@ export function usePlaygroundDraw({
   // The rover loop must not restart when the run state flips, so it reads refs.
   const isRunningRef = useRef(isRunning)
   isRunningRef.current = isRunning
-  const missionCallbacksRef = useRef({ onRoverMissionOver, onRoverDayChange })
-  missionCallbacksRef.current = { onRoverMissionOver, onRoverDayChange }
+  const missionCallbacksRef = useRef({ onRoverMissionOver, onRoverStatus })
+  missionCallbacksRef.current = { onRoverMissionOver, onRoverStatus }
   const roverPlayground = isRoverRescuePlayground(playgroundId)
 
   const drawRobot = useCallback(() => {
@@ -215,7 +221,7 @@ export function usePlaygroundDraw({
     if (!roverPlayground || !playgroundState.isVisible || playgroundState.isMinimized) return
     let frame = 0
     let last = performance.now()
-    let reportedTenths = -1
+    let reportedStatus = ""
     const loop = (now: number) => {
       const dt = Math.min(64, now - last)
       last = now
@@ -225,16 +231,23 @@ export function usePlaygroundDraw({
         missionRunning: isRunningRef.current,
       })
       const days = daysFromMs(roverStateRef.current.missionMs)
-      // The readout shows tenths, so React only hears about it twice a day.
-      const tenths = Math.floor(days * 10)
-      if (tenths !== reportedTenths) {
-        reportedTenths = tenths
-        missionCallbacksRef.current.onRoverDayChange?.(days)
+      // The readouts show tenths of a day and whole percent, so React only hears
+      // about the rover when a figure it actually displays has moved.
+      const status = {
+        days,
+        batteryPercent: Math.round(roverStateRef.current.batteryPercent),
+        level: roverStateRef.current.level,
+        exp: expWithinLevel(roverStateRef.current.xp).exp,
+      }
+      const digest = `${Math.floor(days * 10)}|${status.batteryPercent}|${status.level}|${status.exp}`
+      if (digest !== reportedStatus) {
+        reportedStatus = digest
+        missionCallbacksRef.current.onRoverStatus?.(status)
       }
       if (roverStateRef.current.missionOver && !prevOver) {
         missionCallbacksRef.current.onRoverMissionOver?.(
           roverStateRef.current.missionReason ?? "river",
-          days,
+          status,
         )
       }
       const canvas = canvasRef.current

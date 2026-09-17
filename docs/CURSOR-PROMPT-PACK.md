@@ -617,7 +617,10 @@ Make it a game: battery, mission clock, XP and levels, minerals handling, combat
    pickup / drop / use:
      pickup  nearest mineral within a pickup radius, only if storage < capacity
      drop    place the most recently picked mineral at the rover's position
-     use     consume one carried mineral -> battery 100%, +2 XP
+     use     consume the nearest mineral ON THE GROUND -> battery 100%, +2 XP
+             (this line used to read "one carried mineral", which contradicted
+             ROVER-RESCUE-SPEC.md and the VEX documentation: a sample is used
+             where it lies and cargo cannot be used. The spec wins.)
    Entering the base pad with minerals banks them all, +5 XP each, clears storage.
    pg_sensing_robot_minerals_stored and the storage capacity block report the obvious
    values.

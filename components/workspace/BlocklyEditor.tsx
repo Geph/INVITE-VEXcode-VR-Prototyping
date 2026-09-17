@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { dismissBlocklyFieldEditors } from "@/blocks/fields"
 import { isBlocklyFieldEditorTarget } from "@/lib/blockly-widget-form"
 import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
-import { CategoryRail } from "./CategoryRail"
+import { CategoryRail, type RailCategory } from "./CategoryRail"
 import { DeletedBlocksModal, TrashcanButton } from "./Trashcan"
 import { useBlocklyInjection, useBlocklyLoader, useBlocklyWidgetFix } from "./use-blockly-workspace"
 
@@ -23,6 +23,7 @@ export interface BlocklyEditorProps {
   toolbox: unknown[]
   selectedCategory: string | null
   onSelectCategory: (category: string) => void
+  railCategories: RailCategory[]
   onRegisterBlocks: (Blockly: any) => void
   onWorkspaceReady: (workspace: any) => void
   onBlocklyLoaded?: () => void
@@ -48,6 +49,7 @@ export function BlocklyEditor({
   toolbox,
   selectedCategory,
   onSelectCategory,
+  railCategories,
   onRegisterBlocks,
   onWorkspaceReady,
   onBlocklyLoaded,
@@ -162,6 +164,7 @@ export function BlocklyEditor({
       <CategoryRail
         selectedCategory={selectedCategory}
         onSelectCategory={onSelectCategory}
+        categories={railCategories}
         footer={
           <TrashcanButton
             hasDeleted={Boolean(deletedBlocks)}

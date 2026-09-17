@@ -6,6 +6,8 @@ import { installAllBlocks } from "@/blocks/registry"
 import { flyoutContents } from "@/blocks/toolbox"
 import { AIAssistant, type AIAssistantHandle, type SurveyStep } from "@/components/ai-assistant"
 import { MissionDayReadout } from "@/components/playground/MissionDayReadout"
+import { RoverStatusReadout } from "@/components/playground/RoverStatusReadout"
+import { BATTERY_START_PCT, type RoverStatus } from "@/playgrounds/rover-rescue"
 import { PlaygroundHud } from "@/components/playground/PlaygroundHud"
 import { PlaygroundPicker } from "@/components/playground/PlaygroundPicker"
 import { PlaygroundWindow } from "@/components/playground/PlaygroundWindow"
@@ -13,6 +15,7 @@ import { ZoomControls } from "@/components/playground/ZoomControls"
 import { RoverRescueHud } from "@/playgrounds/rover-rescue/hud"
 import BlocklyCollabOverlay from "@/components/blockly-collab-overlay"
 import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/BlocklyEditor"
+import { railCategoriesFor } from "@/components/workspace/CategoryRail"
 import { CelebrationOverlay } from "@/components/workspace/CelebrationOverlay"
 import { DEFAULT_ROBOT_CAPABILITIES } from "@/components/workspace/RobotConfigWindow"
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader"
@@ -31,6 +34,8 @@ import { useBlocklyCollab } from "@/lib/use-blockly-collab"
 import { reefViewFromMaximized } from "@/hooks/playground-host"
 import { recordSessionEvent, type SessionLogSnapshot } from "@/lib/session-log"
 
+const IDLE_ROVER_STATUS: RoverStatus = { days: 0, batteryPercent: BATTERY_START_PCT, level: 1, exp: 0 }
+
 export function VexWorkbench() {
   const blocklyWorkspaceContainerRef = useRef<HTMLDivElement>(null)
   const aiAssistantRef = useRef<AIAssistantHandle>(null)
@@ -39,6 +44,7 @@ export function VexWorkbench() {
   const collab = useBlocklyCollab(workspace, blocklyLoaded, blocklyWorkspaceContainerRef)
   const [selectedCategory, setSelectedCategory] = useState<string | null>("drivetrain")
   const [aiStep, setAiStep] = useState<SurveyStep>("main")
+  const [roverStatus, setRoverStatus] = useState<RoverStatus>(IDLE_ROVER_STATUS)
   const [codeView, setCodeView] = useState<"blocks" | "python">("blocks")
   // Rover Rescue ships without the Robot config window, so devices stay stock.
   const robotCapabilities = DEFAULT_ROBOT_CAPABILITIES
@@ -126,23 +132,27 @@ export function VexWorkbench() {
     commitReefState: session.commitReefState,
     setGameState: session.setGameState,
     gameState: session.gameState,
-    onRoverMissionOver: (reason, days) => {
+    onRoverMissionOver: (reason, status) => {
       stopRequestedRef.current = true
       session.cancelRobotAnimation()
       isRunningRef.current = false
       setIsRunning(false)
       const survived = reason === "days"
+      const flat = reason === "battery"
       session.setGameState((prev) => ({
         ...prev,
         isGameOver: true,
-        missionEndReason: survived ? "complete" : "river",
+        missionEndReason: survived ? "complete" : flat ? "battery" : "river",
         gameLost: !survived,
-        missionDays: days,
-        runError: survived ? null : "The rover entered the river.",
+        missionDays: status.days,
+        batteryPercent: status.batteryPercent,
+        runError: survived ? null : flat ? "The rover ran out of power." : "The rover entered the river.",
       }))
+      setRoverStatus(status)
     },
-    onRoverDayChange: (days) => {
-      session.setGameState((prev) => (prev.isGameOver ? prev : { ...prev, missionDays: days }))
+    onRoverStatus: (status) => {
+      setRoverStatus(status)
+      session.setGameState((prev) => (prev.isGameOver ? prev : { ...prev, missionDays: status.days }))
     },
   })
 
@@ -215,6 +225,16 @@ export function VexWorkbench() {
     [selectedCategory, session.activePlayground],
   )
 
+  const railCategories = useMemo(() => railCategoriesFor(session.activePlayground), [session.activePlayground])
+
+  // Switching playgrounds can retire the open category, which would leave the
+  // rail with nothing highlighted and the flyout empty.
+  useEffect(() => {
+    if (selectedCategory && !railCategories.some((category) => category.id === selectedCategory)) {
+      setSelectedCategory(railCategories[0]?.id ?? null)
+    }
+  }, [railCategories, selectedCategory])
+
   const getPythonCode = useCallback(() => generatePythonProgram(workspace), [workspace])
 
   const getSessionSnapshot = useCallback((): SessionLogSnapshot => {
@@ -262,6 +282,7 @@ export function VexWorkbench() {
           toolbox={toolbox}
           selectedCategory={selectedCategory}
           onSelectCategory={setSelectedCategory}
+          railCategories={railCategories}
           onRegisterBlocks={handleRegisterBlocks}
           onWorkspaceReady={setWorkspace}
           onBlocklyLoaded={() => setBlocklyLoaded(true)}
@@ -314,7 +335,14 @@ export function VexWorkbench() {
             aiStep={aiStep}
             onCloseStrategy={() => setAiStep("strategy")}
             chrome={roverField ? "field" : "reef"}
-            toolbarTrailing={roverField ? <MissionDayReadout days={session.gameState.missionDays} /> : null}
+            toolbarTrailing={
+              roverField ? (
+                <div className="flex items-center gap-2">
+                  <RoverStatusReadout status={roverStatus} />
+                  <MissionDayReadout days={session.gameState.missionDays} />
+                </div>
+              ) : null
+            }
             canvasOverlay={
               roverField ? (
                 <>

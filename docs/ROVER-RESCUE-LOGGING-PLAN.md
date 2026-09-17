@@ -228,9 +228,18 @@ VEX namespaces every playground block `pg_<category>_<action>`. Our 65 blocks us
 | **`pg_sensing_robot_battery_capacity`** | — (new) | battery level |
 | **`pg_sensing_robot_minerals_stored`** | — (new) | minerals in storage |
 | **`pg_sensing_enemy_charge`** | — (new) | enemy radiation |
+| `pg_sensing_robot_level` | — (ours) | level |
+| `pg_sensing_robot_exp` | — (ours) | XP |
+| `pg_sensing_robot_minerals_capacity` | — (ours) | storage capacity |
 | **`pg_events_when_under_attack`** | — (new) | when under attack |
 | **`pg_events_broadcast`** / `pg_events_when_broadcasted` | — (new) | broadcast / when I receive |
 | `math_number`, `math_whole_number`, `math_number_string`, `math_positive_number`, `procedures_call`, `procedures_definition`, `procedures_prototype`, `comment_text` | partial | standard Blockly/Scratch types, unchanged |
+
+The rows marked "(ours)" have no name in VEX's export, because the four blocks the
+export covers are the only ones the sample logs contained. `level`, `XP` and `storage
+capacity` are real blocks in the playground, so they need types; these follow the
+`pg_sensing_robot_*` family the published names establish. Like every other type in this
+table they are now frozen — the pipeline reads `block_type` and nothing else.
 
 **Three findings hiding in that table that affect the build plan:**
 

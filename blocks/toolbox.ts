@@ -5,6 +5,7 @@ import type { BlockCategory } from "@/playgrounds/types"
 const PLAYGROUND_HEADINGS: Record<string, { title: string; subtitle: string }> = {
   magnet: { title: "Magnet", subtitle: "Magnet - Actions" },
   sensing: { title: "Sensing", subtitle: "Sensing - Sensors" },
+  resources: { title: "Resources", subtitle: "Resources - Actions" },
 }
 
 export function categoryHeading(id: string): { title: string; subtitle: string } | undefined {

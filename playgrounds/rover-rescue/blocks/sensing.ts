@@ -1,5 +1,5 @@
 import type { PythonGenerators } from "@/blocks/common/types"
-import type { BlockCategory } from "../types"
+import type { BlockCategory } from "../../types"
 
 const SENSING_COLOUR = "#14B8A6"
 
@@ -192,10 +192,49 @@ function defineRoverSensingBlocks(Blockly: any) {
   Blockly.JavaScript.forBlock["pg_sensing_position_angle"] = () => {
     return [`robot.getPositionAngle()`, Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
+
+  Blockly.Blocks["pg_sensing_robot_battery_capacity"] = {
+    init: function () {
+      this.appendDummyInput().appendField("battery level")
+      this.setOutput(true, "Number")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("Battery remaining, 0 to 100. The mission ends at 0")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_robot_battery_capacity"] = () => {
+    return ["robot.batteryLevel()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  Blockly.Blocks["pg_sensing_robot_level"] = {
+    init: function () {
+      this.appendDummyInput().appendField("level")
+      this.setOutput(true, "Number")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("Rover level, 1 to 5. Higher levels absorb more and carry more")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_robot_level"] = () => {
+    return ["robot.roverLevel()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  Blockly.Blocks["pg_sensing_robot_exp"] = {
+    init: function () {
+      this.appendDummyInput().appendField("XP")
+      this.setOutput(true, "Number")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("XP earned toward the next level, not XP earned overall")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_robot_exp"] = () => {
+    return ["robot.roverExp()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
 }
 
-export const roverRescuePythonGenerators: PythonGenerators = {
+export const sensingPythonGenerators: PythonGenerators = {
   expressions: {
+    pg_sensing_robot_battery_capacity: () => "rover.battery_capacity()",
+    pg_sensing_robot_level: () => "rover.level()",
+    pg_sensing_robot_exp: () => "rover.exp()",
     pg_sensing_ai_sees: (block, { constant }) => `rover.sees(${constant(block.getFieldValue("KIND"))})`,
     pg_sensing_ai_smells: (block, { constant }) => `rover.detects(${constant(block.getFieldValue("KIND"))})`,
     pg_sensing_ai_sees_direction: (block, { constant }) => `rover.angle(${constant(block.getFieldValue("KIND"))})`,
@@ -212,22 +251,23 @@ export const roverRescuePythonGenerators: PythonGenerators = {
   },
 }
 
-export const roverRescueBlocks: BlockCategory[] = [
-  {
-    id: "sensing",
-    label: "Sensing",
-    colour: SENSING_COLOUR,
-    define: defineRoverSensingBlocks,
-    toolbox: [
-      { kind: "block", type: "pg_sensing_ai_sees" },
-      { kind: "block", type: "pg_sensing_ai_smells" },
-      { kind: "block", type: "pg_sensing_ai_sees_direction" },
-      { kind: "block", type: "pg_sensing_ai_sees_distance" },
-      { kind: "block", type: "pg_sensing_ai_sees_location" },
-      { kind: "block", type: "pg_sensing_distance_found" },
-      { kind: "block", type: "pg_sensing_object_distance" },
-      { kind: "block", type: "pg_sensing_position" },
-      { kind: "block", type: "pg_sensing_position_angle" },
-    ],
-  },
-]
+export const sensingCategory: BlockCategory = {
+  id: "sensing",
+  label: "Sensing",
+  colour: SENSING_COLOUR,
+  define: defineRoverSensingBlocks,
+  toolbox: [
+    { kind: "block", type: "pg_sensing_ai_sees" },
+    { kind: "block", type: "pg_sensing_ai_smells" },
+    { kind: "block", type: "pg_sensing_ai_sees_direction" },
+    { kind: "block", type: "pg_sensing_ai_sees_distance" },
+    { kind: "block", type: "pg_sensing_ai_sees_location" },
+    { kind: "block", type: "pg_sensing_distance_found" },
+    { kind: "block", type: "pg_sensing_object_distance" },
+    { kind: "block", type: "pg_sensing_position" },
+    { kind: "block", type: "pg_sensing_position_angle" },
+    { kind: "block", type: "pg_sensing_robot_battery_capacity" },
+    { kind: "block", type: "pg_sensing_robot_level" },
+    { kind: "block", type: "pg_sensing_robot_exp" },
+  ],
+}

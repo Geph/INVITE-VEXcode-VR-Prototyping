@@ -351,6 +351,10 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     roverAngle: (kind: string) => playgroundApi.roverAngle?.(kind) ?? 0,
     roverDistanceTo: (kind: string, unit: string) => playgroundApi.roverDistanceTo?.(kind, unit) ?? 0,
     roverLocation: (kind: string, axis: string, unit: string) => playgroundApi.roverLocation?.(kind, axis, unit) ?? 0,
+    batteryLevel: () => playgroundApi.batteryLevel?.() ?? 0,
+    roverLevel: () => playgroundApi.roverLevel?.() ?? 0,
+    roverExp: () => playgroundApi.roverExp?.() ?? 0,
+    mineralsAction: (action: string) => playgroundApi.mineralsAction?.(action) ?? false,
     stop: () => {
       ctx.stopRequestedRef.current = true
       ctx.cancelRobotAnimation()
