@@ -1,7 +1,8 @@
 import { mmToDistance, normalizeDegrees } from "@/engine"
 import type { PlaygroundApiDeps } from "../types"
-import { AI_MISSING_SIGHT_MM, FIELD_BOUNDS, ROVER_LENGTH_MM, ROVER_WIDTH_MM } from "./config"
+import { AI_MISSING_SIGHT_MM } from "./config"
 import { riverHazardFromState, type RoverRescueState } from "./state"
+import { clampRoverMm } from "./systems/physics"
 import {
   baseBearing,
   computeSensing,
@@ -11,15 +12,7 @@ import {
   type SensorSnapshot,
 } from "./systems/sensing"
 
-const HALF_LENGTH = ROVER_LENGTH_MM / 2
-const HALF_WIDTH = ROVER_WIDTH_MM / 2
-
-export function clampRoverMm(xMm: number, yMm: number): { xMm: number; yMm: number } {
-  return {
-    xMm: clamp(xMm, FIELD_BOUNDS.minX + HALF_WIDTH, FIELD_BOUNDS.maxX - HALF_WIDTH),
-    yMm: clamp(yMm, FIELD_BOUNDS.minY + HALF_LENGTH, FIELD_BOUNDS.maxY - HALF_LENGTH),
-  }
-}
+export { clampRoverMm }
 
 export function createRoverRescueApi(deps: PlaygroundApiDeps<RoverRescueState>) {
   const snapshot = () => cachedSensing(deps)
@@ -115,8 +108,4 @@ export function parseKind(raw: string): SightKind {
   if (key === "obstacle" || key === "obstacles") return "obstacle"
   if (key === "hazard" || key === "hazards") return "hazard"
   return "base"
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
 }

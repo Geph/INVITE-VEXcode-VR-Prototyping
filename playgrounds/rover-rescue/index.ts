@@ -13,10 +13,13 @@ import {
 import { renderRoverRescue, renderRoverRescueOverlay } from "./render"
 import { createRoverRescueState, resetRoverRescueState, tickRoverRescue, type RoverRescueState } from "./state"
 
-export type { RoverRescueState } from "./state"
+export type { MissionReason, RoverRescueState, RoverTickOptions } from "./state"
 export { createRoverRescueState, resetRoverRescueState, tickRoverRescue } from "./state"
 export { clampRoverMm, createRoverRescueApi } from "./api"
-export { resolveRoverMove } from "./systems/physics"
+export { daysFromMs, formatDays, missionComplete, msFromDays } from "./mission"
+export { DAY_MS, MISSION_DAYS } from "./config"
+export { planRoverDrive, pushedMinerals, resolveRoverMove, roverDriveVector } from "./systems/physics"
+export type { DrivePlan, MineralPush } from "./systems/physics"
 export { computeSensing, detect, sight, distanceSensor } from "./systems/sensing"
 export { entityLists } from "./state"
 export { enemyLevelFromBase } from "./entities"
@@ -51,7 +54,7 @@ export const roverRescue: PlaygroundDefinition<RoverRescueState> = {
     return resetRoverRescueState(state, seed)
   },
   tick(state, dtMs, robot) {
-    return tickRoverRescue(state, dtMs, robot)
+    return tickRoverRescue(state, dtMs, robot, { missionRunning: true })
   },
   render(ctx, state, robot, cam) {
     renderRoverRescue(ctx, state, robot, cam)
@@ -62,6 +65,7 @@ export const roverRescue: PlaygroundDefinition<RoverRescueState> = {
   blocks: roverRescueBlocks,
   createApi: createRoverRescueApi,
   isMissionOver(state) {
-    return { over: state.missionOver, reason: state.missionReason, won: false }
+    // Surviving all 50 days is the win condition; the river is the loss.
+    return { over: state.missionOver, reason: state.missionReason, won: state.missionReason === "days" }
   },
 }

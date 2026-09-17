@@ -10,6 +10,7 @@ import {
   playgroundWorldBounds,
   predictDrive,
 } from "@/hooks/distance-picker-preview"
+import { driveTargetMm } from "@/hooks/playground-motion"
 import { reefWorldToScreen } from "@/playgrounds/ocean-reef/art"
 import { createObstacle } from "@/playgrounds/rover-rescue/entities"
 import { oceanReef } from "@/playgrounds/ocean-reef"
@@ -115,6 +116,50 @@ describe("distance picker preview", () => {
     })
     expect(edge.reachableMm).toBeLessThan(4000)
     expect(drivePredictionHint(edge)).toContain("field edge")
+  })
+
+  /**
+   * The preview used to over-promise: it resolved the whole path in one pass
+   * while the drive re-resolved every frame and could stop sooner. Both now
+   * call `planRoverDrive`, and this is what holds them together.
+   */
+  it("promises exactly the distance the drive delivers, from anywhere on the field", () => {
+    const view = { widthPx: 800, heightPx: 400, maximized: false }
+    for (const seed of [1, 7, 21]) {
+      for (const start of [
+        { x: START_POSE.xMm, y: START_POSE.yMm },
+        { x: -2000, y: -1500 },
+        { x: 2500, y: 1800 },
+        { x: 4800, y: -2400 },
+      ]) {
+        for (let heading = 0; heading < 360; heading += 30) {
+          for (const distanceMm of [400, 2000, 9000]) {
+            const robot = { ...start, rotation: heading }
+            const label = `seed ${seed} at ${start.x},${start.y} heading ${heading} for ${distanceMm}`
+
+            const predicted = predictDrive({
+              playgroundId: roverRescue.id,
+              robot,
+              direction: "forward",
+              distanceMm,
+              world: roverRescue.world,
+              roverState: roverRescue.createState(seed),
+            })
+            const target = driveTargetMm(
+              roverRescue.id,
+              robot,
+              "forward",
+              distanceMm,
+              view,
+              roverRescue.createState(seed),
+            )
+
+            expect(target.xMm, label).toBeCloseTo(predicted.endMm.x, 6)
+            expect(target.yMm, label).toBeCloseTo(predicted.endMm.y, 6)
+          }
+        }
+      }
+    }
   })
 
   it("paints the loaded playground into the preview canvas", () => {

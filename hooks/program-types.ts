@@ -61,6 +61,8 @@ export interface ProgramGameState {
   runError: string | null
   showCelebration: boolean
   missionEndReason: "coral" | "battery" | "complete" | "river" | null
+  /** Rover Rescue in-game days survived. Ocean Reef leaves this at 0. */
+  missionDays: number
 }
 
 export interface RobotCapabilities {

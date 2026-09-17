@@ -93,6 +93,7 @@ export function useProgramRunner({
       gameLost: false,
       runError: null,
       missionEndReason: null,
+      missionDays: 0,
       showCelebration: false,
     }))
     setConsoleLines([])
@@ -306,6 +307,7 @@ export function useProgramRunner({
       runError: null,
       showCelebration: false,
       missionEndReason: null,
+      missionDays: 0,
       isSpawningTrash: false,
     })
     syncTrashItems([])

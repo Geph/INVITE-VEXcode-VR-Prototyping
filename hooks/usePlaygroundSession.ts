@@ -97,7 +97,6 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   const { cancelRobotAnimation, animateRobotFluidRef } = useRobotAnimation({
     playgroundId,
     playgroundMaximized: playgroundState.isMaximized,
-    roverStateRef,
     setRobotState,
     runtimeRef,
     setPenTrail,
@@ -174,7 +173,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
 
   const handlePlaygroundMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return
-    if ((e.target as HTMLElement).closest("#vex-playground-canvas, #vex-playground-zoom-controls, #vex-playground-coord-readout")) return
+    if ((e.target as HTMLElement).closest("#vex-playground-canvas, #vex-playground-zoom-controls, #vex-playground-mission-days")) return
     if ((e.target as HTMLElement).closest(".playground-header")) {
       setPlaygroundState((prev) => ({
         ...prev,
@@ -227,6 +226,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
         isSpawningTrash: false,
         batteryPercent: 100,
         missionEndReason: null,
+        missionDays: 0,
         showCelebration: false,
         isGameOver: false,
         gameLost: false,
@@ -245,6 +245,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
       isSpawningTrash: true,
       batteryPercent: 100,
       missionEndReason: null,
+      missionDays: 0,
       showCelebration: false,
       isGameOver: false,
       gameLost: false,

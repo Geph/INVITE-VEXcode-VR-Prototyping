@@ -2,7 +2,7 @@ import { clampRobotMm } from "@/playgrounds/ocean-reef"
 import { ROVER_RESCUE_ID } from "@/playgrounds/rover-rescue"
 import { clampRoverMm } from "@/playgrounds/rover-rescue/api"
 import { riverHazardFromState, type RoverRescueState } from "@/playgrounds/rover-rescue/state"
-import { resolveRoverMove } from "@/playgrounds/rover-rescue/systems/physics"
+import { planRoverDrive } from "@/playgrounds/rover-rescue/systems/physics"
 import type { PlaygroundView } from "./program-types"
 
 export function isRoverRescuePlayground(id: string): boolean {
@@ -28,20 +28,24 @@ export function driveTargetMm(
   view: PlaygroundView,
   roverState?: RoverRescueState | null,
 ): { xMm: number; yMm: number } {
+  if (isRoverRescuePlayground(playgroundId) && roverState) {
+    const plan = planRoverDrive({
+      from: { x: pose.x, y: pose.y },
+      headingDeg: pose.rotation,
+      direction,
+      distanceMm,
+      index: roverState.index,
+      hazard: riverHazardFromState(roverState),
+    })
+    roverState.blocked = plan.blocked
+    return { xMm: plan.endMm.x, yMm: plan.endMm.y }
+  }
+
   const sign = direction === "forward" ? 1 : -1
   const rad = (pose.rotation * Math.PI) / 180
   const rawX = pose.x + sign * distanceMm * Math.sin(rad)
   const rawY = isRoverRescuePlayground(playgroundId)
     ? pose.y + sign * distanceMm * Math.cos(rad)
     : pose.y - sign * distanceMm * Math.cos(rad)
-  const field = clampHostRobotMm(playgroundId, rawX, rawY, view)
-  if (!roverState || !isRoverRescuePlayground(playgroundId)) return field
-  const resolved = resolveRoverMove(
-    { x: pose.x, y: pose.y },
-    { x: field.xMm, y: field.yMm },
-    roverState.index,
-    riverHazardFromState(roverState),
-  )
-  roverState.blocked = resolved.blocked
-  return { xMm: resolved.xMm, yMm: resolved.yMm }
+  return clampHostRobotMm(playgroundId, rawX, rawY, view)
 }

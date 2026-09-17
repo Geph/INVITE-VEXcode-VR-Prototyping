@@ -5,22 +5,18 @@ import { useCallback, useRef } from "react"
 import { normalizeDegrees, shortestRotationDelta } from "@/lib/robot-runtime"
 import { poseToCanvas } from "@/playgrounds/ocean-reef"
 import type { AnimateRobotFluidFn, HostRobotPose, HostRobotState, ProgramRuntime } from "./program-types"
-import { riverHazardFromState, type RoverRescueState } from "@/playgrounds/rover-rescue/state"
-import { resolveRoverMove } from "@/playgrounds/rover-rescue/systems/physics"
 import { clampHostRobotMm, isRoverRescuePlayground } from "./playground-motion"
 import { reefViewFromMaximized } from "./playground-host"
 
 export function useRobotAnimation({
   playgroundId,
   playgroundMaximized,
-  roverStateRef,
   setRobotState,
   runtimeRef,
   setPenTrail,
 }: {
   playgroundId: string
   playgroundMaximized: boolean
-  roverStateRef?: React.MutableRefObject<RoverRescueState>
   setRobotState: React.Dispatch<React.SetStateAction<HostRobotState>>
   runtimeRef: React.MutableRefObject<ProgramRuntime>
   setPenTrail: React.Dispatch<
@@ -82,26 +78,16 @@ export function useRobotAnimation({
       // instead of hanging on a promise that would never settle.
       animationCancelRef.current = settle
 
-      /** Commit a frame: refs and pen first, then a pure state update. */
+      /**
+       * Commit a frame: refs and pen first, then a pure state update.
+       *
+       * Rover Rescue targets come from `planRoverDrive`, which has already
+       * stopped the path at the first obstacle or river cell. Re-resolving per
+       * frame here used to cut drives short of that plan, which is what made
+       * the distance picker's preview over-promise.
+       */
       const commit = (x: number, y: number, rotation: number) => {
-        let next = clampHostRobotMm(playgroundId, x, y, view)
-        if (isRoverRescuePlayground(playgroundId) && roverStateRef?.current) {
-          const resolved = resolveRoverMove(
-            { x: lastPoint.x, y: lastPoint.y },
-            { x: next.xMm, y: next.yMm },
-            roverStateRef.current.index,
-            riverHazardFromState(roverStateRef.current),
-          )
-          roverStateRef.current.blocked = resolved.blocked
-          next = { xMm: resolved.xMm, yMm: resolved.yMm }
-          if (resolved.blocked) {
-            poseRef.current = { x: next.xMm, y: next.yMm, rotation }
-            setRobotState((prev) => ({ ...prev, x: next.xMm, y: next.yMm, rotation }))
-            lastPoint = { x: next.xMm, y: next.yMm }
-            settle()
-            return "blocked" as const
-          }
-        }
+        const next = clampHostRobotMm(playgroundId, x, y, view)
         if (next.xMm !== lastPoint.x || next.yMm !== lastPoint.y) {
           if (!isRoverRescuePlayground(playgroundId)) {
             recordPenSegment(poseToCanvas(lastPoint.x, lastPoint.y, view), poseToCanvas(next.xMm, next.yMm, view))
@@ -110,26 +96,26 @@ export function useRobotAnimation({
         }
         poseRef.current = { x: next.xMm, y: next.yMm, rotation }
         setRobotState((prev) => ({ ...prev, x: next.xMm, y: next.yMm, rotation }))
-        return "ok" as const
       }
 
       const animate = (currentTime: number) => {
         const elapsed = currentTime - startTime
+        // Linear: the rover holds the velocity it was set to and then stops,
+        // rather than easing out over the last third of every move.
         const progress = Math.min(elapsed / duration, 1)
-        const easeProgress = 1 - Math.pow(1 - progress, 3) // Ease-out cubic
 
         const current = { ...poseRef.current }
         if (targetState.x !== undefined) {
-          current.x = startState.x + (targetState.x - startState.x) * easeProgress
+          current.x = startState.x + (targetState.x - startState.x) * progress
         }
         if (targetState.y !== undefined) {
-          current.y = startState.y + (targetState.y - startState.y) * easeProgress
+          current.y = startState.y + (targetState.y - startState.y) * progress
         }
         if (targetState.rotation !== undefined) {
           const delta = shortestRotationDelta(startState.rotation, targetState.rotation)
-          current.rotation = normalizeDegrees(startState.rotation + delta * easeProgress)
+          current.rotation = normalizeDegrees(startState.rotation + delta * progress)
         }
-        if (commit(current.x, current.y, current.rotation) === "blocked") return
+        commit(current.x, current.y, current.rotation)
 
         if (progress < 1) {
           animationRef.current = requestAnimationFrame(animate)

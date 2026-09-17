@@ -145,6 +145,23 @@ export const ENEMY_BASE_CLEARANCE_MM = 2000
 export const ROVER_HIT_RADIUS_MM = ROVER_WIDTH_MM / 2
 export const MOVE_STEP_MM = 24
 
+/**
+ * Minerals are cargo, not terrain: the rover shoves them aside instead of
+ * stopping. A pushed sample is placed this far past the rover's hull so it
+ * leaves the corridor rather than jittering against it for the whole drive.
+ * TUNABLE.
+ */
+export const MINERAL_PUSH_MARGIN_MM = 6
+
+/**
+ * DOC: the mission runs 50 in-game days. Day length in real milliseconds is
+ * not published, so this is TUNABLE: at 5 s a day, crossing the 12 m field at
+ * the default 50% velocity costs roughly 24 days, which makes the 50-day
+ * mission about two field crossings of driving.
+ */
+export const MISSION_DAYS = 50
+export const DAY_MS = 5000
+
 /** Spec § Sensing. Detect is a radar; sight is a forward cone. */
 export const AI_DETECT_RANGE_MM = 800
 export const AI_SIGHT_RANGE_MM = 1000

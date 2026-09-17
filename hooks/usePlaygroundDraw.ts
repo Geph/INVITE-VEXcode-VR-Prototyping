@@ -22,7 +22,7 @@ import {
 } from "@/playgrounds/ocean-reef"
 import type { Camera } from "@/engine"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
-import { tickRoverRescue, type RoverRescueState } from "@/playgrounds/rover-rescue"
+import { daysFromMs, tickRoverRescue, type RoverRescueState } from "@/playgrounds/rover-rescue"
 import { isRoverRescuePlayground } from "./playground-motion"
 import type { HostRobotState, ProgramGameState, ProgramRuntime } from "./program-types"
 import {
@@ -52,6 +52,7 @@ export function usePlaygroundDraw({
   setGameState,
   gameState,
   onRoverMissionOver,
+  onRoverDayChange,
 }: {
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   playgroundId: string
@@ -71,13 +72,19 @@ export function usePlaygroundDraw({
   commitReefState: (next: OceanReefState) => void
   setGameState: React.Dispatch<React.SetStateAction<ProgramGameState>>
   gameState: ProgramGameState
-  onRoverMissionOver?: (reason: string) => void
+  onRoverMissionOver?: (reason: string, days: number) => void
+  onRoverDayChange?: (days: number) => void
 }) {
   const floatAnimationRef = useRef<number | null>(null)
   const roverCameraRef = useRef(roverCamera)
   roverCameraRef.current = roverCamera
   const robotStateRef = useRef(robotState)
   robotStateRef.current = robotState
+  // The rover loop must not restart when the run state flips, so it reads refs.
+  const isRunningRef = useRef(isRunning)
+  isRunningRef.current = isRunning
+  const missionCallbacksRef = useRef({ onRoverMissionOver, onRoverDayChange })
+  missionCallbacksRef.current = { onRoverMissionOver, onRoverDayChange }
   const roverPlayground = isRoverRescuePlayground(playgroundId)
 
   const drawRobot = useCallback(() => {
@@ -208,14 +215,27 @@ export function usePlaygroundDraw({
     if (!roverPlayground || !playgroundState.isVisible || playgroundState.isMinimized) return
     let frame = 0
     let last = performance.now()
+    let reportedTenths = -1
     const loop = (now: number) => {
       const dt = Math.min(64, now - last)
       last = now
       const robot = toEngineRobot(robotStateRef.current)
       const prevOver = roverStateRef.current.missionOver
-      roverStateRef.current = tickRoverRescue(roverStateRef.current, dt, robot)
+      roverStateRef.current = tickRoverRescue(roverStateRef.current, dt, robot, {
+        missionRunning: isRunningRef.current,
+      })
+      const days = daysFromMs(roverStateRef.current.missionMs)
+      // The readout shows tenths, so React only hears about it twice a day.
+      const tenths = Math.floor(days * 10)
+      if (tenths !== reportedTenths) {
+        reportedTenths = tenths
+        missionCallbacksRef.current.onRoverDayChange?.(days)
+      }
       if (roverStateRef.current.missionOver && !prevOver) {
-        onRoverMissionOver?.(roverStateRef.current.missionReason ?? "river")
+        missionCallbacksRef.current.onRoverMissionOver?.(
+          roverStateRef.current.missionReason ?? "river",
+          days,
+        )
       }
       const canvas = canvasRef.current
       const ctx = canvas?.getContext("2d")

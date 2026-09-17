@@ -57,6 +57,7 @@ export const INITIAL_GAME_STATE: ProgramGameState = {
   runError: null,
   showCelebration: false,
   missionEndReason: null,
+  missionDays: 0,
 }
 
 export const INITIAL_PLAYGROUND_CHROME: PlaygroundChromeState = {

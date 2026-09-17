@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { screenToWorld, type Camera, type Vec2, type Viewport } from "@/engine"
+import { type Camera, type Vec2, type Viewport } from "@/engine"
 import {
   CAMERA,
   FIELD_BOUNDS,
@@ -58,7 +58,6 @@ export function useRoverCamera({
 }) {
   const [userScale, setUserScale] = useState(FIT_USER_ZOOM)
   const [follow, setFollow] = useState<boolean>(FOLLOW_ROVER && CAMERA.follow)
-  const [cursorWorld, setCursorWorld] = useState<Vec2 | null>(null)
   const [camera, setCamera] = useState<Camera>(() =>
     cameraFromUserScale(FIT_USER_ZOOM, { x: 0, y: 0 }, viewport),
   )
@@ -159,9 +158,6 @@ export function useRoverCamera({
       const view = viewportRef.current
       const point = pointOnCanvas(event.clientX, event.clientY)
       const pan = panningRef.current
-      if (!pan?.active) {
-        setCursorWorld(screenToWorld(point, cameraRef.current, view))
-      }
       if (!pan) return
       const dx = point.x - pan.x
       const dy = point.y - pan.y
@@ -182,10 +178,6 @@ export function useRoverCamera({
         canvas.style.cursor = "grab"
         if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
       }
-    }
-
-    const onPointerLeave = () => {
-      if (!panningRef.current) setCursorWorld(null)
     }
 
     const touchDistance = (touches: TouchList) => {
@@ -234,7 +226,6 @@ export function useRoverCamera({
     canvas.addEventListener("pointermove", onPointerMove)
     canvas.addEventListener("pointerup", endPan)
     canvas.addEventListener("pointercancel", endPan)
-    canvas.addEventListener("pointerleave", onPointerLeave)
     canvas.addEventListener("touchstart", onTouchStart, { passive: true })
     canvas.addEventListener("touchmove", onTouchMove, { passive: false })
     canvas.addEventListener("touchend", onTouchEnd)
@@ -248,7 +239,6 @@ export function useRoverCamera({
       canvas.removeEventListener("pointermove", onPointerMove)
       canvas.removeEventListener("pointerup", endPan)
       canvas.removeEventListener("pointercancel", endPan)
-      canvas.removeEventListener("pointerleave", onPointerLeave)
       canvas.removeEventListener("touchstart", onTouchStart)
       canvas.removeEventListener("touchmove", onTouchMove)
       canvas.removeEventListener("touchend", onTouchEnd)
@@ -259,7 +249,6 @@ export function useRoverCamera({
     camera,
     userScale,
     follow,
-    cursorWorld,
     fieldBounds: FIELD_BOUNDS,
     minZoom: MIN_USER_ZOOM,
     maxZoom: MAX_USER_ZOOM,

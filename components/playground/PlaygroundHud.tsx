@@ -7,6 +7,7 @@ import { PlaygroundCanvas } from "@/components/playground/PlaygroundCanvas"
 import { RunToolbar } from "@/components/workspace/Toolbar"
 import type { SurveyStep } from "@/components/ai-assistant"
 import { CORAL_REEF_FIELD_MM } from "@/lib/robot-runtime"
+import { formatDays, MISSION_DAYS } from "@/playgrounds/rover-rescue"
 import type { ConsoleLine, ProgramGameState } from "@/hooks/program-types"
 import type { LiveSensors } from "@/hooks/playground-host"
 
@@ -189,7 +190,11 @@ export function PlaygroundHud({
             {gameState.missionEndReason === "complete" ? (
               <>
                 <h3 className="text-2xl font-bold text-green-600 mb-2">Mission complete!</h3>
-                <p className="text-gray-600 mb-4">All trash collected before the battery ran out.</p>
+                <p className="text-gray-600 mb-4">
+                  {chrome === "field"
+                    ? `The rover survived the full ${MISSION_DAYS}-day mission.`
+                    : "All trash collected before the battery ran out."}
+                </p>
               </>
             ) : gameState.missionEndReason === "river" ? (
               <>
@@ -212,10 +217,14 @@ export function PlaygroundHud({
                 <p className="text-gray-600 mb-4">The robot collided with the coral reef.</p>
               </>
             )}
-            {chrome === "reef" && (
-            <p id="vex-playground-gameover-score" className="text-lg font-semibold text-orange-500 mb-4">
-              Trash collected: {gameState.trashCollected}
-            </p>
+            {chrome === "reef" ? (
+              <p id="vex-playground-gameover-score" className="text-lg font-semibold text-orange-500 mb-4">
+                Trash collected: {gameState.trashCollected}
+              </p>
+            ) : (
+              <p id="vex-playground-gameover-days" className="text-lg font-semibold text-orange-500 mb-4">
+                Days survived: {formatDays(gameState.missionDays)}
+              </p>
             )}
             <Button id="vex-playground-gameover-retry" onClick={onReset} className="bg-purple-500 hover:bg-purple-600 text-white">
               Try Again

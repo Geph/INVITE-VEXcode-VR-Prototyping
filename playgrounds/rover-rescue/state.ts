@@ -10,9 +10,17 @@ import {
   type RiverHazard,
   type ZoneSpec,
 } from "./map-spec"
-import { buildEntityIndex, type EnemyEntity, type MineralEntity, type ObstacleEntity, type RoverEntity } from "./entities"
+import {
+  buildEntityIndex,
+  placeMineral,
+  type EnemyEntity,
+  type MineralEntity,
+  type ObstacleEntity,
+  type RoverEntity,
+} from "./entities"
+import { missionComplete } from "./mission"
 import { wanderEnemies } from "./systems/enemy-ai"
-import { isRiverHazard } from "./systems/physics"
+import { isRiverHazard, pushedMinerals, type MineralPush } from "./systems/physics"
 import {
   computeSensing,
   emptySensing,
@@ -20,9 +28,14 @@ import {
 } from "./systems/sensing"
 import { applyMineralRespawns, scheduleMineralRespawn, spawnWorld, type MineralRespawn } from "./systems/spawn"
 
+/** `river` ends the mission early; `days` means the full 50 days were survived. */
+export type MissionReason = "river" | "days"
+
 export interface RoverRescueState {
   seed: number
   elapsedMs: number
+  /** Time the rover has spent on task. Only advances while a program runs. */
+  missionMs: number
   debug: boolean
   zones: ZoneSpec[]
   riverCenterline: Vec2[]
@@ -34,7 +47,7 @@ export interface RoverRescueState {
   blocked: boolean
   driveMoving: boolean
   missionOver: boolean
-  missionReason?: string
+  missionReason?: MissionReason
   index: SpatialHash<RoverEntity>
   sensing: SensorSnapshot
   aiVisualisation: boolean
@@ -49,6 +62,7 @@ export function createRoverRescueState(seed: number, debug = false): RoverRescue
   return {
     seed,
     elapsedMs: 0,
+    missionMs: 0,
     debug,
     zones,
     riverCenterline,
@@ -72,8 +86,20 @@ export function resetRoverRescueState(state: RoverRescueState, seed: number): Ro
   return next
 }
 
-export function tickRoverRescue(state: RoverRescueState, dtMs: number, robot?: RobotState): RoverRescueState {
+export interface RoverTickOptions {
+  /** The mission clock is paused unless a program is actually running. */
+  missionRunning?: boolean
+}
+
+export function tickRoverRescue(
+  state: RoverRescueState,
+  dtMs: number,
+  robot?: RobotState,
+  options: RoverTickOptions = {},
+): RoverRescueState {
   const elapsedMs = state.elapsedMs + Math.max(0, dtMs)
+  const running = options.missionRunning === true && !state.missionOver
+  const missionMs = running ? state.missionMs + Math.max(0, dtMs) : state.missionMs
   const hazard = riverHazardFromState(state)
   const enemies = wanderEnemies(state.enemies, elapsedMs, state.index, hazard, state.bridges)
   const afterWander = buildEntityIndex({ obstacles: state.obstacles, minerals: state.minerals, enemies })
@@ -87,24 +113,57 @@ export function tickRoverRescue(state: RoverRescueState, dtMs: number, robot?: R
     state.bridges,
     state.zones,
   )
-  const index = buildEntityIndex({
+  const settled = buildEntityIndex({
     obstacles: state.obstacles,
     minerals: respawned.minerals,
     enemies,
   })
+  const pushes = robot
+    ? pushedMinerals({
+        minerals: respawned.minerals,
+        rover: { x: robot.xMm, y: robot.yMm },
+        headingDeg: robot.headingDeg,
+        index: settled,
+        hazard,
+      })
+    : []
+  const minerals = applyMineralPushes(respawned.minerals, pushes)
+  const index = pushes.length
+    ? buildEntityIndex({ obstacles: state.obstacles, minerals, enemies })
+    : settled
   const inRiver = robot ? isRiverHazard({ x: robot.xMm, y: robot.yMm }, hazard) : false
+  const outOfDays = missionComplete(missionMs)
   const sensing = robot ? computeSensing(robot, index, hazard, state.bridges) : emptySensing()
   return {
     ...state,
     elapsedMs,
+    missionMs,
     enemies,
-    minerals: respawned.minerals,
+    minerals,
     mineralRespawns: respawned.queue,
     index,
     sensing,
-    missionOver: state.missionOver || inRiver,
-    missionReason: state.missionOver ? state.missionReason : inRiver ? "river" : state.missionReason,
+    missionOver: state.missionOver || inRiver || outOfDays,
+    missionReason: state.missionOver
+      ? state.missionReason
+      : inRiver
+        ? "river"
+        : outOfDays
+          ? "days"
+          : state.missionReason,
   }
+}
+
+function applyMineralPushes(
+  minerals: readonly MineralEntity[],
+  pushes: readonly MineralPush[],
+): MineralEntity[] {
+  if (pushes.length === 0) return minerals as MineralEntity[]
+  const moved = new Map(pushes.map((push) => [push.id, push.toMm]))
+  return minerals.map((mineral) => {
+    const to = moved.get(mineral.id)
+    return to ? placeMineral(mineral, to) : mineral
+  })
 }
 
 export function riverHazardFromState(state: RoverRescueState): RiverHazard {

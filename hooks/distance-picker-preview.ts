@@ -10,9 +10,8 @@ import {
 import { reefScreenToWorld, reefWorldToScreen } from "@/playgrounds/ocean-reef/art"
 import type { OceanReefState } from "@/playgrounds/ocean-reef"
 import type { RoverRescueState } from "@/playgrounds/rover-rescue"
-import { clampRoverMm } from "@/playgrounds/rover-rescue/api"
 import { riverHazardFromState } from "@/playgrounds/rover-rescue/state"
-import { resolveRoverMove } from "@/playgrounds/rover-rescue/systems/physics"
+import { planRoverDrive, type DrivePlan } from "@/playgrounds/rover-rescue/systems/physics"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
 import { toEngineRobot } from "./playground-host"
 import { isRoverRescuePlayground } from "./playground-motion"
@@ -84,16 +83,13 @@ function unproject(
   return reefScreenToWorld(point.x, point.y, cam, viewport)
 }
 
-export interface DrivePrediction {
-  /** Where the rover ends up, after walls, obstacles and the river. */
-  endMm: { x: number; y: number }
-  requestedMm: number
-  reachableMm: number
-  blocked: boolean
-  inRiver: boolean
-}
+/** Ocean Reef only ever hits walls, so it reuses the rover's plan shape. */
+export type DrivePrediction = DrivePlan
 
-/** What the drive will actually do, so the preview matches the run. */
+/**
+ * What the drive will actually do. Rover Rescue defers to the same planner the
+ * drive itself uses, so the dashed line and the run cannot disagree.
+ */
 export function predictDrive({
   playgroundId,
   robot,
@@ -109,33 +105,30 @@ export function predictDrive({
   world: { widthMm: number; heightMm: number }
   roverState: RoverRescueState
 }): DrivePrediction {
-  const raw = driveEndMm(playgroundId, robot, direction, distanceMm)
-  const reached = (end: { x: number; y: number }, blocked: boolean, inRiver: boolean): DrivePrediction => ({
-    endMm: end,
-    requestedMm: distanceMm,
-    reachableMm: Math.hypot(end.x - robot.x, end.y - robot.y),
-    blocked,
-    inRiver,
-  })
-
-  if (!isRoverRescuePlayground(playgroundId)) {
-    const bounds = playgroundWorldBounds(world)
-    const clamped = {
-      x: Math.min(bounds.maxX, Math.max(bounds.minX, raw.x)),
-      y: Math.min(bounds.maxY, Math.max(bounds.minY, raw.y)),
-    }
-    const hitWall = clamped.x !== raw.x || clamped.y !== raw.y
-    return reached(clamped, hitWall, false)
+  if (isRoverRescuePlayground(playgroundId)) {
+    return planRoverDrive({
+      from: { x: robot.x, y: robot.y },
+      headingDeg: robot.rotation,
+      direction,
+      distanceMm,
+      index: roverState.index,
+      hazard: riverHazardFromState(roverState),
+    })
   }
 
-  const wall = clampRoverMm(raw.x, raw.y)
-  const resolved = resolveRoverMove(
-    { x: robot.x, y: robot.y },
-    { x: wall.xMm, y: wall.yMm },
-    roverState.index,
-    riverHazardFromState(roverState),
-  )
-  return reached({ x: resolved.xMm, y: resolved.yMm }, resolved.blocked, resolved.inRiver)
+  const raw = driveEndMm(playgroundId, robot, direction, distanceMm)
+  const bounds = playgroundWorldBounds(world)
+  const endMm = {
+    x: Math.min(bounds.maxX, Math.max(bounds.minX, raw.x)),
+    y: Math.min(bounds.maxY, Math.max(bounds.minY, raw.y)),
+  }
+  return {
+    endMm,
+    requestedMm: distanceMm,
+    reachableMm: Math.hypot(endMm.x - robot.x, endMm.y - robot.y),
+    blocked: endMm.x !== raw.x || endMm.y !== raw.y,
+    inRiver: false,
+  }
 }
 
 /** One line of plain language under the preview. */

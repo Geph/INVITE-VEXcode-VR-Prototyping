@@ -5,7 +5,7 @@ import { AngleWheelPicker, CompassPicker } from "@/blocks/fields"
 import { installAllBlocks } from "@/blocks/registry"
 import { flyoutContents } from "@/blocks/toolbox"
 import { AIAssistant, type AIAssistantHandle, type SurveyStep } from "@/components/ai-assistant"
-import { CoordinateReadout } from "@/components/playground/CoordinateReadout"
+import { MissionDayReadout } from "@/components/playground/MissionDayReadout"
 import { PlaygroundHud } from "@/components/playground/PlaygroundHud"
 import { PlaygroundPicker } from "@/components/playground/PlaygroundPicker"
 import { PlaygroundWindow } from "@/components/playground/PlaygroundWindow"
@@ -126,18 +126,23 @@ export function VexWorkbench() {
     commitReefState: session.commitReefState,
     setGameState: session.setGameState,
     gameState: session.gameState,
-    onRoverMissionOver: (reason) => {
+    onRoverMissionOver: (reason, days) => {
       stopRequestedRef.current = true
       session.cancelRobotAnimation()
       isRunningRef.current = false
       setIsRunning(false)
+      const survived = reason === "days"
       session.setGameState((prev) => ({
         ...prev,
         isGameOver: true,
-        missionEndReason: "river",
-        gameLost: true,
-        runError: reason === "river" ? "The rover entered the river." : reason,
+        missionEndReason: survived ? "complete" : "river",
+        gameLost: !survived,
+        missionDays: days,
+        runError: survived ? null : "The rover entered the river.",
       }))
+    },
+    onRoverDayChange: (days) => {
+      session.setGameState((prev) => (prev.isGameOver ? prev : { ...prev, missionDays: days }))
     },
   })
 
@@ -309,18 +314,7 @@ export function VexWorkbench() {
             aiStep={aiStep}
             onCloseStrategy={() => setAiStep("strategy")}
             chrome={roverField ? "field" : "reef"}
-            toolbarTrailing={
-              roverField ? (
-                <CoordinateReadout
-                  cursorWorld={roverCam.cursorWorld}
-                  rover={{
-                    x: session.robotState.x,
-                    y: session.robotState.y,
-                    heading: session.robotState.rotation,
-                  }}
-                />
-              ) : null
-            }
+            toolbarTrailing={roverField ? <MissionDayReadout days={session.gameState.missionDays} /> : null}
             canvasOverlay={
               roverField ? (
                 <>
