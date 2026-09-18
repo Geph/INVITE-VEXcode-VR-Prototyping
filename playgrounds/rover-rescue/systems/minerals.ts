@@ -9,7 +9,7 @@
 
 import type { Vec2 } from "@/engine"
 import { MINERAL_USE_RANGE_MM } from "../config"
-import type { MineralEntity } from "../entities"
+import { placeMineral, type MineralEntity } from "../entities"
 
 /** Closest sample on the ground the rover could use or pick up from here. */
 export function nearestUsableMineral(
@@ -113,4 +113,16 @@ export function markStorageDelivered(
   })
   if (delivered.length === 0) return null
   return { minerals: next, delivered }
+}
+
+export function applyMineralPushes(
+  minerals: readonly MineralEntity[],
+  pushes: readonly { id: string; toMm: Vec2 }[],
+): MineralEntity[] {
+  if (pushes.length === 0) return minerals as MineralEntity[]
+  const moved = new Map(pushes.map((push) => [push.id, push.toMm]))
+  return minerals.map((mineral) => {
+    const to = moved.get(mineral.id)
+    return to ? placeMineral(mineral, to) : mineral
+  })
 }

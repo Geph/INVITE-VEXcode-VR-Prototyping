@@ -40,4 +40,8 @@ export interface PlaygroundDefinition<S = unknown> {
   isMissionOver(state: S): { over: boolean; reason?: string; won?: boolean }
   /** End-of-run summary. Telemetry is the only consumer. */
   outcomeParameters?(state: S): Record<string, unknown>
+  /** INVITE-only stats. Never merge these into `outcomeParameters`. */
+  inviteTelemetry?(state: S): object
+  /** STOP (or the stop-project block) marks the run as ended by the learner. */
+  markStoppedByUser?(state: S): S
 }

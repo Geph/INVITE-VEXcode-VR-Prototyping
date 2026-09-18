@@ -12,7 +12,6 @@ import {
 } from "./map-spec"
 import {
   buildEntityIndex,
-  placeMineral,
   type EnemyEntity,
   type MineralEntity,
   type ObstacleEntity,
@@ -30,19 +29,28 @@ import { batteryEmpty, clampBattery, drainBattery } from "./systems/battery"
 import { absorbNearestEnemy, tickCombat } from "./systems/combat"
 import { capacityForLevel, levelFromXp } from "./systems/leveling"
 import {
+  applyMineralPushes,
   dropLatestMineral,
   markStorageDelivered,
   nearestUsableMineral,
   pickupNearestMineral,
   type PickupFail,
 } from "./systems/minerals"
-import { isOnBasePad, isRiverHazard, pushedMinerals, type MineralPush } from "./systems/physics"
+import { isOnBasePad, isRiverHazard, pushedMinerals } from "./systems/physics"
 import {
   computeSensing,
   emptySensing,
   type SensorSnapshot,
 } from "./systems/sensing"
 import { applyMineralRespawns, scheduleMineralRespawn, spawnWorld, type MineralRespawn } from "./systems/spawn"
+import {
+  accumulateMotion,
+  emptyOutcomeLog,
+  recordEnemyNeutralized,
+  recordMineralConsumed,
+  recordMineralsDelivered,
+  type RoverOutcomeLog,
+} from "./systems/outcome"
 
 /** `river` and `battery` end the mission early; `days` means all 50 were survived. */
 export type MissionReason = "river" | "battery" | "days"
@@ -88,6 +96,8 @@ export interface RoverRescueState {
   index: SpatialHash<RoverEntity>
   sensing: SensorSnapshot
   aiVisualisation: boolean
+  /** Lifetime counters for playgroundData. Survives Continue re-irradiation. */
+  outcome: RoverOutcomeLog
 }
 
 export function createRoverRescueState(seed: number, debug = false): RoverRescueState {
@@ -124,6 +134,7 @@ export function createRoverRescueState(seed: number, debug = false): RoverRescue
     index: buildEntityIndex(spawned),
     sensing: emptySensing(),
     aiVisualisation: false,
+    outcome: emptyOutcomeLog(),
   }
 }
 
@@ -218,6 +229,7 @@ export function tickRoverRescue(
   return {
     ...banked,
     sensing,
+    outcome: accumulateMotion(banked.outcome, rover, state.zones, state.bridges),
     day50Dialog,
     missionOver: state.missionOver || inRiver || flat,
     missionReason: state.missionOver
@@ -245,6 +257,7 @@ export function useMineralOnGround(
     state: {
       ...applyXp(consumed, XP_USE_MINERAL),
       batteryPercent: clampBattery(BATTERY_START_PCT),
+      outcome: recordMineralConsumed(consumed.outcome),
     },
     used: true,
   }
@@ -288,6 +301,7 @@ export function deliverStorageToBase(state: RoverRescueState): RoverRescueState 
   return {
     ...applyXp(withMinerals(state, patch.minerals, []), XP_MINERAL_TO_BASE * patch.delivered.length),
     mineralRespawns: [...state.mineralRespawns, ...jobs],
+    outcome: recordMineralsDelivered(state.outcome, patch.delivered.length),
   }
 }
 
@@ -327,6 +341,9 @@ export function absorbEnemyRadiation(
     ),
   }
   if (result.xpDelta > 0) next = applyXp(next, result.xpDelta)
+  if (result.neutralized) {
+    next = { ...next, outcome: recordEnemyNeutralized(next.outcome, result.neutralized) }
+  }
   return { state: next, absorbed: true }
 }
 
@@ -352,18 +369,6 @@ function withMinerals(
     storage,
     index: buildEntityIndex({ obstacles: state.obstacles, minerals, enemies: state.enemies }),
   }
-}
-
-function applyMineralPushes(
-  minerals: readonly MineralEntity[],
-  pushes: readonly MineralPush[],
-): MineralEntity[] {
-  if (pushes.length === 0) return minerals as MineralEntity[]
-  const moved = new Map(pushes.map((push) => [push.id, push.toMm]))
-  return minerals.map((mineral) => {
-    const to = moved.get(mineral.id)
-    return to ? placeMineral(mineral, to) : mineral
-  })
 }
 
 export function riverHazardFromState(state: RoverRescueState): RiverHazard {

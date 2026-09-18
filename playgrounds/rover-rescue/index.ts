@@ -12,11 +12,23 @@ import {
 } from "./config"
 import { renderRoverRescue, renderRoverRescueOverlay } from "./render"
 import { createRoverRescueState, resetRoverRescueState, tickRoverRescue, type RoverRescueState } from "./state"
+import {
+  roverInviteStats,
+  roverOutcomeParameters,
+  withStoppedByUser,
+} from "./systems/outcome"
 
 export type { MissionReason, RoverRescueState, RoverTickOptions } from "./state"
 export { createRoverRescueState, resetRoverRescueState, tickRoverRescue } from "./state"
 export { clampRoverMm, createRoverRescueApi } from "./api"
 export { daysFromMs, formatDays, missionComplete, msFromDays } from "./mission"
+export {
+  roverInviteStats,
+  roverOutcomeParameters,
+  roverPlaygroundData,
+  withStoppedByUser,
+} from "./systems/outcome"
+export type { RoverInviteStats, RoverPlaygroundData } from "./systems/outcome"
 export { useMineralOnGround, pickupMineral, dropMineral, deliverStorageToBase, absorbEnemyRadiation } from "./state"
 export { batteryEmpty, clampBattery, drainBattery, drainRatePctPerDay } from "./systems/battery"
 export {
@@ -121,5 +133,14 @@ export const roverRescue: PlaygroundDefinition<RoverRescueState> = {
   isMissionOver(state) {
     // Surviving all 50 days is the win condition; the river is the loss.
     return { over: state.missionOver, reason: state.missionReason, won: state.missionReason === "days" }
+  },
+  outcomeParameters(state) {
+    return roverOutcomeParameters(state)
+  },
+  inviteTelemetry(state) {
+    return roverInviteStats(state)
+  },
+  markStoppedByUser(state) {
+    return withStoppedByUser(state)
   },
 }

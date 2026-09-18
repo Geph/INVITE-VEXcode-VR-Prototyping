@@ -1,5 +1,8 @@
 /** In-memory session log. Telemetry failures never break the app. */
 
+import { stampInvite, type InviteEnvelope } from "@/telemetry/emitter"
+import { getSessionID, resetIdentity } from "@/telemetry/identity"
+
 export interface SessionLogEvent {
   t: string
   type: string
@@ -16,17 +19,10 @@ export interface SessionLogFile extends SessionLogSnapshot {
   sessionId: string
   exportedAt: string
   events: SessionLogEvent[]
+  _invite: InviteEnvelope
 }
 
-let sessionId = newSessionId()
 const events: SessionLogEvent[] = []
-
-function newSessionId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID()
-  }
-  return `session-${Date.now()}`
-}
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -41,14 +37,14 @@ export function recordSessionEvent(type: string, data?: Record<string, unknown>)
 }
 
 export function buildSessionLog(snapshot: SessionLogSnapshot = {}): SessionLogFile {
-  return {
-    sessionId,
+  return stampInvite({
+    sessionId: getSessionID(),
     exportedAt: nowIso(),
     playgroundId: snapshot.playgroundId,
     console: snapshot.console,
     workspaceXml: snapshot.workspaceXml,
     events: events.slice(),
-  }
+  })
 }
 
 export function downloadSessionLog(file: SessionLogFile): void {
@@ -64,7 +60,7 @@ export function downloadSessionLog(file: SessionLogFile): void {
 
 export function resetSessionLog(): void {
   events.length = 0
-  sessionId = newSessionId()
+  resetIdentity()
 }
 
 export function getSessionEvents(): readonly SessionLogEvent[] {

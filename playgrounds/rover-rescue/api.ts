@@ -125,6 +125,7 @@ export function createRoverRescueApi(deps: PlaygroundApiDeps<RoverRescueState>) 
     standbyUntil(percent: unknown) {
       return runStandby(deps.world, deps.robot.current, percent, deps.stopped)
     },
+    async goToObject(_kind: string, _wait = true) {},
     absorbRadiation() {
       const result = absorbEnemyRadiation(deps.world.current, originOf(deps))
       if (!result.absorbed) {

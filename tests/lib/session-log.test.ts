@@ -28,6 +28,8 @@ describe("session log", () => {
     expect(file.events.map((event) => event.type)).toEqual(["run_start", "run_end"])
     expect(file.events[0]?.data).toEqual({ playgroundId: "ocean-reef", step: false })
     expect(file.exportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(file._invite.actorID).toBe("INVITE-C000")
+    expect(file._invite.workspaceID).toBe(file.sessionId)
   })
 
   it("does not throw when recording", () => {

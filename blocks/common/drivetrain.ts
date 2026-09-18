@@ -106,6 +106,30 @@ function defineBlocks(Blockly: any) {
     },
   }
 
+  Blockly.Blocks["pg_drivetrain_go_to_object"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("go to")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["minerals", "minerals"],
+            ["enemy", "enemy"],
+            ["base", "base"],
+          ]),
+          "OBJECT",
+        )
+        .appendField(vexRunArrowField(Blockly), "RUN_ARROW")
+      attachAndDontWaitField(this, Blockly)
+      this.setPreviousStatement(true, null)
+      this.setNextStatement(true, null)
+      this.setColour("#4A90E2")
+      this.setTooltip("Drive to the nearest detected or seen object of this kind")
+      this.onchange = function () {
+        syncAndDontWaitLabel(this)
+      }
+    },
+  }
+
   Blockly.Blocks["pg_drivetrain_turn_to_heading"] = {
     init: function () {
       this.appendDummyInput()
@@ -243,6 +267,12 @@ const jsGenerators = {
     const call = `robot.turn('${direction}', ${degrees}${waitArg})`
     return isAndDontWait(block) ? `${call};\n` : `await ${call};\n`
   },
+  pg_drivetrain_go_to_object: (block: any) => {
+    const object = block.getFieldValue("OBJECT")
+    const waitArg = isAndDontWait(block) ? ", false" : ""
+    const call = `robot.goToObject('${object}'${waitArg})`
+    return isAndDontWait(block) ? `${call};\n` : `await ${call};\n`
+  },
   pg_drivetrain_turn_to_heading: (block: any) => {
     const heading = block.getFieldValue("HEADING")
     return `await robot.turnToHeading(${heading});\n`
@@ -291,6 +321,10 @@ const pythonGenerators: PythonGenerators = {
     pg_drivetrain_turn_for: (block, indent, { constant, pyNumber }) => {
       const wait = isAndDontWait(block) ? ", wait=False" : ""
       return `${indent}drivetrain.turn_for(${constant(block.getFieldValue("DIRECTION"))}, ${pyNumber(block.getFieldValue("DEGREES"), 90)}, DEGREES${wait})\n`
+    },
+    pg_drivetrain_go_to_object: (block, indent, { constant }) => {
+      const wait = isAndDontWait(block) ? ", wait=False" : ""
+      return `${indent}rover.go_to(${constant(block.getFieldValue("OBJECT"))}${wait})\n`
     },
     pg_drivetrain_turn_to_heading: (block, indent, { pyNumber }) =>
       `${indent}drivetrain.turn_to_heading(${pyNumber(block.getFieldValue("HEADING"))}, DEGREES)\n`,

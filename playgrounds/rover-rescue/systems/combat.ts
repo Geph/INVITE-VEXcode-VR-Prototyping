@@ -57,6 +57,7 @@ export interface AbsorbResult {
   batteryPercent: number
   xpDelta: number
   absorbed: boolean
+  neutralized: EnemyEntity | null
 }
 
 export function xpForNeutralizing(enemy: EnemyEntity): number {
@@ -106,6 +107,7 @@ export function absorbNearestEnemy(input: AbsorbInput): AbsorbResult {
       batteryPercent: input.batteryPercent,
       xpDelta: 0,
       absorbed: false,
+      neutralized: null,
     }
   }
   const damage = ABSORB_DAMAGE_PER_ROVER_LEVEL * input.roverLevel
@@ -123,6 +125,7 @@ export function absorbNearestEnemy(input: AbsorbInput): AbsorbResult {
     batteryPercent: clampBattery(input.batteryPercent + gained),
     xpDelta: neutralized ? xpForNeutralizing(target) : 0,
     absorbed: true,
+    neutralized: neutralized ? target : null,
   }
 }
 

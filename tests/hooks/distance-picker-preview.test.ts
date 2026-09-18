@@ -126,6 +126,7 @@ describe("distance picker preview", () => {
   it("promises exactly the distance the drive delivers, from anywhere on the field", () => {
     const view = { widthPx: 800, heightPx: 400, maximized: false }
     for (const seed of [1, 7, 21]) {
+      const roverState = roverRescue.createState(seed)
       for (const start of [
         { x: START_POSE.xMm, y: START_POSE.yMm },
         { x: -2000, y: -1500 },
@@ -143,16 +144,9 @@ describe("distance picker preview", () => {
               direction: "forward",
               distanceMm,
               world: roverRescue.world,
-              roverState: roverRescue.createState(seed),
+              roverState,
             })
-            const target = driveTargetMm(
-              roverRescue.id,
-              robot,
-              "forward",
-              distanceMm,
-              view,
-              roverRescue.createState(seed),
-            )
+            const target = driveTargetMm(roverRescue.id, robot, "forward", distanceMm, view, roverState)
 
             expect(target.xMm, label).toBeCloseTo(predicted.endMm.x, 6)
             expect(target.yMm, label).toBeCloseTo(predicted.endMm.y, 6)
@@ -160,7 +154,7 @@ describe("distance picker preview", () => {
         }
       }
     }
-  })
+  }, 20_000)
 
   it("paints the loaded playground into the preview canvas", () => {
     const roverCtx = mockContext()

@@ -47,7 +47,7 @@ function fieldsFor(type: string): Record<string, string> {
     COLOR: type.includes("eye") ? "red" : "black",
     POSITION: "down",
     WIDTH: "medium",
-    OBJECT: type.includes("broadcast") ? "message1" : "item",
+    OBJECT: type.includes("broadcast") ? "message1" : type.includes("go_to") ? "minerals" : "item",
     DEVICE: "magnet",
     MODE: "boost",
     BUMPER: "left",

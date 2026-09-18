@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react"
 import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
 import { recordSessionEvent } from "@/lib/session-log"
+import { isRoverRescuePlayground } from "./playground-motion"
 import { createProgramRobotApi } from "./program-robot-api"
 import { startBumperWatchers, startEdgeWatchers } from "./program-watchers"
 import {
@@ -294,6 +295,14 @@ export function useProgramRunner({
     isRunningRef.current = false
     setIsRunning(false)
     highlightProgramBlock(null)
+    const mark = activePlayground.markStoppedByUser
+    if (mark) {
+      if (isRoverRescuePlayground(activePlayground.id) && roverStateRef) {
+        roverStateRef.current = mark(roverStateRef.current)
+      } else {
+        reefStateRef.current = mark(reefStateRef.current)
+      }
+    }
     recordSessionEvent("run_stop", { playgroundId: activePlayground.id })
   }
 

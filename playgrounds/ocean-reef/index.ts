@@ -81,6 +81,9 @@ export const oceanReef: PlaygroundDefinition<OceanReefState> = {
       gps_y_position: state.gpsYMm,
     }
   },
+  markStoppedByUser(state) {
+    return { ...state, projectStoppedByUser: true }
+  },
 }
 
 export function startRobot(): RobotState {

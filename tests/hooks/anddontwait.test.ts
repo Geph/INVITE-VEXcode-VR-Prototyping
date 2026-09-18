@@ -57,6 +57,20 @@ describe("anddontwait_mutator", () => {
     expect(racing).toBe("robot.drive('forward', 200, 'mm', false);\n")
   })
 
+  it("emits a non-awaiting go-to call when the mutator is true", () => {
+    const generate = drivetrain.jsGenerators.pg_drivetrain_go_to_object
+    const waiting = generate({
+      getFieldValue: (name: string) =>
+        ({ OBJECT: "minerals", anddontwait_mutator: "false" }[name] ?? ""),
+    })
+    const racing = generate({
+      getFieldValue: (name: string) =>
+        ({ OBJECT: "base", anddontwait_mutator: "true" }[name] ?? ""),
+    })
+    expect(waiting).toBe("await robot.goToObject('minerals');\n")
+    expect(racing).toBe("robot.goToObject('base', false);\n")
+  })
+
   it("returns before motion completes and drive-is-done flips false then true", async () => {
     let finish!: () => void
     const motion = new Promise<void>((resolve) => {

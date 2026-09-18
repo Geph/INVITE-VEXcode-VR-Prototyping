@@ -40,7 +40,7 @@ export interface ProgramRobotApiContext {
   highlightProgramBlock: (blockId: string | null) => void
   cancelRobotAnimation: () => void
   animateRobotFluid: AnimateRobotFluidFn
-  activePlayground: Pick<PlaygroundDefinition<any>, "id" | "createApi" | "world">
+  activePlayground: Pick<PlaygroundDefinition<any>, "id" | "createApi" | "world" | "markStoppedByUser">
   getView: () => PlaygroundView
 }
 
@@ -49,7 +49,6 @@ export type ProgramRobotAPI = ReturnType<typeof createProgramRobotApi>["robotAPI
 export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
   const currentView = () => ctx.getView()
 
-  /** Print precision applies to numeric values only; text passes through. */
   const formatPrint = (value: unknown): string => {
     if (typeof value === "boolean") return value ? "true" : "false"
     const raw = typeof value === "string" ? value : String(value)
@@ -61,7 +60,6 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     return asNum.toFixed(decimals)
   }
 
-  /** VEX `print` writes into the current row; only the cursor block advances it. */
   const appendConsole = (value: unknown) => {
     const chunk = formatPrint(value)
     const color = PRINT_COLORS[ctx.runtimeRef.current.printColor] ?? PRINT_COLORS.black
@@ -78,18 +76,14 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     ctx.setConsoleLines((prev) => [...prev, { text: "", color: PRINT_COLORS.black }])
   }
 
-  /** Runtime/system messages always get their own row. */
   const pushConsoleLine = (text: string, color = PRINT_COLORS.black) => {
     ctx.setConsoleLines((prev) => [...prev, { text, color }])
   }
 
-  /** Generated code has no early return, so unwind via throw at each await. */
   const throwIfStopped = () => {
     if (ctx.stopRequestedRef.current) throw new ProgramStopped()
   }
 
-  // Serialize drivetrain motion so concurrent when-started threads queue
-  // instead of fighting over the same animation.
   let motionQueue: Promise<void> = Promise.resolve()
   let outstandingMotion = 0
   const variables = new Map<string, unknown>()
@@ -129,12 +123,17 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     rng: createRng(1),
   }) as any
 
+  const flagStoppedByUser = () => {
+    const mark = ctx.activePlayground.markStoppedByUser
+    if (!mark) return
+    if (isRoverRescuePlayground(ctx.activePlayground.id) && ctx.roverStateRef) {
+      ctx.roverStateRef.current = mark(ctx.roverStateRef.current)
+    } else {
+      ctx.reefStateRef.current = mark(ctx.reefStateRef.current)
+    }
+  }
+
   const robotAPI = {
-    /**
-     * Injected before every statement by `STATEMENT_PREFIX`. Highlights the
-     * block that is about to run, and in step mode parks there until the
-     * learner asks for the next one.
-     */
     __step: async (blockId: string) => {
       throwIfStopped()
       ctx.highlightProgramBlock(blockId)
@@ -369,7 +368,9 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
       }
       throwIfStopped()
     },
+    goToObject: (kind: string, wait = true) => playgroundApi.goToObject?.(kind, wait),
     stop: () => {
+      flagStoppedByUser()
       ctx.stopRequestedRef.current = true
       ctx.cancelRobotAnimation()
       if (ctx.trashSpawnIntervalRef.current) {
@@ -378,7 +379,6 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
       }
       ctx.isRunningRef.current = false
       ctx.setIsRunning(false)
-      // Abandon the rest of the program, including any enclosing forever loop.
       throw new ProgramStopped()
     },
   }

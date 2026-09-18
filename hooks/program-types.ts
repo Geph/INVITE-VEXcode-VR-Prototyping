@@ -89,7 +89,7 @@ export interface ProgramRunnerDeps {
   runtimeRef: React.MutableRefObject<ProgramRuntime>
   reefStateRef: React.MutableRefObject<any>
   roverStateRef?: React.MutableRefObject<any>
-  activePlayground: Pick<PlaygroundDefinition<any>, "id" | "createApi" | "world">
+  activePlayground: Pick<PlaygroundDefinition<any>, "id" | "createApi" | "world" | "markStoppedByUser">
   robotCapabilities: RobotCapabilities
   getView: () => PlaygroundView
   animateRobotFluidRef: React.MutableRefObject<AnimateRobotFluidFn>

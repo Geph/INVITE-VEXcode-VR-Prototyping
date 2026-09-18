@@ -4,6 +4,7 @@ export const AND_DONT_WAIT_FIELD = "anddontwait_mutator"
 export const AND_DONT_WAIT_BLOCK_TYPES = [
   "pg_drivetrain_drive_for",
   "pg_drivetrain_turn_for",
+  "pg_drivetrain_go_to_object",
 ] as const
 
 export function isAndDontWait(block: { getFieldValue: (name: string) => string }): boolean {
