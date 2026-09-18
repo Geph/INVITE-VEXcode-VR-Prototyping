@@ -17,7 +17,7 @@ export type { MissionReason, RoverRescueState, RoverTickOptions } from "./state"
 export { createRoverRescueState, resetRoverRescueState, tickRoverRescue } from "./state"
 export { clampRoverMm, createRoverRescueApi } from "./api"
 export { daysFromMs, formatDays, missionComplete, msFromDays } from "./mission"
-export { useMineralOnGround } from "./state"
+export { useMineralOnGround, pickupMineral, dropMineral, deliverStorageToBase, absorbEnemyRadiation } from "./state"
 export { batteryEmpty, clampBattery, drainBattery, drainRatePctPerDay } from "./systems/battery"
 export {
   absorbPctForLevel,
@@ -27,14 +27,33 @@ export {
   xpForNextLevel,
 } from "./systems/leveling"
 export { nearestUsableMineral, parseMineralAction } from "./systems/minerals"
+export { absorbNearestEnemy, attackDrainPct, tickCombat, xpForNeutralizing } from "./systems/combat"
+export {
+  concludeDay50,
+  continuePastDay50,
+  day50Snapshot,
+  type Day50Snapshot,
+} from "./systems/day50"
+export {
+  advanceStandby,
+  parseStandbyPercent,
+  shouldEnterStandby,
+} from "./systems/standby"
 export {
   BATTERY_START_PCT,
+  CAPACITY_BY_LEVEL,
   DAY_MS,
   LEVEL_XP_THRESHOLDS,
   MINERAL_USE_RANGE_MM,
   MISSION_DAYS,
   ROVER_LEVEL_MAX,
+  STANDBY_MAX_STEPS,
+  STANDBY_STEPS_PER_YIELD,
+  XP_MINERAL_TO_BASE,
   XP_USE_MINERAL,
+  XP_SPIDER,
+  XP_SERPENT,
+  XP_SERPENT_PURPLE,
 } from "./config"
 
 /** What the rover reports to React: the figures the HUD shows, nothing else. */
@@ -44,6 +63,14 @@ export interface RoverStatus {
   level: number
   /** XP earned toward the next level, matching what the XP block reports. */
   exp: number
+  /** Samples in the hold right now. */
+  stored: number
+  /** How many the current level can carry. */
+  capacity: number
+  /** True while standby is racing the clock. */
+  standby: boolean
+  /** True while the day-50 Continue / Statistics / Certificate prompt is up. */
+  day50Dialog: boolean
 }
 export { planRoverDrive, pushedMinerals, resolveRoverMove, roverDriveVector } from "./systems/physics"
 export type { DrivePlan, MineralPush } from "./systems/physics"

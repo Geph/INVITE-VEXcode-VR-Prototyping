@@ -10,7 +10,7 @@ export { createMineral, placeMineral } from "./mineral"
 export type { ObstacleEntity, ObstacleKind } from "./obstacle"
 export { createObstacle } from "./obstacle"
 export type { EnemyAiState, EnemyEntity, EnemyKind, SerpentColor } from "./enemy"
-export { createEnemy, enemyLevelFromBase, placeEnemy, statsForEnemy } from "./enemy"
+export { createEnemy, enemyLevelFromBase, placeEnemy, reirradiateEnemies, statsForEnemy } from "./enemy"
 
 export type RoverEntity = MineralEntity | ObstacleEntity | EnemyEntity
 

@@ -39,6 +39,19 @@ export function RoverStatusReadout({ status }: { status: RoverStatus }) {
           {status.level >= ROVER_LEVEL_MAX ? "max" : `XP ${status.exp}`}
         </span>
       </div>
+      <div
+        id="vex-playground-rover-cargo"
+        className="flex items-baseline gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 shadow-sm"
+        title="Mineral samples the rover is carrying. Drive onto Base to bank them."
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Cargo</span>
+        <span
+          id="vex-playground-rover-cargo-value"
+          className="font-mono text-sm font-semibold leading-none text-slate-900"
+        >
+          {status.stored}/{status.capacity}
+        </span>
+      </div>
     </div>
   )
 }

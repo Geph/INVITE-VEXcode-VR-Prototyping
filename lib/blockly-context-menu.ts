@@ -15,7 +15,13 @@ type RegistryItem = {
   callback: (scope: BlocklyScope) => void
 }
 
-const HAT_TYPES = new Set(["pg_events_when_started", "pg_events_when_bumper", "pg_events_when_broadcasted"])
+const HAT_TYPES = new Set([
+  "pg_events_when_started",
+  "pg_events_when_bumper",
+  "pg_events_when_broadcasted",
+  "pg_events_when_under_attack",
+  "pg_events_when_level_up",
+])
 
 function speak(text: string) {
   if (typeof window === "undefined" || !window.speechSynthesis) return

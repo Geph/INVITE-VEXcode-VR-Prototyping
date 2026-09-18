@@ -33,6 +33,7 @@ export interface SightReport {
   level?: number
   hp?: number
   maxHp?: number
+  radiation?: number
 }
 
 export interface SensorSnapshot {
@@ -229,6 +230,7 @@ function toReport(entity: RoverEntity, distanceMm: number, relativeAngleDeg: num
       level: enemy.level,
       hp: enemy.hp,
       maxHp: enemy.maxHp,
+      radiation: enemy.radiation,
     }
   }
   return {

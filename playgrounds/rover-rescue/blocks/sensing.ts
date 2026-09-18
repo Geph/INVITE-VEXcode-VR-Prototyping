@@ -228,6 +228,66 @@ function defineRoverSensingBlocks(Blockly: any) {
   Blockly.JavaScript.forBlock["pg_sensing_robot_exp"] = () => {
     return ["robot.roverExp()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
   }
+
+  Blockly.Blocks["pg_sensing_robot_minerals_stored"] = {
+    init: function () {
+      this.appendDummyInput().appendField("minerals in storage")
+      this.setOutput(true, "Number")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("How many mineral samples the rover is carrying")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_robot_minerals_stored"] = () => {
+    return ["robot.mineralsStored()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  Blockly.Blocks["pg_sensing_robot_minerals_capacity"] = {
+    init: function () {
+      this.appendDummyInput().appendField("storage capacity")
+      this.setOutput(true, "Number")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("How many samples the rover can carry at its current level")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_robot_minerals_capacity"] = () => {
+    return ["robot.mineralsCapacity()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  Blockly.Blocks["pg_sensing_under_attack"] = {
+    init: function () {
+      this.appendDummyInput().appendField("under attack?")
+      this.setOutput(true, "Boolean")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("True while an enemy is attacking the rover")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_under_attack"] = () => {
+    return ["robot.underAttack()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  Blockly.Blocks["pg_sensing_enemy_level"] = {
+    init: function () {
+      this.appendDummyInput().appendField("enemy level")
+      this.setOutput(true, "Number")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("Level of the nearest detected enemy, or 0 if none are in range")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_enemy_level"] = () => {
+    return ["robot.enemyLevel()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
+
+  Blockly.Blocks["pg_sensing_enemy_charge"] = {
+    init: function () {
+      this.appendDummyInput().appendField("enemy radiation")
+      this.setOutput(true, "Number")
+      this.setColour(SENSING_COLOUR)
+      this.setTooltip("Radiation of the nearest detected enemy, or 0 if none are in range")
+    },
+  }
+  Blockly.JavaScript.forBlock["pg_sensing_enemy_charge"] = () => {
+    return ["robot.enemyRadiation()", Blockly.JavaScript.ORDER_FUNCTION_CALL]
+  }
 }
 
 export const sensingPythonGenerators: PythonGenerators = {
@@ -235,6 +295,11 @@ export const sensingPythonGenerators: PythonGenerators = {
     pg_sensing_robot_battery_capacity: () => "rover.battery_capacity()",
     pg_sensing_robot_level: () => "rover.level()",
     pg_sensing_robot_exp: () => "rover.exp()",
+    pg_sensing_robot_minerals_stored: () => "rover.minerals_stored()",
+    pg_sensing_robot_minerals_capacity: () => "rover.minerals_capacity()",
+    pg_sensing_under_attack: () => "rover.under_attack()",
+    pg_sensing_enemy_level: () => "rover.enemy_level()",
+    pg_sensing_enemy_charge: () => "rover.enemy_radiation()",
     pg_sensing_ai_sees: (block, { constant }) => `rover.sees(${constant(block.getFieldValue("KIND"))})`,
     pg_sensing_ai_smells: (block, { constant }) => `rover.detects(${constant(block.getFieldValue("KIND"))})`,
     pg_sensing_ai_sees_direction: (block, { constant }) => `rover.angle(${constant(block.getFieldValue("KIND"))})`,
@@ -269,5 +334,10 @@ export const sensingCategory: BlockCategory = {
     { kind: "block", type: "pg_sensing_robot_battery_capacity" },
     { kind: "block", type: "pg_sensing_robot_level" },
     { kind: "block", type: "pg_sensing_robot_exp" },
+    { kind: "block", type: "pg_sensing_robot_minerals_stored" },
+    { kind: "block", type: "pg_sensing_robot_minerals_capacity" },
+    { kind: "block", type: "pg_sensing_under_attack" },
+    { kind: "block", type: "pg_sensing_enemy_level" },
+    { kind: "block", type: "pg_sensing_enemy_charge" },
   ],
 }

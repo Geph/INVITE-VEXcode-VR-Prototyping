@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react"
 import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
 import { recordSessionEvent } from "@/lib/session-log"
 import { createProgramRobotApi } from "./program-robot-api"
-import { startBumperWatchers } from "./program-watchers"
+import { startBumperWatchers, startEdgeWatchers } from "./program-watchers"
 import {
   PRINT_COLORS,
   ProgramStopped,
@@ -128,6 +128,18 @@ export function useProgramRunner({
         body: jsGen.statementToCode(b, "SUBSTACK"),
       }))
       .filter((handler: { body: string }) => handler.body.trim().length > 0)
+    const roverHats = workspace
+      .getAllBlocks(false)
+      .filter(
+        (b: { type: string }) =>
+          b.type === "pg_events_when_under_attack" || b.type === "pg_events_when_level_up",
+      )
+      .map((b: any) => ({
+        id: String(b.id),
+        type: b.type as string,
+        body: jsGen.statementToCode(b, "DO"),
+      }))
+      .filter((handler: { body: string }) => handler.body.trim().length > 0)
     if (typeof jsGen.finish === "function") {
       jsGen.finish(workspace)
     }
@@ -187,9 +199,19 @@ export function useProgramRunner({
 
     const stopBumperWatchers = startBumperWatchers(bumperEvents, robotAPI, stopRequestedRef)
     registerBroadcastHandlers(broadcastEvents)
+    const stopRoverHats = startEdgeWatchers(
+      roverHats.map((handler: { id: string; type: string; body: string }) => ({
+        id: handler.id,
+        predicate: () =>
+          handler.type === "pg_events_when_under_attack" ? robotAPI.underAttack() : robotAPI.levelUpPending(),
+        body: handler.body,
+      })),
+      robotAPI,
+      stopRequestedRef,
+    )
 
     try {
-      if (!code.trim() && bumperEvents.length === 0 && broadcastEvents.length === 0) {
+      if (!code.trim() && bumperEvents.length === 0 && broadcastEvents.length === 0 && roverHats.length === 0) {
         pushConsoleLine("Add blocks under when started to run your program.")
         return
       }
@@ -207,6 +229,7 @@ export function useProgramRunner({
       }
     } finally {
       stopBumperWatchers()
+      stopRoverHats()
       stopRequestedRef.current = false
       programActiveRef.current = false
       stepModeRef.current = false

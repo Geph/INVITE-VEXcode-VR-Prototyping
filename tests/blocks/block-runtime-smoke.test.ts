@@ -12,6 +12,8 @@ const HAT_TYPES = new Set([
   "pg_events_when_started",
   "pg_events_when_broadcasted",
   "pg_events_when_bumper",
+  "pg_events_when_under_attack",
+  "pg_events_when_level_up",
 ])
 
 const ORDER = {
@@ -36,6 +38,7 @@ function fieldsFor(type: string): Record<string, string> {
     HEADING: "90",
     ROTATION: "45",
     VELOCITY: "50",
+    PERCENT: "100",
     TIMEOUT: "1",
     SECONDS: "0",
     TIMES: "1",
@@ -51,6 +54,7 @@ function fieldsFor(type: string): Record<string, string> {
     SENSOR: "front",
     KIND: "base",
     AXIS: "X",
+    ACTION: "use",
     anddontwait_mutator: "false",
     OP: type.includes("and_or") ? "AND" : type.includes("comparison") ? "EQ" : "ADD",
     OP1: "LT",

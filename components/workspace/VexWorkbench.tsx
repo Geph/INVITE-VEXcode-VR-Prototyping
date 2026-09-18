@@ -7,12 +7,13 @@ import { flyoutContents } from "@/blocks/toolbox"
 import { AIAssistant, type AIAssistantHandle, type SurveyStep } from "@/components/ai-assistant"
 import { MissionDayReadout } from "@/components/playground/MissionDayReadout"
 import { RoverStatusReadout } from "@/components/playground/RoverStatusReadout"
-import { BATTERY_START_PCT, type RoverStatus } from "@/playgrounds/rover-rescue"
+import { BATTERY_START_PCT, capacityForLevel, type RoverStatus } from "@/playgrounds/rover-rescue"
 import { PlaygroundHud } from "@/components/playground/PlaygroundHud"
 import { PlaygroundPicker } from "@/components/playground/PlaygroundPicker"
 import { PlaygroundWindow } from "@/components/playground/PlaygroundWindow"
 import { ZoomControls } from "@/components/playground/ZoomControls"
-import { RoverRescueHud } from "@/playgrounds/rover-rescue/hud"
+import { RoverRescueHud, MissionDialog, MissionEndPanel } from "@/playgrounds/rover-rescue/hud"
+import { useRoverDay50 } from "@/hooks/useRoverDay50"
 import BlocklyCollabOverlay from "@/components/blockly-collab-overlay"
 import { BlocklyEditor, type FieldPickerEvent } from "@/components/workspace/BlocklyEditor"
 import { railCategoriesFor } from "@/components/workspace/CategoryRail"
@@ -34,7 +35,16 @@ import { useBlocklyCollab } from "@/lib/use-blockly-collab"
 import { reefViewFromMaximized } from "@/hooks/playground-host"
 import { recordSessionEvent, type SessionLogSnapshot } from "@/lib/session-log"
 
-const IDLE_ROVER_STATUS: RoverStatus = { days: 0, batteryPercent: BATTERY_START_PCT, level: 1, exp: 0 }
+const IDLE_ROVER_STATUS: RoverStatus = {
+  days: 0,
+  batteryPercent: BATTERY_START_PCT,
+  level: 1,
+  exp: 0,
+  stored: 0,
+  capacity: capacityForLevel(1),
+  standby: false,
+  day50Dialog: false,
+}
 
 export function VexWorkbench() {
   const blocklyWorkspaceContainerRef = useRef<HTMLDivElement>(null)
@@ -91,6 +101,16 @@ export function VexWorkbench() {
     trashSpawnIntervalRef: session.trashSpawnIntervalRef,
     syncTrashItems: session.syncTrashItems,
   })
+
+  const day50 = useRoverDay50(session.roverStateRef, setRoverStatus)
+  const onReset = useCallback(() => {
+    day50.clearEnd()
+    handleReset()
+  }, [day50, handleReset])
+  const onStart = useCallback(() => {
+    day50.clearEnd()
+    handleStart()
+  }, [day50, handleStart])
 
   const roverField = isRoverRescuePlayground(session.playgroundId)
   const roverViewport = useMemo(
@@ -328,18 +348,23 @@ export function VexWorkbench() {
             isRunning={isRunning}
             isStepping={isStepping}
             isPausedOnBlock={isPausedOnBlock}
-            onStart={handleStart}
+            onStart={onStart}
             onStep={handleStep}
             onStop={handleStop}
-            onReset={handleReset}
+            onReset={onReset}
             aiStep={aiStep}
             onCloseStrategy={() => setAiStep("strategy")}
             chrome={roverField ? "field" : "reef"}
+            gameOverDetail={
+              roverField && day50.endView && day50.snapshot ? (
+                <MissionEndPanel view={day50.endView} snapshot={day50.snapshot} onRetry={onReset} />
+              ) : undefined
+            }
             toolbarTrailing={
               roverField ? (
                 <div className="flex items-center gap-2">
                   <RoverStatusReadout status={roverStatus} />
-                  <MissionDayReadout days={session.gameState.missionDays} />
+                  <MissionDayReadout days={session.gameState.missionDays} standby={roverStatus.standby} />
                 </div>
               ) : null
             }
@@ -357,6 +382,14 @@ export function VexWorkbench() {
                     onToggleFollow={() => roverCam.setFollow((on) => !on)}
                   />
                   <RoverRescueHud stateRef={session.roverStateRef} />
+                  {roverStatus.day50Dialog ? (
+                    <MissionDialog
+                      days={roverStatus.days}
+                      onContinue={day50.onContinue}
+                      onViewStatistics={day50.onViewStatistics}
+                      onGetCertificate={day50.onGetCertificate}
+                    />
+                  ) : null}
                 </>
               ) : null
             }

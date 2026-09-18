@@ -6,6 +6,9 @@ import type { RoverRescueState } from "../state"
 import { AIOverlay } from "./AIOverlay"
 import { KeyLegend } from "./KeyLegend"
 
+export { MissionDialog } from "./MissionDialog"
+export { MissionEndPanel } from "./MissionEnd"
+
 /**
  * `Minimap` and `MapView` are built but unmounted: no control opens them, so
  * restoring them means re-adding a toggle and passing the rover pose back in.

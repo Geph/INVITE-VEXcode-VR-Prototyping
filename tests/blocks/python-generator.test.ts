@@ -153,6 +153,29 @@ describe("generatePythonProgram characterisation", () => {
     )
   })
 
+  it("emits Rover Rescue combat hats alongside the main thread", () => {
+    const whenStarted = block("pg_events_when_started", {
+      next: block("pg_actions_interact_with_enemy"),
+    })
+    const underAttack = block("pg_events_when_under_attack", {
+      inputs: { DO: block("pg_drivetrain_stop_driving") },
+    })
+    const levelUp = block("pg_events_when_level_up", {
+      inputs: { DO: block("pg_looks_print", { inputs: { TEXT: block("pg_sensing_enemy_level") } }) },
+    })
+    expect(generatePythonProgram(workspace(whenStarted, underAttack, levelUp))).toBe(
+      `${HEADER}def when_under_attack_1():\n` +
+        `    drivetrain.stop()\n` +
+        `\ndef when_level_up_1():\n` +
+        `    brain.print(rover.enemy_level())\n` +
+        `\ndef main():\n` +
+        `    rover.absorb_radiation()\n` +
+        `\nvr_thread(when_under_attack_1)\n` +
+        `vr_thread(when_level_up_1)\n` +
+        `vr_thread(main)\n`,
+    )
+  })
+
   it("emits operators that the rename later remaps (and/or/not/random)", () => {
     const stack = block("pg_events_when_started", {
       next: block("pg_control_if_then", {

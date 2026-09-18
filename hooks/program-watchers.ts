@@ -1,3 +1,4 @@
+import { EventHatRegistry } from "@/engine"
 import type { ProgramRobotAPI } from "./program-robot-api"
 import { ProgramStopped } from "./program-types"
 
@@ -41,4 +42,34 @@ export function startBumperWatchers(
   }, 50)
 
   return () => clearInterval(timer)
+}
+
+/** Rising-edge hats (under attack, level up) polled alongside the main program. */
+export function startEdgeWatchers(
+  events: { id: string; predicate: () => boolean; body: string }[],
+  robotAPI: ProgramRobotAPI,
+  stopRequestedRef: { current: boolean },
+) {
+  if (events.length === 0) return () => {}
+
+  const registry = new EventHatRegistry(
+    events.map((handler) => ({
+      id: handler.id,
+      predicate: handler.predicate,
+      body: handler.body,
+    })),
+  )
+  registry.onHandlerError((error, id) => {
+    if (!(error instanceof ProgramStopped)) console.error(`Event hat ${id} error:`, error)
+  })
+
+  const timer = setInterval(() => {
+    if (stopRequestedRef.current) return
+    registry.poll(robotAPI)
+  }, 50)
+
+  return () => {
+    registry.stop()
+    clearInterval(timer)
+  }
 }

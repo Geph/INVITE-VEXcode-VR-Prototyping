@@ -35,4 +35,13 @@ describe("SimulationClock", () => {
     expect(capped.stepIndex).toBe(5)
     expect(new SimulationClock().fastForward(() => true, 0).stepIndex).toBe(0)
   })
+
+  it("ticks the world from onStep so standby can drain without rendering", () => {
+    const clock = new SimulationClock()
+    let ticks = 0
+    clock.fastForward((ctx) => ctx.stepIndex >= 4, 10, () => {
+      ticks += 1
+    })
+    expect(ticks).toBe(4)
+  })
 })

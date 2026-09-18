@@ -1,10 +1,11 @@
 import { mmToDistance, normalizeDegrees } from "@/engine"
 import type { PlaygroundApiDeps } from "../types"
 import { AI_MISSING_SIGHT_MM } from "./config"
-import { riverHazardFromState, useMineralOnGround, type RoverRescueState } from "./state"
-import { expWithinLevel } from "./systems/leveling"
+import { riverHazardFromState, dropMineral, pickupMineral, useMineralOnGround, absorbEnemyRadiation, type RoverRescueState } from "./state"
+import { capacityForLevel, expWithinLevel } from "./systems/leveling"
 import { parseMineralAction } from "./systems/minerals"
 import { clampRoverMm } from "./systems/physics"
+import { runStandby } from "./systems/standby"
 import {
   baseBearing,
   computeSensing,
@@ -81,16 +82,71 @@ export function createRoverRescueApi(deps: PlaygroundApiDeps<RoverRescueState>) 
     roverExp() {
       return expWithinLevel(deps.world.current.xp).exp
     },
+    mineralsStored() {
+      return deps.world.current.storage.length
+    },
+    mineralsCapacity() {
+      return capacityForLevel(deps.world.current.level)
+    },
     mineralsAction(action: string) {
-      // Pick up and drop are not in the dropdown yet, so anything else is a no-op.
-      if (parseMineralAction(action) !== "use") return false
-      const result = useMineralOnGround(deps.world.current, originOf(deps))
-      if (!result.used) {
-        deps.writeConsole("No mineral sample within reach.", "#F5A623")
+      const parsed = parseMineralAction(action)
+      if (parsed === "use") {
+        const result = useMineralOnGround(deps.world.current, originOf(deps))
+        if (!result.used) {
+          deps.writeConsole("No mineral sample within reach.", "#F5A623")
+          return false
+        }
+        deps.world.current = result.state
+        return true
+      }
+      if (parsed === "pickup") {
+        const result = pickupMineral(deps.world.current, originOf(deps))
+        if (!result.picked) {
+          deps.writeConsole(
+            result.reason === "full" ? "Storage is full." : "No mineral sample within reach.",
+            "#F5A623",
+          )
+          return false
+        }
+        deps.world.current = result.state
+        return true
+      }
+      if (parsed === "drop") {
+        const result = dropMineral(deps.world.current, originOf(deps))
+        if (!result.dropped) {
+          deps.writeConsole("No mineral samples in storage.", "#F5A623")
+          return false
+        }
+        deps.world.current = result.state
+        return true
+      }
+      return false
+    },
+    standbyUntil(percent: unknown) {
+      return runStandby(deps.world, deps.robot.current, percent, deps.stopped)
+    },
+    absorbRadiation() {
+      const result = absorbEnemyRadiation(deps.world.current, originOf(deps))
+      if (!result.absorbed) {
+        if (result.reason !== "cooldown") {
+          deps.writeConsole("No enemy within range.", "#F5A623")
+        }
         return false
       }
       deps.world.current = result.state
       return true
+    },
+    underAttack() {
+      return deps.world.current.underAttack
+    },
+    enemyLevel() {
+      return nearestDetected(snapshot(), "enemy")?.level ?? 0
+    },
+    enemyRadiation() {
+      return nearestDetected(snapshot(), "enemy")?.radiation ?? 0
+    },
+    levelUpPending() {
+      return deps.world.current.elapsedMs < deps.world.current.levelUpUntilMs
     },
     roverLocation(kind: string, axis: string, unit: string) {
       const parsed = parseKind(kind)

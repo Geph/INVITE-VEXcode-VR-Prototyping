@@ -354,7 +354,21 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     batteryLevel: () => playgroundApi.batteryLevel?.() ?? 0,
     roverLevel: () => playgroundApi.roverLevel?.() ?? 0,
     roverExp: () => playgroundApi.roverExp?.() ?? 0,
+    mineralsStored: () => playgroundApi.mineralsStored?.() ?? 0,
+    mineralsCapacity: () => playgroundApi.mineralsCapacity?.() ?? 0,
     mineralsAction: (action: string) => playgroundApi.mineralsAction?.(action) ?? false,
+    absorbRadiation: () => playgroundApi.absorbRadiation?.() ?? false,
+    underAttack: () => playgroundApi.underAttack?.() ?? false,
+    enemyLevel: () => playgroundApi.enemyLevel?.() ?? 0,
+    enemyRadiation: () => playgroundApi.enemyRadiation?.() ?? 0,
+    levelUpPending: () => playgroundApi.levelUpPending?.() ?? false,
+    standbyUntil: async (percent: unknown) => {
+      throwIfStopped()
+      if (typeof playgroundApi.standbyUntil === "function") {
+        await playgroundApi.standbyUntil(percent)
+      }
+      throwIfStopped()
+    },
     stop: () => {
       ctx.stopRequestedRef.current = true
       ctx.cancelRobotAnimation()

@@ -24,6 +24,7 @@ import type { Camera } from "@/engine"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
 import {
   daysFromMs,
+  capacityForLevel,
   expWithinLevel,
   tickRoverRescue,
   type RoverRescueState,
@@ -222,14 +223,17 @@ export function usePlaygroundDraw({
     let frame = 0
     let last = performance.now()
     let reportedStatus = ""
+    let signaledOver = roverStateRef.current.missionOver
     const loop = (now: number) => {
       const dt = Math.min(64, now - last)
       last = now
       const robot = toEngineRobot(robotStateRef.current)
-      const prevOver = roverStateRef.current.missionOver
-      roverStateRef.current = tickRoverRescue(roverStateRef.current, dt, robot, {
-        missionRunning: isRunningRef.current,
-      })
+      // Standby owns the ticks; this loop only paints so the HUD can race.
+      if (!roverStateRef.current.standby) {
+        roverStateRef.current = tickRoverRescue(roverStateRef.current, dt, robot, {
+          missionRunning: isRunningRef.current,
+        })
+      }
       const days = daysFromMs(roverStateRef.current.missionMs)
       // The readouts show tenths of a day and whole percent, so React only hears
       // about the rover when a figure it actually displays has moved.
@@ -238,13 +242,19 @@ export function usePlaygroundDraw({
         batteryPercent: Math.round(roverStateRef.current.batteryPercent),
         level: roverStateRef.current.level,
         exp: expWithinLevel(roverStateRef.current.xp).exp,
+        stored: roverStateRef.current.storage.length,
+        capacity: capacityForLevel(roverStateRef.current.level),
+        standby: roverStateRef.current.standby,
+        day50Dialog: roverStateRef.current.day50Dialog,
       }
-      const digest = `${Math.floor(days * 10)}|${status.batteryPercent}|${status.level}|${status.exp}`
+      const digest = `${Math.floor(days * 10)}|${status.batteryPercent}|${status.level}|${status.exp}|${status.stored}|${status.capacity}|${status.standby ? 1 : 0}|${status.day50Dialog ? 1 : 0}`
       if (digest !== reportedStatus) {
         reportedStatus = digest
         missionCallbacksRef.current.onRoverStatus?.(status)
       }
-      if (roverStateRef.current.missionOver && !prevOver) {
+      if (!roverStateRef.current.missionOver) signaledOver = false
+      if (roverStateRef.current.missionOver && !signaledOver) {
+        signaledOver = true
         missionCallbacksRef.current.onRoverMissionOver?.(
           roverStateRef.current.missionReason ?? "river",
           status,

@@ -11,14 +11,22 @@ export function wanderEnemies(
   hazard: RiverHazard,
   bridges: readonly BridgeSpec[],
 ): EnemyEntity[] {
-  return enemies.map((enemy) => {
-    if (enemy.state !== "idle") return enemy
-    const next = wanderPoint(enemy, elapsedMs)
-    if (!isInsideField(next)) return enemy
-    if (isForbiddenSpawn(next, hazard, bridges)) return enemy
-    if (obstacleAt(next, enemy.radiusMm, index)) return enemy
-    return placeEnemy(enemy, next)
-  })
+  return enemies.map((enemy) => wanderEnemy(enemy, elapsedMs, index, hazard, bridges))
+}
+
+export function wanderEnemy(
+  enemy: EnemyEntity,
+  elapsedMs: number,
+  index: SpatialHash<RoverEntity>,
+  hazard: RiverHazard,
+  bridges: readonly BridgeSpec[],
+): EnemyEntity {
+  if (enemy.state !== "idle") return enemy
+  const next = wanderPoint(enemy, elapsedMs)
+  if (!isInsideField(next)) return enemy
+  if (isForbiddenSpawn(next, hazard, bridges)) return enemy
+  if (obstacleAt(next, enemy.radiusMm, index)) return enemy
+  return placeEnemy(enemy, next)
 }
 
 function wanderPoint(enemy: EnemyEntity, elapsedMs: number): Vec2 {

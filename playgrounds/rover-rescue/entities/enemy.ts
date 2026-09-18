@@ -28,6 +28,8 @@ export interface EnemyEntity extends Entity {
   artSeed: number
   wanderPhase: number
   radiusMm: number
+  /** Mission time of the last successful hit; null until the first one. */
+  lastHitAtMs: number | null
 }
 
 export function enemyLevelFromBase(posMm: Vec2): number {
@@ -70,9 +72,31 @@ export function createEnemy(input: {
     artSeed: input.artSeed,
     wanderPhase: input.wanderPhase,
     radiusMm: input.kind === "serpent" ? SERPENT_RADIUS_MM : SPIDER_RADIUS_MM,
+    lastHitAtMs: null,
   }
 }
 
 export function placeEnemy(enemy: EnemyEntity, posMm: Vec2): EnemyEntity {
   return { ...enemy, xMm: posMm.x, yMm: posMm.y, posMm: { x: posMm.x, y: posMm.y } }
+}
+
+/** Continue after day 50 restores every neutralized enemy in place at its home. */
+export function reirradiateEnemy(enemy: EnemyEntity): EnemyEntity {
+  if (enemy.state !== "neutralized") return enemy
+  const { maxHp, radiation } = statsForEnemy(enemy.kind, enemy.level)
+  return placeEnemy(
+    {
+      ...enemy,
+      maxHp,
+      hp: maxHp,
+      radiation,
+      state: "idle",
+      lastHitAtMs: null,
+    },
+    enemy.homeMm,
+  )
+}
+
+export function reirradiateEnemies(enemies: readonly EnemyEntity[]): EnemyEntity[] {
+  return enemies.map(reirradiateEnemy)
 }

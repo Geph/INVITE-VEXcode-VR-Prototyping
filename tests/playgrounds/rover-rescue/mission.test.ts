@@ -39,15 +39,29 @@ describe("tickRoverRescue mission time", () => {
     expect(running.missionMs).toBe(1000)
   })
 
-  it("ends the mission as survived once 50 days are up", () => {
+  it("offers the day-50 dialog instead of ending the mission", () => {
     let state = createRoverRescueState(1)
-    state = { ...state, missionMs: msFromDays(MISSION_DAYS) - 10 }
+    state = { ...state, missionMs: msFromDays(MISSION_DAYS) - 10, batteryPercent: 40 }
     const before = tickRoverRescue(state, 5, atBase, { missionRunning: true })
     expect(before.missionOver).toBe(false)
+    expect(before.day50Dialog).toBe(false)
 
     const after = tickRoverRescue(before, 10, atBase, { missionRunning: true })
-    expect(after.missionOver).toBe(true)
-    expect(after.missionReason).toBe("days")
+    expect(after.missionOver).toBe(false)
+    expect(after.day50Dialog).toBe(true)
+    expect(after.missionReason).toBeUndefined()
+  })
+
+  it("keeps the mission clock running while the day-50 dialog is up", () => {
+    const open = tickRoverRescue(
+      { ...createRoverRescueState(1), missionMs: msFromDays(MISSION_DAYS), batteryPercent: 40, day50Dialog: true },
+      1000,
+      atBase,
+      { missionRunning: true },
+    )
+    expect(open.missionOver).toBe(false)
+    expect(open.day50Dialog).toBe(true)
+    expect(open.missionMs).toBe(msFromDays(MISSION_DAYS) + 1000)
   })
 
   it("stops the clock once the mission is over", () => {

@@ -46,12 +46,16 @@ export class SimulationClock {
 
   /**
    * Run steps without rendering until `until` is true or `maxSteps` is hit.
-   * Used by Rover Rescue standby.
+   * Rover Rescue standby ticks the world from `onStep`.
    */
-  fastForward(until: (ctx: TickContext) => boolean, maxSteps: number): TickContext {
+  fastForward(
+    until: (ctx: TickContext) => boolean,
+    maxSteps: number,
+    onStep?: (ctx: TickContext) => void,
+  ): TickContext {
     const cap = Math.max(0, Math.floor(maxSteps))
     for (let i = 0; i < cap; i++) {
-      this.advanceOne()
+      this.advanceOne(onStep)
       const ctx = this.context()
       if (until(ctx)) return ctx
     }

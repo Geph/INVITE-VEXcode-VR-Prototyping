@@ -34,6 +34,7 @@ export function PlaygroundHud({
   chrome = "reef",
   canvasOverlay,
   toolbarTrailing,
+  gameOverDetail,
 }: {
   consoleLines: ConsoleLine[]
   showSensors: boolean
@@ -57,6 +58,8 @@ export function PlaygroundHud({
   chrome?: "reef" | "field"
   canvasOverlay?: ReactNode
   toolbarTrailing?: ReactNode
+  /** Replaces the default game-over card when the playground supplies its own. */
+  gameOverDetail?: ReactNode
 }) {
   return (
     <div id="vex-playground-body" className="flex flex-col relative">
@@ -186,6 +189,7 @@ export function PlaygroundHud({
 
       {gameState.isGameOver && (
         <div id="vex-playground-gameover" className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-b-lg">
+          {gameOverDetail ?? (
           <div className="bg-white rounded-xl p-6 shadow-2xl text-center max-w-xs">
             {gameState.missionEndReason === "complete" ? (
               <>
@@ -234,6 +238,7 @@ export function PlaygroundHud({
               Try Again
             </Button>
           </div>
+          )}
         </div>
       )}
 

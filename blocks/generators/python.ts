@@ -115,6 +115,16 @@ export function generatePythonProgram(workspace: PyWorkspace | null): string {
     out += `def ${name}():\n${body(event, "SUBSTACK", INDENT)}\n`
   })
 
+  const underAttackEvents = blocks.filter((b) => b.type === "pg_events_when_under_attack")
+  underAttackEvents.forEach((event, index) => {
+    out += `def when_under_attack_${index + 1}():\n${body(event, "DO", INDENT)}\n`
+  })
+
+  const levelUpEvents = blocks.filter((b) => b.type === "pg_events_when_level_up")
+  levelUpEvents.forEach((event, index) => {
+    out += `def when_level_up_${index + 1}():\n${body(event, "DO", INDENT)}\n`
+  })
+
   whenStartedHats.forEach((hat, index) => {
     const name = whenStartedHats.length === 1 ? "main" : `main_${index + 1}`
     out += `def ${name}():\n${stack(hat, INDENT)}\n`
@@ -129,6 +139,14 @@ export function generatePythonProgram(workspace: PyWorkspace | null): string {
   broadcastEvents.forEach((event, index) => {
     const raw = String(event.getFieldValue("OBJECT") || "message1").replace(/\W/g, "_") || "message"
     out += `vr_thread(when_broadcasted_${raw}_${index + 1})\n`
+  })
+
+  underAttackEvents.forEach((_, index) => {
+    out += `vr_thread(when_under_attack_${index + 1})\n`
+  })
+
+  levelUpEvents.forEach((_, index) => {
+    out += `vr_thread(when_level_up_${index + 1})\n`
   })
 
   whenStartedHats.forEach((_, index) => {

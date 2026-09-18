@@ -120,6 +120,24 @@ export const SERPENT_HP_BONUS = 10
 export const ENEMY_WANDER_RADIUS_MM = 380
 export const ENEMY_WANDER_PERIOD_MS = 9000
 
+/**
+ * Combat numbers are unpublished. TUNABLE so a level-matched fight with a
+ * full battery is survivable, and a much higher-level enemy is a losing trade:
+ * absorb cooldown matches attack cadence, so you take a hit for every siphon.
+ */
+export const ENEMY_AGGRO_RANGE_MM = 700
+export const ENEMY_ATTACK_RANGE_MM = 220
+export const ENEMY_LEASH_RANGE_MM = 980
+export const ENEMY_PURSUE_SPEED_MM_PER_MS = 0.09
+export const ENEMY_ATTACK_COOLDOWN_MS = 900
+export const ENEMY_ATTACK_DRAIN_BASE_PCT = 7
+export const ENEMY_ATTACK_DRAIN_PER_LEVEL_GAP_PCT = 8
+export const ABSORB_RANGE_MM = 250
+export const ABSORB_COOLDOWN_MS = 900
+export const ABSORB_DAMAGE_PER_ROVER_LEVEL = 22
+/** Hats poll at 50 ms, so the pulse has to outlast one missed interval. */
+export const LEVEL_UP_SIGNAL_MS = 200
+
 export const ROCK_RADIUS_MIN_MM = 45
 export const ROCK_RADIUS_MAX_MM = 85
 export const PLANT_RADIUS_MIN_MM = 28
@@ -177,6 +195,9 @@ export const CAPACITY_BY_LEVEL = [0, 2, 3, 4, 6, 8] as const
 /** DOC: the published XP awards. */
 export const XP_USE_MINERAL = 2
 export const XP_MINERAL_TO_BASE = 5
+export const XP_SPIDER = 5
+export const XP_SERPENT = 10
+export const XP_SERPENT_PURPLE = 15
 
 export const BATTERY_START_PCT = 100
 
@@ -187,6 +208,19 @@ export const BATTERY_START_PCT = 100
  */
 export const BATTERY_DRAIN_IDLE_PCT_PER_DAY = 2
 export const BATTERY_DRAIN_DRIVING_PCT_PER_DAY = 3
+
+/**
+ * Standby runs many 60 Hz ticks without painting every one. Yield this often
+ * so the day/battery readouts can race. 30 steps is half a second of mission
+ * time, about 0.1 in-game days, which is visible without freezing the tab.
+ * TUNABLE.
+ */
+export const STANDBY_STEPS_PER_YIELD = 30
+/**
+ * Idle drain is 2%/day and a day is 300 steps, so 50 days is 15 000 steps.
+ * Cap above that so a runaway standby cannot hang the tab. TUNABLE.
+ */
+export const STANDBY_MAX_STEPS = 18000
 
 /**
  * TUNABLE: how close the rover must be to use a sample off the ground. The
