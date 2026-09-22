@@ -30,7 +30,7 @@ import {
   type RoverRescueState,
   type RoverStatus,
 } from "@/playgrounds/rover-rescue"
-import { isRoverRescuePlayground } from "./playground-motion"
+import { isCastleCrashersPlayground, isRoverRescuePlayground } from "./playground-motion"
 import type { HostRobotState, ProgramGameState, ProgramRuntime } from "./program-types"
 import {
   reefViewFromMaximized,
@@ -38,6 +38,10 @@ import {
   type PlaygroundChromeState,
   type TrashItem,
 } from "./playground-host"
+import { fitToBounds } from "@/engine"
+import { playgroundWorldBounds } from "./distance-picker-preview"
+import type { CastleCrashersState } from "@/playgrounds/castle-crashers"
+import { tickCastlePhysics } from "@/playgrounds/castle-crashers"
 
 export function usePlaygroundDraw({
   canvasRef,
@@ -48,6 +52,7 @@ export function usePlaygroundDraw({
   reefState,
   reefStateRef,
   roverStateRef,
+  castleStateRef,
   roverCamera,
   coralPieces,
   trashItems,
@@ -60,6 +65,7 @@ export function usePlaygroundDraw({
   gameState,
   onRoverMissionOver,
   onRoverStatus,
+  onCastleState,
 }: {
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   playgroundId: string
@@ -69,6 +75,7 @@ export function usePlaygroundDraw({
   reefState: OceanReefState
   reefStateRef: React.MutableRefObject<OceanReefState>
   roverStateRef: React.MutableRefObject<RoverRescueState>
+  castleStateRef: React.MutableRefObject<CastleCrashersState>
   roverCamera: Camera | null
   coralPieces: CoralPiece[]
   trashItems: TrashItem[]
@@ -81,6 +88,7 @@ export function usePlaygroundDraw({
   gameState: ProgramGameState
   onRoverMissionOver?: (reason: string, status: RoverStatus) => void
   onRoverStatus?: (status: RoverStatus) => void
+  onCastleState?: (state: CastleCrashersState) => void
 }) {
   const floatAnimationRef = useRef<number | null>(null)
   const roverCameraRef = useRef(roverCamera)
@@ -90,12 +98,14 @@ export function usePlaygroundDraw({
   // The rover loop must not restart when the run state flips, so it reads refs.
   const isRunningRef = useRef(isRunning)
   isRunningRef.current = isRunning
-  const missionCallbacksRef = useRef({ onRoverMissionOver, onRoverStatus })
-  missionCallbacksRef.current = { onRoverMissionOver, onRoverStatus }
+  const missionCallbacksRef = useRef({ onRoverMissionOver, onRoverStatus, onCastleState })
+  missionCallbacksRef.current = { onRoverMissionOver, onRoverStatus, onCastleState }
   const roverPlayground = isRoverRescuePlayground(playgroundId)
+  const castlePlayground = isCastleCrashersPlayground(playgroundId)
+  const oceanPlayground = !roverPlayground && !castlePlayground
 
   const drawRobot = useCallback(() => {
-    if (roverPlayground) return
+    if (!oceanPlayground) return
     const canvas = canvasRef.current
     if (!canvas || !playgroundState.isVisible || playgroundState.isMinimized) return
 
@@ -110,10 +120,10 @@ export function usePlaygroundDraw({
     ctx.rotate((robotState.rotation * Math.PI) / 180)
     drawSubmarine(ctx, { scale })
     ctx.restore()
-  }, [roverPlayground, playgroundState.isVisible, playgroundState.isMinimized, playgroundState.isMaximized, robotState])
+  }, [oceanPlayground, playgroundState.isVisible, playgroundState.isMinimized, playgroundState.isMaximized, robotState])
 
   const drawPlayground = useCallback(() => {
-    if (roverPlayground) return
+    if (!oceanPlayground) return
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -144,15 +154,15 @@ export function usePlaygroundDraw({
     if (showRuler) {
       drawFieldRulerOverlay(ctx, width, height)
     }
-  }, [roverPlayground, robotState, playgroundState.isMaximized, trashItems, coralPieces, penTrail, isRunning, showRuler, reefState])
+  }, [oceanPlayground, robotState, playgroundState.isMaximized, trashItems, coralPieces, penTrail, isRunning, showRuler, reefState])
 
   const checkCoralCollision = useCallback((xMm: number, yMm: number): boolean => {
-    if (roverPlayground) return false
+    if (!oceanPlayground) return false
     return hitsCoral(reefStateRef.current, toEngineRobot({ x: xMm, y: yMm, rotation: 0 }))
-  }, [roverPlayground])
+  }, [oceanPlayground])
 
   const checkTrashCollision = useCallback(() => {
-    if (roverPlayground) return
+    if (!oceanPlayground) return
     const next = tickOceanReef(
       {
         ...reefStateRef.current,
@@ -169,7 +179,7 @@ export function usePlaygroundDraw({
         trashCollected: prev.trashCollected + gained,
       }))
     }
-  }, [roverPlayground, robotState, commitReefState])
+  }, [oceanPlayground, robotState, commitReefState])
 
   useEffect(() => {
     if (!gameState.isSpawningTrash) return
@@ -198,17 +208,17 @@ export function usePlaygroundDraw({
   }, [gameState.isSpawningTrash])
 
   useEffect(() => {
-    if (roverPlayground) return
+    if (!oceanPlayground) return
     drawPlayground()
-  }, [roverPlayground, drawPlayground])
+  }, [oceanPlayground, drawPlayground])
 
   useEffect(() => {
-    if (roverPlayground) return
+    if (!oceanPlayground) return
     drawRobot()
-  }, [roverPlayground, drawRobot, playgroundState.isMaximized, playgroundState.isVisible, playgroundState.isMinimized])
+  }, [oceanPlayground, drawRobot, playgroundState.isMaximized, playgroundState.isVisible, playgroundState.isMinimized])
 
   useEffect(() => {
-    if (roverPlayground) return
+    if (!oceanPlayground) return
     if (!playgroundState.isVisible || playgroundState.isMinimized) return
 
     const timer = setTimeout(() => {
@@ -216,7 +226,7 @@ export function usePlaygroundDraw({
       drawRobot()
     }, 50)
     return () => clearTimeout(timer)
-  }, [roverPlayground, playgroundState.isVisible, playgroundState.isMinimized, drawPlayground, drawRobot])
+  }, [oceanPlayground, playgroundState.isVisible, playgroundState.isMinimized, drawPlayground, drawRobot])
 
   useEffect(() => {
     if (!roverPlayground || !playgroundState.isVisible || playgroundState.isMinimized) return
@@ -272,6 +282,40 @@ export function usePlaygroundDraw({
     frame = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(frame)
   }, [roverPlayground, playgroundState.isVisible, playgroundState.isMinimized, activePlayground, roverStateRef, canvasRef])
+
+  useEffect(() => {
+    if (!castlePlayground || !playgroundState.isVisible || playgroundState.isMinimized) return
+    let frame = 0
+    let last = performance.now()
+    let reportedWeight = -1
+    const loop = (now: number) => {
+      const dt = Math.min(64, now - last)
+      last = now
+      const robot = toEngineRobot(robotStateRef.current)
+      castleStateRef.current = tickCastlePhysics(
+        castleStateRef.current,
+        dt,
+        robot,
+        isRunningRef.current,
+      )
+      if (castleStateRef.current.weightClearedKg !== reportedWeight) {
+        reportedWeight = castleStateRef.current.weightClearedKg
+        missionCallbacksRef.current.onCastleState?.(castleStateRef.current)
+      } else if (castleStateRef.current.missionOver) {
+        missionCallbacksRef.current.onCastleState?.(castleStateRef.current)
+      }
+      const canvas = canvasRef.current
+      const ctx = canvas?.getContext("2d")
+      if (ctx) {
+        const viewport = { widthPx: canvas!.width, heightPx: canvas!.height }
+        const cam = fitToBounds(playgroundWorldBounds(activePlayground.world), viewport)
+        activePlayground.render(ctx, castleStateRef.current, robot, cam)
+      }
+      frame = requestAnimationFrame(loop)
+    }
+    frame = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frame)
+  }, [castlePlayground, playgroundState.isVisible, playgroundState.isMinimized, activePlayground, castleStateRef, canvasRef])
 
   return {
     checkCoralCollision,

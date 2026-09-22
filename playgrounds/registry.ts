@@ -1,5 +1,6 @@
 import { oceanReef } from "./ocean-reef"
 import { roverRescue } from "./rover-rescue"
+import { castleCrashers } from "./castle-crashers"
 import type { PlaygroundDefinition } from "./types"
 
 export const DEFAULT_PLAYGROUND_ID = "ocean-reef"
@@ -9,6 +10,9 @@ const playgrounds = new Map<string, PlaygroundDefinition<any>>()
 const ALIASES: Record<string, string> = {
   "ocean-cleanup": "ocean-reef",
   "rescue-rover": "rover-rescue",
+  "castle-crashers": "castle-crashers",
+  "castle-crasher-plus": "castle-crashers",
+  "castle_crasher_plus": "castle-crashers",
 }
 
 export function register<S>(definition: PlaygroundDefinition<S>): void {
@@ -29,3 +33,4 @@ export function resolvePlaygroundId(raw: string | null | undefined): string {
 
 register(oceanReef)
 register(roverRescue)
+register(castleCrashers)

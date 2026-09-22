@@ -221,6 +221,10 @@
   border-radius: 999px;
 }
 
+#vex-btn-multiplayer[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 #vex-header-actions > button {
   border-radius: 999px;
   font-weight: 600;
@@ -320,7 +324,6 @@
 }
 
 #vex-playground-window,
-#vex-ai-assistant-window,
 #vex-robot-config-window {
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 1rem;
@@ -328,6 +331,10 @@
     0 1px 0 rgba(255, 255, 255, 0.7) inset,
     0 24px 48px -20px rgba(15, 23, 42, 0.35);
   overflow: hidden;
+}
+
+#vex-ai-assistant-sidebar {
+  box-shadow: -8px 0 24px -16px rgba(15, 23, 42, 0.28);
 }
 
 #vex-playground-header,
@@ -349,8 +356,8 @@
 }
 
 #vex-playground-window-controls button,
-#vex-ai-assistant-window-controls button,
-#vex-robot-config-window-controls button {
+#vex-robot-config-window-controls button,
+#vex-ai-assistant-close {
   border-radius: 0.45rem;
 }
 

@@ -2,6 +2,7 @@
 
 import type { ReactNode, Ref } from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { dismissBlocklyFieldEditors } from "@/blocks/fields"
 import { isBlocklyFieldEditorTarget } from "@/lib/blockly-widget-form"
 import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
@@ -76,6 +77,8 @@ export function BlocklyEditor({
 
   const [deletedBlocks, setDeletedBlocks] = useState<string | null>(null)
   const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
+  /** Only the block picker column — the category rail stays put. */
+  const [flyoutHidden, setFlyoutHidden] = useState(false)
 
   useEffect(() => {
     if (!workspace || !blocklyLoaded) return
@@ -84,7 +87,10 @@ export function BlocklyEditor({
       contents: toolbox,
     })
     workspace.getToolbox()?.setSelectedItem(null)
-  }, [toolbox, workspace, blocklyLoaded])
+    const flyout = workspace.getFlyout()
+    flyout?.setVisible(!flyoutHidden)
+    window.Blockly?.svgResize?.(workspace)
+  }, [toolbox, workspace, blocklyLoaded, flyoutHidden])
 
   useEffect(() => {
     if (!workspace || !onCodeChange) return
@@ -159,11 +165,19 @@ export function BlocklyEditor({
     }
   }, [workspace, deletedBlocks])
 
+  const handleSelectCategory = useCallback(
+    (category: string) => {
+      onSelectCategory(category)
+      if (flyoutHidden) setFlyoutHidden(false)
+    },
+    [flyoutHidden, onSelectCategory],
+  )
+
   return (
     <>
       <CategoryRail
         selectedCategory={selectedCategory}
-        onSelectCategory={onSelectCategory}
+        onSelectCategory={handleSelectCategory}
         categories={railCategories}
         footer={
           <TrashcanButton
@@ -172,6 +186,19 @@ export function BlocklyEditor({
           />
         }
       />
+
+      <button
+        id="vex-btn-hide-flyout"
+        type="button"
+        className="z-10 flex w-7 shrink-0 flex-col items-center justify-center gap-1 border-r border-[#d5deea] bg-[#e8eef6] text-[10px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-[#dce5f0] hover:text-slate-900"
+        aria-label={flyoutHidden ? "Show block library" : "Hide block library"}
+        aria-pressed={flyoutHidden}
+        title={flyoutHidden ? "Show block library" : "Hide block library"}
+        onClick={() => setFlyoutHidden((hidden) => !hidden)}
+      >
+        {flyoutHidden ? <ChevronRight className="h-4 w-4" aria-hidden /> : <ChevronLeft className="h-4 w-4" aria-hidden />}
+        <span className="[writing-mode:vertical-rl] rotate-180">{flyoutHidden ? "Show" : "Hide"}</span>
+      </button>
 
       <div id="vex-blockly-workspace" ref={workspaceContainerRef} className="flex-1 relative">
         {!blocklyLoaded && (

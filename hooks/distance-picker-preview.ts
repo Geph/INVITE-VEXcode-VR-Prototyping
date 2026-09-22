@@ -14,8 +14,9 @@ import { riverHazardFromState } from "@/playgrounds/rover-rescue/state"
 import { planRoverDrive, type DrivePlan } from "@/playgrounds/rover-rescue/systems/physics"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
 import { toEngineRobot } from "./playground-host"
-import { isRoverRescuePlayground } from "./playground-motion"
+import { isCastleCrashersPlayground, isEngineNorthPlayground, isRoverRescuePlayground } from "./playground-motion"
 import type { HostRobotPose } from "./program-types"
+import type { CastleCrashersState } from "@/playgrounds/castle-crashers"
 
 export const DISTANCE_PREVIEW_PX = 280
 
@@ -47,7 +48,7 @@ function driveEndMm(
   const rad = (pose.rotation * Math.PI) / 180
   return {
     x: pose.x + sign * distanceMm * Math.sin(rad),
-    y: isRoverRescuePlayground(playgroundId)
+    y: isEngineNorthPlayground(playgroundId)
       ? pose.y + sign * distanceMm * Math.cos(rad)
       : pose.y - sign * distanceMm * Math.cos(rad),
   }
@@ -67,7 +68,7 @@ function project(
   cam: Camera,
   viewport: Viewport,
 ): { x: number; y: number } {
-  if (isRoverRescuePlayground(playgroundId)) {
+  if (isEngineNorthPlayground(playgroundId)) {
     return worldToScreen({ x: point.x, y: point.y }, cam, viewport)
   }
   return reefWorldToScreen(point.x, point.y, cam, viewport)
@@ -79,7 +80,7 @@ function unproject(
   cam: Camera,
   viewport: Viewport,
 ): { x: number; y: number } {
-  if (isRoverRescuePlayground(playgroundId)) return screenToWorld(point, cam, viewport)
+  if (isEngineNorthPlayground(playgroundId)) return screenToWorld(point, cam, viewport)
   return reefScreenToWorld(point.x, point.y, cam, viewport)
 }
 
@@ -161,7 +162,7 @@ export function headingFromPreviewPointer(
   const worldPoint = unproject(playgroundId, pointerPx, cam, viewport)
   const dx = worldPoint.x - robot.x
   const dy = worldPoint.y - robot.y
-  const toward = isRoverRescuePlayground(playgroundId)
+  const toward = isEngineNorthPlayground(playgroundId)
     ? (Math.atan2(dx, dy) * 180) / Math.PI
     : (Math.atan2(dx, -dy) * 180) / Math.PI
   return normalizeDegrees(direction === "reverse" ? toward + 180 : toward)
@@ -173,6 +174,7 @@ export function drawDistancePickerPreview({
   playground,
   reefState,
   roverState,
+  castleState,
   robot,
   direction,
   distanceMm,
@@ -182,6 +184,7 @@ export function drawDistancePickerPreview({
   playground: PlaygroundDefinition<any>
   reefState: OceanReefState
   roverState: RoverRescueState
+  castleState: CastleCrashersState
   robot: HostRobotPose
   direction: string
   distanceMm: number
@@ -191,6 +194,8 @@ export function drawDistancePickerPreview({
   const engineRobot = toEngineRobot(robot)
   if (isRoverRescuePlayground(playgroundId)) {
     playground.render(ctx, roverState, engineRobot, cam)
+  } else if (isCastleCrashersPlayground(playgroundId)) {
+    playground.render(ctx, castleState, engineRobot, cam)
   } else {
     playground.render(
       ctx,

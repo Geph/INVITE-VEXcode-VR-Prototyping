@@ -14,6 +14,7 @@ import { driveTargetMm } from "@/hooks/playground-motion"
 import { reefWorldToScreen } from "@/playgrounds/ocean-reef/art"
 import { createObstacle } from "@/playgrounds/rover-rescue/entities"
 import { oceanReef } from "@/playgrounds/ocean-reef"
+import { createCastleCrashersState } from "@/playgrounds/castle-crashers"
 import { FIELD_BOUNDS, START_POSE, roverRescue } from "@/playgrounds/rover-rescue"
 
 function mockContext(width = 280, height = 280) {
@@ -165,6 +166,7 @@ describe("distance picker preview", () => {
         playground: roverRescue,
         reefState: oceanReef.createState(1),
         roverState: roverRescue.createState(1),
+        castleState: createCastleCrashersState(1),
         robot: { x: START_POSE.xMm, y: START_POSE.yMm, rotation: 0 },
         direction: "forward",
         distanceMm: 200,
@@ -179,6 +181,7 @@ describe("distance picker preview", () => {
         playground: oceanReef,
         reefState: oceanReef.createState(1),
         roverState: roverRescue.createState(1),
+        castleState: createCastleCrashersState(1),
         robot: { x: 0, y: -800, rotation: 0 },
         direction: "forward",
         distanceMm: 200,

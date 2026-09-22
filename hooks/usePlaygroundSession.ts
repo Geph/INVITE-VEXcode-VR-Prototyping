@@ -28,9 +28,14 @@ import {
   get as getPlayground,
   resolvePlaygroundId,
 } from "@/playgrounds/registry"
-import { PLAYGROUND_OPTIONS, type PlaygroundId } from "@/components/playground/PlaygroundPicker"
+import {
+  createCastleCrashersState,
+  resetCastleCrashersState,
+  type CastleCrashersState,
+} from "@/playgrounds/castle-crashers"
 import { createRoverRescueState, resetRoverRescueState, type RoverRescueState } from "@/playgrounds/rover-rescue"
-import { isRoverRescuePlayground } from "./playground-motion"
+import { PLAYGROUND_OPTIONS, type PlaygroundId } from "@/components/playground/PlaygroundPicker"
+import { isCastleCrashersPlayground, isRoverRescuePlayground } from "./playground-motion"
 import { useRobotAnimation } from "./useRobotAnimation"
 import type { HostRobotPose, HostRobotState, ProgramGameState } from "./program-types"
 import {
@@ -48,12 +53,14 @@ import {
 function pickerToRegistryId(id: PlaygroundId): string {
   if (id === "rescue-rover") return "rover-rescue"
   if (id === "ocean-cleanup") return "ocean-reef"
+  if (id === "castle-crashers") return "castle-crashers"
   return DEFAULT_PLAYGROUND_ID
 }
 
 function registryToPickerId(id: string): PlaygroundId | null {
   if (id === "rover-rescue") return "rescue-rover"
   if (id === "ocean-reef") return "ocean-cleanup"
+  if (id === "castle-crashers") return "castle-crashers"
   return null
 }
 
@@ -93,6 +100,8 @@ export function usePlaygroundSession(eyeSensor: boolean) {
 
   const [roverState, setRoverState] = useState<RoverRescueState>(() => createRoverRescueState(1))
   const roverStateRef = useRef(roverState)
+  const [castleState, setCastleState] = useState<CastleCrashersState>(() => createCastleCrashersState(1))
+  const castleStateRef = useRef(castleState)
 
   const { cancelRobotAnimation, animateRobotFluidRef } = useRobotAnimation({
     playgroundId,
@@ -114,6 +123,10 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   }, [roverState])
 
   useEffect(() => {
+    castleStateRef.current = castleState
+  }, [castleState])
+
+  useEffect(() => {
     setIsMounted(true)
     const params = new URLSearchParams(window.location.search)
     const raw = params.get("playground")
@@ -125,11 +138,12 @@ export function usePlaygroundSession(eyeSensor: boolean) {
     setPlaygroundId(id)
     applyStartPose(id)
     setRoverState(createRoverRescueState(1, debug))
+    setCastleState(createCastleCrashersState(1))
     setSelectedPlaygroundId(registryToPickerId(id))
     setPlaygroundState((prev) => ({
       ...prev,
       x: playgroundX,
-      isVisible: prev.isVisible || isRoverRescuePlayground(id),
+      isVisible: prev.isVisible || isRoverRescuePlayground(id) || isCastleCrashersPlayground(id),
     }))
   }, [applyStartPose])
 
@@ -167,7 +181,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   }, [commitReefState])
 
   useEffect(() => {
-    if (!isMounted || isRoverRescuePlayground(playgroundId)) return
+    if (!isMounted || isRoverRescuePlayground(playgroundId) || isCastleCrashersPlayground(playgroundId)) return
     initializeCoralBorders(playgroundState.isMaximized)
   }, [isMounted, playgroundId, playgroundState.isMaximized, initializeCoralBorders])
 
@@ -235,6 +249,25 @@ export function usePlaygroundSession(eyeSensor: boolean) {
       return
     }
 
+    if (isCastleCrashersPlayground(playgroundId)) {
+      setCastleState((prev) => resetCastleCrashersState(prev, prev.seed))
+      applyStartPose(playgroundId)
+      setGameState((prev) => ({
+        ...prev,
+        trashTotal: 0,
+        trashCollected: 0,
+        isSpawningTrash: false,
+        batteryPercent: 100,
+        missionEndReason: null,
+        missionDays: 0,
+        showCelebration: false,
+        isGameOver: false,
+        gameLost: false,
+        runError: null,
+      }))
+      return
+    }
+
     const view = reefViewFromMaximized(playgroundState.isMaximized)
     const next = createOceanReefState(1, view)
     commitReefState(next)
@@ -273,6 +306,9 @@ export function usePlaygroundSession(eyeSensor: boolean) {
     if (isRoverRescuePlayground(registryId)) {
       setRoverState((prev) => createRoverRescueState(prev.seed, prev.debug))
     }
+    if (isCastleCrashersPlayground(registryId)) {
+      setCastleState((prev) => createCastleCrashersState(prev.seed, prev.level))
+    }
     const playground = getPlayground(registryId) ?? getPlayground(DEFAULT_PLAYGROUND_ID)!
     setPlaygroundPickerOpen(false)
     setPlaygroundState((prev) => {
@@ -299,7 +335,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
     const toMaximized = !fromMaximized
     const from = getPlaygroundCanvasSize(fromMaximized, activePlayground.world)
     const to = getPlaygroundCanvasSize(toMaximized, activePlayground.world)
-    if (!isRoverRescuePlayground(playgroundId)) {
+    if (!isRoverRescuePlayground(playgroundId) && !isCastleCrashersPlayground(playgroundId)) {
       const remap = (x: number, y: number) =>
         remapPixelAcrossCanvas(x, y, from.w, from.h, to.w, to.h)
 
@@ -361,6 +397,9 @@ export function usePlaygroundSession(eyeSensor: boolean) {
     roverState,
     roverStateRef,
     setRoverState,
+    castleState,
+    castleStateRef,
+    setCastleState,
     activePlayground,
     reefState,
     coralPieces,
@@ -394,5 +433,6 @@ export function usePlaygroundSession(eyeSensor: boolean) {
     liveSensors,
     canvasSize,
     selectedPlaygroundName,
+    applyStartPose,
   }
 }

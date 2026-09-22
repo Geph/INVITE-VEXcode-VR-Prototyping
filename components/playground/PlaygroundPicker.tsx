@@ -15,9 +15,9 @@ export const PLAYGROUND_OPTIONS: {
 }[] = [
   {
     id: "castle-crashers",
-    name: "Castle Crashers",
-    available: false,
-    description: "Storm the keep. Content coming later.",
+    name: "Castle Crasher+",
+    available: true,
+    description: "Push the castle into the water on a hexagonal island.",
     icon: Castle,
   },
   {

@@ -22,7 +22,8 @@ import { DEFAULT_ROBOT_CAPABILITIES } from "@/components/workspace/RobotConfigWi
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader"
 import { PlaygroundDistancePicker } from "@/components/workspace/PlaygroundDistancePicker"
 import { updateBlocklyNumberField } from "@/components/workspace/update-blockly-field"
-import { isRoverRescuePlayground } from "@/hooks/playground-motion"
+import { isCastleCrashersPlayground, isRoverRescuePlayground } from "@/hooks/playground-motion"
+import { CastleCrashersHud, CastleLevelToggle, createCastleCrashersState } from "@/playgrounds/castle-crashers"
 import { usePlaygroundDraw } from "@/hooks/usePlaygroundDraw"
 import { usePlaygroundMission } from "@/hooks/usePlaygroundMission"
 import { usePlaygroundSession } from "@/hooks/usePlaygroundSession"
@@ -113,6 +114,7 @@ export function VexWorkbench() {
   }, [day50, handleStart])
 
   const roverField = isRoverRescuePlayground(session.playgroundId)
+  const castleField = isCastleCrashersPlayground(session.playgroundId)
   const roverViewport = useMemo(
     () => ({ widthPx: session.canvasSize.w, heightPx: session.canvasSize.h }),
     [session.canvasSize.w, session.canvasSize.h],
@@ -142,6 +144,7 @@ export function VexWorkbench() {
     reefState: session.reefState,
     reefStateRef: session.reefStateRef,
     roverStateRef: session.roverStateRef,
+    castleStateRef: session.castleStateRef,
     roverCamera: roverField ? roverCam.camera : null,
     coralPieces: session.coralPieces,
     trashItems: session.trashItems,
@@ -315,6 +318,18 @@ export function VexWorkbench() {
             blocklyLoaded ? <BlocklyCollabOverlay peers={collab.peers} workspace={workspace} /> : null
           }
         />
+        <AIAssistant
+          ref={aiAssistantRef}
+          workspace={workspace}
+          surveyStep={aiStep}
+          onSurveyStepChange={setAiStep}
+          playgroundId={session.playgroundId}
+          playground={session.activePlayground}
+          robot={session.robotState}
+          reefState={session.reefState}
+          roverState={session.roverState}
+          castleState={session.castleState}
+        />
       </div>
 
       <PlaygroundPicker
@@ -354,7 +369,7 @@ export function VexWorkbench() {
             onReset={onReset}
             aiStep={aiStep}
             onCloseStrategy={() => setAiStep("strategy")}
-            chrome={roverField ? "field" : "reef"}
+            chrome={roverField || castleField ? "field" : "reef"}
             gameOverDetail={
               roverField && day50.endView && day50.snapshot ? (
                 <MissionEndPanel view={day50.endView} snapshot={day50.snapshot} onRetry={onReset} />
@@ -391,18 +406,22 @@ export function VexWorkbench() {
                     />
                   ) : null}
                 </>
+              ) : castleField ? (
+                <>
+                  <CastleCrashersHud stateRef={session.castleStateRef} />
+                  <CastleLevelToggle
+                    level={session.castleState.level}
+                    onChange={(level) => {
+                      session.setCastleState(createCastleCrashersState(session.castleState.seed, level))
+                      session.applyStartPose(session.playgroundId)
+                    }}
+                  />
+                </>
               ) : null
             }
           />
         </PlaygroundWindow>
       )}
-
-      <AIAssistant
-        ref={aiAssistantRef}
-        workspace={workspace}
-        surveyStep={aiStep}
-        onSurveyStepChange={setAiStep}
-      />
 
       <CelebrationOverlay show={session.gameState.showCelebration} trashCollected={session.gameState.trashCollected} />
 
@@ -437,6 +456,7 @@ export function VexWorkbench() {
           robot={session.robotState}
           reefState={session.reefState}
           roverState={session.roverState}
+          castleState={session.castleState}
           onApply={applyPickerValue}
           onClose={() => {
             blocklyPickerRef.current = null

@@ -13,6 +13,7 @@ import {
 import type { HostRobotPose } from "@/hooks/program-types"
 import type { OceanReefState } from "@/playgrounds/ocean-reef"
 import type { RoverRescueState } from "@/playgrounds/rover-rescue"
+import type { CastleCrashersState } from "@/playgrounds/castle-crashers"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
 
 export function PlaygroundDistancePicker({
@@ -23,6 +24,7 @@ export function PlaygroundDistancePicker({
   robot,
   reefState,
   roverState,
+  castleState,
   onApply,
   onClose,
 }: {
@@ -33,6 +35,7 @@ export function PlaygroundDistancePicker({
   robot: HostRobotPose
   reefState: OceanReefState
   roverState: RoverRescueState
+  castleState: CastleCrashersState
   onApply: (value: number) => void
   onClose: () => void
 }) {
@@ -50,12 +53,13 @@ export function PlaygroundDistancePicker({
         playground,
         reefState,
         roverState,
+        castleState,
         robot: { ...robot, rotation: headingDeg },
         direction,
         distanceMm,
       })
     },
-    [direction, headingDeg, playground, playgroundId, reefState, robot, roverState],
+    [castleState, direction, headingDeg, playground, playgroundId, reefState, robot, roverState],
   )
 
   const describePrediction = useCallback(

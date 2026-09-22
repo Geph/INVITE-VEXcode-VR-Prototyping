@@ -30,15 +30,31 @@ export function HeaderActions({
   onOpenPlayground,
   onGetHelp,
   getSessionSnapshot,
+  multiplayerOpen,
+  onToggleMultiplayer,
 }: {
   playgroundVisible: boolean
   playgroundPickerOpen: boolean
   onOpenPlayground: () => void
   onGetHelp: () => void
   getSessionSnapshot: () => SessionLogSnapshot
+  multiplayerOpen: boolean
+  onToggleMultiplayer: () => void
 }) {
   return (
     <div id="vex-header-actions" className="flex items-center gap-2">
+      <Button
+        id="vex-btn-multiplayer"
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="bg-white/20 hover:bg-white/30 text-white border-0"
+        aria-pressed={multiplayerOpen}
+        aria-controls="vex-collab-status"
+        onClick={onToggleMultiplayer}
+      >
+        Multiplayer
+      </Button>
       {!playgroundVisible && (
         <Button
           id="vex-btn-open-playground"
@@ -63,6 +79,15 @@ export function HeaderActions({
       >
         <HelpCircle className="h-4 w-4" />
         Get Help
+      </Button>
+      <Button
+        id="vex-btn-plan"
+        type="button"
+        variant="secondary"
+        size="sm"
+        className="bg-white/20 hover:bg-white/30 text-white border-0"
+      >
+        Plan
       </Button>
       <SessionSettingsMenu getSnapshot={getSessionSnapshot} />
     </div>
