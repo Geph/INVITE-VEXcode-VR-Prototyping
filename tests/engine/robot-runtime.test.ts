@@ -73,8 +73,8 @@ describe("constants", () => {
     expect(MM_PER_PIXEL).toBe(7.5)
     expect(PIXELS_PER_MM).toBe(1 / 7.5)
     expect(PIXELS_PER_INCH).toBe(25.4 / 7.5)
-    expect(DRIVE_MS_PER_MM_AT_50).toBe(10)
-    expect(TURN_MS_PER_DEGREE_AT_50).toBe(22)
+    expect(DRIVE_MS_PER_MM_AT_50).toBe(5)
+    expect(TURN_MS_PER_DEGREE_AT_50).toBe(11)
   })
 })
 
@@ -158,18 +158,18 @@ describe("driveDurationMs / turnDurationMs", () => {
 
   it("scales inversely with velocity and floors at 80 ms", () => {
     const px = distanceToPixels(100, "mm")
-    expect(driveDurationMs(px, 100)).toBe(500)
-    expect(driveDurationMs(px, 25)).toBe(2000)
+    expect(driveDurationMs(px, 100)).toBe(250)
+    expect(driveDurationMs(px, 25)).toBe(1000)
     expect(driveDurationMs(0, 50)).toBe(80)
     expect(turnDurationMs(0, 50)).toBe(80)
     expect(turnDurationMs(-90, 50)).toBe(90 * TURN_MS_PER_DEGREE_AT_50)
   })
 
-  it("clamps velocity into 5–100 (0% becomes 5%)", () => {
+  it("holds still at 0% and caps velocity at 100%", () => {
     const px = distanceToPixels(100, "mm")
-    expect(driveDurationMs(px, 0)).toBe(driveDurationMs(px, 5))
+    expect(driveDurationMs(px, 0)).toBe(Infinity)
     expect(driveDurationMs(px, 200)).toBe(driveDurationMs(px, 100))
-    expect(turnDurationMs(90, 0)).toBe(turnDurationMs(90, 5))
+    expect(turnDurationMs(90, 0)).toBe(Infinity)
     expect(turnDurationMs(90, 999)).toBe(turnDurationMs(90, 100))
   })
 })
@@ -196,7 +196,7 @@ describe("fieldMmToPixel / pixelToFieldMm", () => {
 
   it("rounds the inverse to integer millimetres", () => {
     expect(pixelToFieldMm(201, 200, CANVAS.w, CANVAS.h)).toEqual({
-      x: Math.round(pixelsToDistance(1, "mm")),
+      x: Math.round(2000 / CANVAS.w),
       y: 0,
     })
   })

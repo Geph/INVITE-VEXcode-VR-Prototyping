@@ -62,7 +62,9 @@ describe("castle reference layout and interactions", () => {
     expect(piece.topple).toBe(0)
     expect(plowed.weightClearedKg).toBe(0)
     const idle = tickCastlePhysics(plowed, 16, robot, true)
-    expect(idle.pieces).toEqual(plowed.pieces)
+    // The reference debris keeps sliding after contact, with friction.
+    expect(idle.pieces[0].xMm).toBeGreaterThan(plowed.pieces[0].xMm)
+    expect(idle.pieces[0].vxMmSec).toBeLessThan(plowed.pieces[0].vxMmSec)
   })
 
   it("does not push a long wall from outside its narrow rotated footprint", () => {
