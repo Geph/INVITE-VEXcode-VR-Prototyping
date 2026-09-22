@@ -5,7 +5,7 @@
  */
 
 import { createRng } from "@/engine/rng"
-import { HEX_RADIUS_MM } from "./config"
+import { HEX_RADIUS_MM, PIECE_WEIGHT_KG } from "./config"
 
 export type PieceKind = "wall" | "turret" | "castle-wall" | "tower" | "keep" | "rock" | "tree" | "roof" | "ramp"
 
@@ -43,7 +43,7 @@ export function level1Layout(): CastlePieceSpec[] {
   const pieces: CastlePieceSpec[] = []
   const add = (id: string, kind: PieceKind, xMm: number, yMm: number, halfWMm: number,
     halfHMm: number, weightKg: number, headingDeg = 0) => {
-    pieces.push({ id, kind, xMm, yMm, halfWMm, halfHMm, weightKg, headingDeg, pushable: weightKg > 0 })
+    pieces.push({ id, kind, xMm, yMm, halfWMm, halfHMm, weightKg: PIECE_WEIGHT_KG[kind], headingDeg, pushable: weightKg > 0 })
   }
   for (let i = 0; i < 6; i++) {
     const a = ring[i], b = ring[(i + 1) % ring.length]

@@ -3,6 +3,8 @@ export const FIELD_MM = 2000
 export const START_POSE = { xMm: 0, yMm: -800, headingDeg: 0 }
 export const BATTERY_SEC = 180
 export const TRASH_COUNT = 12
+/** TUNABLE: world-space hull contact radius, independent of window size. */
+export const ROBOT_RADIUS_MM = 75
 
 /** Playground scale used by today's Ocean Reef canvas (7.5 mm per pixel). */
 export const MM_PER_PIXEL = 7.5

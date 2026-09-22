@@ -22,6 +22,7 @@ export function useProgramRunner({
   setRobotState,
   runtimeRef,
   reefStateRef,
+  castleStateRef,
   roverStateRef,
   activePlayground,
   robotCapabilities,
@@ -149,7 +150,7 @@ export function useProgramRunner({
       driveVelocity: 50,
       turnVelocity: 50,
       driveTimeoutSec: null,
-      heading: 0,
+      heading: activePlayground.world.startPose.headingDeg,
       penDown: false,
       penColor: "#000000",
       penWidth: 2,
@@ -163,20 +164,21 @@ export function useProgramRunner({
     setRobotState({
       x: startPos.x,
       y: startPos.y,
-      rotation: 0,
+      rotation: activePlayground.world.startPose.headingDeg,
       driveVelocity: 50,
       turnVelocity: 50,
-      heading: 0,
+      heading: activePlayground.world.startPose.headingDeg,
     })
 
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    robotStateRef.current = { x: startPos.x, y: startPos.y, rotation: 0 }
+    robotStateRef.current = { x: startPos.x, y: startPos.y, rotation: activePlayground.world.startPose.headingDeg }
 
-    const { robotAPI, pushConsoleLine, registerBroadcastHandlers } = createProgramRobotApi({
+    const { robotAPI, pushConsoleLine, registerBroadcastHandlers, waitForMotion } = createProgramRobotApi({
       runtimeRef,
       robotStateRef,
       reefStateRef,
+      castleStateRef,
       roverStateRef,
       setRobotState,
       setConsoleLines,
@@ -219,6 +221,11 @@ export function useProgramRunner({
       if (code.trim()) {
         const execFunc = new AsyncFunction("robot", code)
         await execFunc(robotAPI)
+        if (activePlayground.id === "castle-crashers") await waitForMotion()
+        if (activePlayground.id === "castle-crashers" && castleStateRef && !castleStateRef.current.missionOver && !stopRequestedRef.current) {
+          const state = castleStateRef.current
+          castleStateRef.current = { ...state, missionOver: true, missionReason: "complete", endedAtMs: state.elapsedMs }
+        }
       }
     } catch (error: unknown) {
       // A stop is a normal end of run, not a program error.
@@ -297,7 +304,9 @@ export function useProgramRunner({
     highlightProgramBlock(null)
     const mark = activePlayground.markStoppedByUser
     if (mark) {
-      if (isRoverRescuePlayground(activePlayground.id) && roverStateRef) {
+      if (activePlayground.id === "castle-crashers" && castleStateRef) {
+        castleStateRef.current = mark(castleStateRef.current)
+      } else if (isRoverRescuePlayground(activePlayground.id) && roverStateRef) {
         roverStateRef.current = mark(roverStateRef.current)
       } else {
         reefStateRef.current = mark(reefStateRef.current)
@@ -324,12 +333,12 @@ export function useProgramRunner({
     setRobotState({
       x: resetPos.x,
       y: resetPos.y,
-      rotation: 0,
+      rotation: activePlayground.world.startPose.headingDeg,
       driveVelocity: 50,
       turnVelocity: 50,
-      heading: 0,
+      heading: activePlayground.world.startPose.headingDeg,
     })
-    robotStateRef.current = { x: resetPos.x, y: resetPos.y, rotation: 0 }
+    robotStateRef.current = { x: resetPos.x, y: resetPos.y, rotation: activePlayground.world.startPose.headingDeg }
     setGameState({
       trashCollected: 0,
       trashTotal: 0,

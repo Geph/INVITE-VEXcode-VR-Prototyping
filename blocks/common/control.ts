@@ -8,7 +8,7 @@ function defineBlocks(Blockly: any) {
       this.setPreviousStatement(true, null)
       this.setNextStatement(true, null)
       this.setColour("#7CB342")
-      this.setTooltip("Switch (Python) block — shown in the Python view; not executed by START")
+      this.setTooltip("Run VEX Python command calls with literal arguments (drivetrain, wait, print, pen). Supports for … in range(number). Unsupported Python reports an error.")
       this.setHelpUrl("")
     },
   }
@@ -17,7 +17,7 @@ function defineBlocks(Blockly: any) {
 const jsGenerators = {
   pg_control_switch: (block: any) => {
     const code = block.getFieldValue("CODE") || ""
-    return `// switch: ${String(code).replace(/\n/g, " ")}\n`
+    return `await robot.runSwitchCode(${JSON.stringify(String(code))});\n`
   },
 }
 

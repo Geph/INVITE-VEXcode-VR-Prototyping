@@ -7,7 +7,7 @@ import {
   type CoralPiece,
 } from "@/lib/robot-runtime"
 import { CORAL_COLORS, CORAL_KINDS } from "./art"
-import { MM_PER_PIXEL, START_POSE, TRASH_COUNT } from "./config"
+import { FIELD_MM, START_POSE, TRASH_COUNT } from "./config"
 
 export type TrashType = "bottle" | "can" | "wrapper" | "bag"
 
@@ -52,16 +52,18 @@ export interface OceanReefState {
 }
 
 function pxToMm(px: number, canvasSize: number): number {
-  return (px - canvasSize / 2) * MM_PER_PIXEL
+  return (px - canvasSize / 2) * FIELD_MM / canvasSize
 }
 
 function radiusPxToMm(radiusPx: number): number {
-  return radiusPx * MM_PER_PIXEL
+  return radiusPx * FIELD_MM / 400
 }
 
 /** Same border walk as the old workspace, stored in world mm. */
 export function createCoralPieces(view: OceanReefView): OceanReefCoral[] {
-  const { widthPx: width, heightPx: height } = view
+  // Build one physical reef; maximizing only changes its projection.
+  void view
+  const width = 400, height = 400
   const pieces: OceanReefCoral[] = []
 
   const pushPiece = (x: number, y: number, seed: number, angle: number) => {
@@ -77,12 +79,12 @@ export function createCoralPieces(view: OceanReefView): OceanReefCoral[] {
   }
 
   for (let x = 0; x < width; x += 30) {
-    pushPiece(x + 15, 15, x, Math.PI)
-    pushPiece(x + 15, height - 15, x + 1000, 0)
+    pushPiece(x + 15, 0, x, Math.PI)
+    pushPiece(x + 15, height, x + 1000, 0)
   }
   for (let y = 30; y < height - 30; y += 30) {
-    pushPiece(15, y + 15, y + 2000, Math.PI / 2)
-    pushPiece(width - 15, y + 15, y + 3000, -Math.PI / 2)
+    pushPiece(0, y + 15, y + 2000, Math.PI / 2)
+    pushPiece(width, y + 15, y + 3000, -Math.PI / 2)
   }
 
   return pieces
@@ -94,7 +96,7 @@ export function coralToPixelPieces(coral: OceanReefCoral[], view: OceanReefView)
     return {
       x: pos.x,
       y: pos.y,
-      radius: piece.radiusMm / MM_PER_PIXEL,
+      radius: piece.radiusMm * view.widthPx / FIELD_MM,
       color: piece.color,
       kind: piece.kind,
       angle: piece.angle,

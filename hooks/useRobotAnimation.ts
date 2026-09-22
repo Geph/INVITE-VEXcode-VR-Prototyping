@@ -2,11 +2,12 @@
 
 import type React from "react"
 import { useCallback, useRef } from "react"
-import { normalizeDegrees, shortestRotationDelta } from "@/lib/robot-runtime"
 import { poseToCanvas } from "@/playgrounds/ocean-reef"
 import type { AnimateRobotFluidFn, HostRobotPose, HostRobotState, ProgramRuntime } from "./program-types"
 import { clampHostRobotMm, isRoverRescuePlayground } from "./playground-motion"
 import { reefViewFromMaximized } from "./playground-host"
+import { castleMotionTarget } from "@/playgrounds/castle-crashers/systems/physics"
+import type { CastleCrashersState } from "@/playgrounds/castle-crashers/state"
 
 export function useRobotAnimation({
   playgroundId,
@@ -14,8 +15,10 @@ export function useRobotAnimation({
   setRobotState,
   runtimeRef,
   setPenTrail,
+  castleStateRef,
 }: {
   playgroundId: string
+  castleStateRef?: { current: CastleCrashersState }
   playgroundMaximized: boolean
   setRobotState: React.Dispatch<React.SetStateAction<HostRobotState>>
   runtimeRef: React.MutableRefObject<ProgramRuntime>
@@ -87,7 +90,9 @@ export function useRobotAnimation({
        * the distance picker's preview over-promise.
        */
       const commit = (x: number, y: number, rotation: number) => {
-        const next = clampHostRobotMm(playgroundId, x, y, view)
+        const raw = clampHostRobotMm(playgroundId, x, y, view)
+        const next = playgroundId === "castle-crashers" && castleStateRef
+          ? castleMotionTarget(poseRef.current, raw, castleStateRef.current.pieces) : raw
         if (next.xMm !== lastPoint.x || next.yMm !== lastPoint.y) {
           if (!isRoverRescuePlayground(playgroundId)) {
             recordPenSegment(poseToCanvas(lastPoint.x, lastPoint.y, view), poseToCanvas(next.xMm, next.yMm, view))
@@ -112,8 +117,10 @@ export function useRobotAnimation({
           current.y = startState.y + (targetState.y - startState.y) * progress
         }
         if (targetState.rotation !== undefined) {
-          const delta = shortestRotationDelta(startState.rotation, targetState.rotation)
-          current.rotation = normalizeDegrees(startState.rotation + delta * progress)
+          // The caller selects direction and number of revolutions. Keep the
+          // physical angle unwrapped; only sensor headings wrap to 0–359°.
+          const delta = targetState.rotation - startState.rotation
+          current.rotation = startState.rotation + delta * progress
         }
         commit(current.x, current.y, current.rotation)
 

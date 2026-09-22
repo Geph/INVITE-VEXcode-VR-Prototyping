@@ -28,6 +28,20 @@ export const PLOW_FRONT_MM = 105
 /** TUNABLE: how far past the hex edge counts as "in the water". */
 export const WATER_MARGIN_MM = 20
 
+/** TUNABLE: debris slide, tumble and splash, estimated from the research video. */
+export const DEBRIS_DRAG_PER_SEC = 2.8
+export const DEBRIS_IMPULSE = 1.35
+export const DEBRIS_MAX_SPEED_MM_SEC = 1200
+export const SPLASH_DURATION_MS = 900
+export const RESULTS_DELAY_MS = 1000
+export const TOPPLE_DISTANCE_MM = 110
+export const CONTACT_PASSES = 3
+/** TUNABLE kg per component; the video establishes whole-kg scoring, not individual masses. */
+export const PIECE_WEIGHT_KG = {
+  wall: 100, turret: 200, "castle-wall": 150, tower: 100,
+  keep: 1500, roof: 150, ramp: 100, rock: 0, tree: 0,
+} as const
+
 export const CASTLE_CRASHERS_ID = "castle-crashers"
 export const CASTLE_CRASHERS_NAME = "Castle Crasher+"
 

@@ -38,7 +38,7 @@ import {
   type PlaygroundChromeState,
   type TrashItem,
 } from "./playground-host"
-import { fitToBounds } from "@/engine"
+import { SimulationClock, fitToBounds } from "@/engine"
 import { playgroundWorldBounds } from "./distance-picker-preview"
 import type { CastleCrashersState } from "@/playgrounds/castle-crashers"
 import { tickCastlePhysics } from "@/playgrounds/castle-crashers"
@@ -131,7 +131,7 @@ export function usePlaygroundDraw({
     if (!ctx) return
 
     const { w: width, h: height } = getPlaygroundCanvasSize(playgroundState.isMaximized)
-    const cam = oceanReefCamera()
+    const cam = oceanReefCamera(width)
     const robot = toEngineRobot(robotState)
     renderOceanReef(ctx, reefState, robot, cam, { penTrail })
 
@@ -284,24 +284,38 @@ export function usePlaygroundDraw({
   }, [roverPlayground, playgroundState.isVisible, playgroundState.isMinimized, activePlayground, roverStateRef, canvasRef])
 
   useEffect(() => {
-    if (!castlePlayground || !playgroundState.isVisible || playgroundState.isMinimized) return
+    if (!castlePlayground) return
     let frame = 0
     let last = performance.now()
     let reportedWeight = -1
+    let signaledOver = false
+    const clock = new SimulationClock()
+    let frameTimeMs = 0
+    let previousRobot = toEngineRobot(robotStateRef.current)
     const loop = (now: number) => {
       const dt = Math.min(64, now - last)
       last = now
       const robot = toEngineRobot(robotStateRef.current)
-      castleStateRef.current = tickCastlePhysics(
-        castleStateRef.current,
-        dt,
-        robot,
-        isRunningRef.current,
-      )
+      const frameStartMs = frameTimeMs
+      frameTimeMs += dt
+      // Sample the animated pose at each physics step, not once per render.
+      // Otherwise a slow frame applies its entire drive as one oversized shove.
+      clock.pushFrame(dt, ({ dtMs, gameTimeMs }) => {
+        const fraction = dt > 0 ? Math.max(0, Math.min(1, (gameTimeMs - frameStartMs) / dt)) : 1
+        const sample = { ...robot,
+          xMm: previousRobot.xMm + (robot.xMm - previousRobot.xMm) * fraction,
+          yMm: previousRobot.yMm + (robot.yMm - previousRobot.yMm) * fraction,
+        }
+        castleStateRef.current = tickCastlePhysics(castleStateRef.current, dtMs, sample, isRunningRef.current)
+      })
+      previousRobot = robot
+      if (!castleStateRef.current.missionOver) signaledOver = false
       if (castleStateRef.current.weightClearedKg !== reportedWeight) {
         reportedWeight = castleStateRef.current.weightClearedKg
         missionCallbacksRef.current.onCastleState?.(castleStateRef.current)
-      } else if (castleStateRef.current.missionOver) {
+      }
+      if (castleStateRef.current.missionOver && !signaledOver) {
+        signaledOver = true
         missionCallbacksRef.current.onCastleState?.(castleStateRef.current)
       }
       const canvas = canvasRef.current
@@ -309,7 +323,9 @@ export function usePlaygroundDraw({
       if (ctx) {
         const viewport = { widthPx: canvas!.width, heightPx: canvas!.height }
         const cam = fitToBounds(playgroundWorldBounds(activePlayground.world), viewport)
-        activePlayground.render(ctx, castleStateRef.current, robot, cam)
+        if (playgroundState.isVisible && !playgroundState.isMinimized) {
+          activePlayground.render(ctx, castleStateRef.current, robot, cam)
+        }
       }
       frame = requestAnimationFrame(loop)
     }

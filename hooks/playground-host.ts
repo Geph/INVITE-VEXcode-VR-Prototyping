@@ -105,13 +105,13 @@ export function reefViewFromMaximized(maximized: boolean) {
   return { widthPx: w, heightPx: h, maximized }
 }
 
-export function initialHostRobot(x: number, y: number): HostRobotState {
+export function initialHostRobot(x: number, y: number, headingDeg = 0): HostRobotState {
   return {
     x,
     y,
-    rotation: 0,
+    rotation: headingDeg,
     driveVelocity: 50,
     turnVelocity: 50,
-    heading: 0,
+    heading: headingDeg,
   }
 }

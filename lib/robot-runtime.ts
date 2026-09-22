@@ -378,16 +378,16 @@ export function playgroundWindowX(canvasWidth: number, viewportWidth: number): n
 /** Canvas pixel position for a VEX field coordinate (origin at playground center). */
 export function fieldMmToPixel(xMm: number, yMm: number, canvasW: number, canvasH: number): { x: number; y: number } {
   return {
-    x: canvasW / 2 + distanceToPixels(xMm, "mm"),
-    y: canvasH / 2 + distanceToPixels(yMm, "mm"),
+    x: canvasW / 2 + xMm * canvasW / CORAL_REEF_FIELD_MM,
+    y: canvasH / 2 + yMm * canvasH / CORAL_REEF_FIELD_MM,
   }
 }
 
 /** VEX field mm from canvas pixels (origin at playground center). */
 export function pixelToFieldMm(px: number, py: number, canvasW: number, canvasH: number): { x: number; y: number } {
   return {
-    x: Math.round(pixelsToDistance(px - canvasW / 2, "mm")),
-    y: Math.round(pixelsToDistance(py - canvasH / 2, "mm")),
+    x: Math.round((px - canvasW / 2) * CORAL_REEF_FIELD_MM / canvasW),
+    y: Math.round((py - canvasH / 2) * CORAL_REEF_FIELD_MM / canvasH),
   }
 }
 

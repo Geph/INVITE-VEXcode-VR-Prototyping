@@ -97,8 +97,8 @@ export function startRobot(): RobotState {
   }
 }
 
-export function oceanReefCamera(): Camera {
-  return { centerMm: { x: 0, y: 0 }, zoom: INITIAL_ZOOM }
+export function oceanReefCamera(widthPx = 400): Camera {
+  return { centerMm: { x: 0, y: 0 }, zoom: widthPx / FIELD_MM }
 }
 
 export { BATTERY_SEC }

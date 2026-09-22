@@ -86,7 +86,7 @@ export const castleCrashers: PlaygroundDefinition<CastleCrashersState> = {
     }
   },
   markStoppedByUser(state) {
-    return { ...state, projectStoppedByUser: true, missionOver: true, missionReason: "stopped" }
+    return { ...state, projectStoppedByUser: true, missionOver: true, missionReason: "stopped", endedAtMs: state.elapsedMs }
   },
 }
 
