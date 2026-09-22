@@ -23,7 +23,7 @@ export function AssistantWindow({
       id="vex-ai-assistant-sidebar"
       ref={aiAssistantRef}
       suppressHydrationWarning
-      className="flex h-full w-[360px] shrink-0 flex-col border-l border-slate-200 bg-white"
+      className="relative z-[60] flex h-full w-[360px] shrink-0 flex-col border-l border-slate-200 bg-white"
       aria-label="Get Help"
     >
       <div

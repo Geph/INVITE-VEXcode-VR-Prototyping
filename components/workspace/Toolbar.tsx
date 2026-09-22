@@ -80,15 +80,6 @@ export function HeaderActions({
         <HelpCircle className="h-4 w-4" />
         Get Help
       </Button>
-      <Button
-        id="vex-btn-plan"
-        type="button"
-        variant="secondary"
-        size="sm"
-        className="bg-white/20 hover:bg-white/30 text-white border-0"
-      >
-        Plan
-      </Button>
       <SessionSettingsMenu getSnapshot={getSessionSnapshot} />
     </div>
   )

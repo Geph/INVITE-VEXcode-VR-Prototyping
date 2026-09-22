@@ -1,12 +1,16 @@
 "use client"
 
 import type React from "react"
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react"
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
 import { isTypingInFormField } from "@/lib/blockly-widget-form"
 import type { OceanReefState } from "@/playgrounds/ocean-reef"
 import type { RoverRescueState } from "@/playgrounds/rover-rescue"
-import type { CastleCrashersState } from "@/playgrounds/castle-crashers"
+import { createCastleCrashersState, type CastleCrashersState } from "@/playgrounds/castle-crashers"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
+import { fitToBounds } from "@/engine"
+import { playgroundWorldBounds } from "@/hooks/distance-picker-preview"
+import { emptyPlan, samplePlanRun } from "./plan-cycle"
+import { PlanPanel, PLAN_VIEW } from "./plan-panel"
 import { AssistantWindow } from "./AssistantWindow"
 import { OptionTree } from "./option-tree"
 import type { AIAssistantState, SurveyStep } from "./types"
@@ -24,6 +28,7 @@ type HelpPlayground =
   | PlaygroundDefinition<CastleCrashersState>
 
 export type AIAssistantProps = {
+  isRunning: boolean
   workspace: React.ComponentProps<typeof OptionTree>["workspace"]
   surveyStep: SurveyStep
   onSurveyStepChange: (step: SurveyStep) => void
@@ -40,6 +45,7 @@ export type AIAssistantProps = {
 
 export function AIAssistant({
   workspace,
+  isRunning,
   surveyStep: aiStep,
   onSurveyStepChange: setAiStep,
   playgroundId,
@@ -53,6 +59,23 @@ export function AIAssistant({
   ref,
 }: AIAssistantProps) {
   const aiAssistantRef = useRef<HTMLDivElement>(null)
+  const [plan, setPlan] = useState(emptyPlan)
+  const planCastle = useMemo(() => createCastleCrashersState(castleState.seed, castleState.level), [castleState.seed, castleState.level])
+  useEffect(() => {
+    setPlan(prev => samplePlanRun(prev, isRunning, robot))
+  }, [isRunning, robot.x, robot.y])
+  useEffect(() => {
+    if (plan.phase !== "review") return
+    setAiAssistantState({ isVisible: true })
+    setAiStep("strategy")
+  }, [plan.phase, setAiStep])
+  const start = playground.world.startPose
+  const planBackdrop = {
+    playgroundId, playground, reefState, roverState, castleState: planCastle,
+    robot: { x: start.xMm, y: start.yMm, rotation: start.headingDeg },
+    viewport: PLAN_VIEW, cam: fitToBounds(playgroundWorldBounds(playground.world), PLAN_VIEW),
+  }
+
   const [aiAssistantState, setAiAssistantState] = useState<AIAssistantState>({
     isVisible: false,
   })
@@ -85,11 +108,10 @@ export function AIAssistant({
 
       const steps: Record<string, SurveyStep> = {
         "1": "strategy",
-        "2": "predict",
-        "3": "fix",
-        "4": "compare",
-        "5": "feel",
-        "6": "partner",
+        "2": "fix",
+        "3": "compare",
+        "4": "feel",
+        "5": "partner",
       }
       const next = steps[e.key]
       if (next) setAiStep(next)
@@ -106,6 +128,7 @@ export function AIAssistant({
       onClose={handleCloseAIAssistant}
     >
       <OptionTree
+        planPanel={<PlanPanel plan={plan} setPlan={setPlan} backdrop={planBackdrop} isRunning={isRunning} onBack={() => setAiStep("main")} />}
         aiStep={aiStep}
         setAiStep={setAiStep}
         workspace={workspace}

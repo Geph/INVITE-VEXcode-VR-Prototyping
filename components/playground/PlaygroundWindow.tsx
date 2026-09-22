@@ -43,7 +43,7 @@ export function PlaygroundWindow({
       suppressHydrationWarning
       className="fixed bg-white z-50 transition-all duration-200"
       style={{
-        left: `${state.x}px`,
+        left: `min(${state.x}px, max(0px, calc(100vw - var(--help-sidebar-inset, 0px) - ${playgroundWindowWidthPx(canvasWidth)}px - 12px)))`,
         top: `${state.y}px`,
         cursor: state.isDragging ? "grabbing" : "auto",
         width: `${playgroundWindowWidthPx(canvasWidth)}px`,

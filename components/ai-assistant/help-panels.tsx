@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
-import { GitCompare, Heart, Lightbulb, Target, Users, Wrench, Zap, RotateCcw, Search, Gem, Crosshair, Home, Moon, Pencil, Map } from "lucide-react"
+import { useState, type ReactNode } from "react"
+import { GitCompare, Heart, Lightbulb, Users, Wrench, Map } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { isCastleCrashersPlayground, isRoverRescuePlayground } from "@/hooks/playground-motion"
 import { generatePythonProgram } from "@/lib/python-generator"
 import type { PyWorkspace } from "@/blocks/generators/python-types"
 import type { SurveyStep } from "./types"
@@ -47,7 +46,7 @@ export function MainMenu({
         {!playgroundVisible ? (
           <Button
             id="vex-ai-open-playground"
-            className="justify-start text-left h-auto py-3 px-4 bg-slate-600 hover:bg-slate-700 text-white border-0"
+            className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-slate-600 hover:bg-slate-700 text-white border-0"
             onClick={onOpenPlayground}
           >
             <Map className="w-5 h-5 mr-3" />
@@ -55,11 +54,10 @@ export function MainMenu({
           </Button>
         ) : null}
         <MenuButton color="bg-blue-500 hover:bg-blue-600" icon={<Lightbulb className="w-5 h-5 mr-3" />} n="1" label="Make a plan" onClick={() => setAiStep("strategy")} />
-        <MenuButton color="bg-purple-500 hover:bg-purple-600" icon={<Target className="w-5 h-5 mr-3" />} n="2" label="Predict" onClick={() => setAiStep("predict")} />
-        <MenuButton color="bg-red-500 hover:bg-red-600" icon={<Wrench className="w-5 h-5 mr-3" />} n="3" label="Investigate" onClick={() => setAiStep("fix")} />
-        <MenuButton color="bg-green-500 hover:bg-green-600" icon={<GitCompare className="w-5 h-5 mr-3" />} n="4" label="Compare" onClick={() => setAiStep("compare")} />
-        <MenuButton color="bg-orange-500 hover:bg-orange-600" icon={<Heart className="w-5 h-5 mr-3" />} n="5" label="How do you feel?" onClick={() => setAiStep("feel")} />
-        <MenuButton color="bg-indigo-500 hover:bg-indigo-600" icon={<Users className="w-5 h-5 mr-3" />} n="6" label="Work with Someone" onClick={() => setAiStep("partner")} />
+        <MenuButton color="bg-red-500 hover:bg-red-600" icon={<Wrench className="w-5 h-5 mr-3" />} n="2" label="Investigate" onClick={() => setAiStep("fix")} />
+        <MenuButton color="bg-green-500 hover:bg-green-600" icon={<GitCompare className="w-5 h-5 mr-3" />} n="3" label="Compare" onClick={() => setAiStep("compare")} />
+        <MenuButton color="bg-orange-500 hover:bg-orange-600" icon={<Heart className="w-5 h-5 mr-3" />} n="4" label="How do you feel?" onClick={() => setAiStep("feel")} />
+        <MenuButton color="bg-indigo-500 hover:bg-indigo-600" icon={<Users className="w-5 h-5 mr-3" />} n="5" label="Work with Someone" onClick={() => setAiStep("partner")} />
       </div>
     </div>
   )
@@ -79,90 +77,11 @@ function MenuButton({
   onClick: () => void
 }) {
   return (
-    <Button className={`justify-start text-left h-auto py-3 px-4 text-white border-0 ${color}`} onClick={onClick}>
+    <Button className={`justify-start text-left whitespace-normal break-words h-auto py-3 px-4 text-white border-0 ${color}`} onClick={onClick}>
       {icon}
       <span className="mr-2 font-semibold">{n}.</span>
       <span>{label}</span>
     </Button>
-  )
-}
-
-/** Ocean Reef (and future Castle-free cleanup fields) keep the velocity / edge plans. */
-const CLEANUP_PLANS = [
-  { icon: Zap, label: "Move faster (efficiently)", detail: "examples" as const },
-  { icon: RotateCcw, label: "Movement strategies", detail: "When the distance sensor sees a wall, turn so the robot keeps cleaning instead of pushing into the border." },
-  { icon: Search, label: "Blocks that can help you", detail: "Look in Sensing and Control for blocks that check what is ahead, then choose a turn." },
-]
-
-const CASTLE_PLANS = [
-  { icon: Pencil, label: "Draw your plan", detail: "draw" as const },
-  { icon: RotateCcw, label: "Movement strategies", detail: "Stay on the green hex. If you get close to the red border, turn before the robot falls in the water." },
-  { icon: Search, label: "Blocks that can help you", detail: "Look in Drivetrain and Sensing for blocks that help you aim pushes toward the water." },
-]
-
-const ROVER_PLANS = [
-  { icon: Gem, label: "Find and use minerals", detail: "Drive to a mineral, absorb it, and use it before the battery runs out." },
-  { icon: Crosshair, label: "Blast aliens", detail: "Face an alien and fire so it stops draining the battery." },
-  { icon: Home, label: "Bring minerals to base", detail: "Carry minerals back to base and drop them there to store them." },
-  { icon: Moon, label: "Sleep to last longer", detail: "Use standby to skip ahead when nothing useful is in range." },
-]
-
-export function PlanMenu({
-  playgroundId,
-  onBack,
-  onExamples,
-  onDraw,
-}: {
-  playgroundId: string
-  onBack: () => void
-  onExamples: () => void
-  onDraw: () => void
-}) {
-  const rover = isRoverRescuePlayground(playgroundId)
-  const castle = isCastleCrashersPlayground(playgroundId)
-  const plans = rover ? ROVER_PLANS : castle ? CASTLE_PLANS : CLEANUP_PLANS
-  const [note, setNote] = useState<string | null>(null)
-
-  if (note) {
-    return (
-      <div className="text-gray-700 text-sm">
-        <BackButton colorClass="text-blue-600 hover:text-blue-800" onClick={() => setNote(null)} />
-        <p className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded">{note}</p>
-      </div>
-    )
-  }
-
-  const heading = rover
-    ? "Which Rover Rescue plan?"
-    : castle
-      ? "Which Castle Crasher+ plan?"
-      : "What strategy would you like help with?"
-
-  return (
-    <div className="text-gray-700">
-      <BackButton colorClass="text-blue-600 hover:text-blue-800" onClick={onBack} />
-      <p className="mb-4 font-medium text-base">{heading}</p>
-      <div className="flex flex-col gap-2">
-        {plans.map((plan, index) => {
-          const Icon = plan.icon
-          return (
-            <Button
-              key={plan.label}
-              className="justify-start text-left h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white border-0"
-              onClick={() => {
-                if (plan.detail === "examples") onExamples()
-                else if (plan.detail === "draw") onDraw()
-                else if (typeof plan.detail === "string") setNote(plan.detail)
-              }}
-            >
-              <Icon className="w-5 h-5 mr-3" />
-              <span className="mr-2 font-semibold">{index + 1}.</span>
-              <span>{plan.label}</span>
-            </Button>
-          )
-        })}
-      </div>
-    </div>
   )
 }
 
@@ -176,7 +95,7 @@ export function FeelMenu({ onBack }: { onBack: () => void }) {
         {EMOTIONS.map((emotion, index) => (
           <Button
             key={emotion.label}
-            className="justify-start text-left h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0"
+            className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white border-0"
             onClick={() => setChosen(emotion.label)}
           >
             <span className="mr-3 text-lg" aria-hidden>
@@ -209,13 +128,13 @@ export function PartnerMenu({
         <BackButton colorClass="text-indigo-600 hover:text-indigo-800" onClick={onBack} />
         <p className="mb-4 font-medium text-base">How would you like to work together?</p>
         <div className="flex flex-col gap-2">
-          <Button className="justify-start text-left h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0" onClick={() => shareCode(workspace, setCode, setCopied, setPanel)}>
+          <Button className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0" onClick={() => shareCode(workspace, setCode, setCopied, setPanel)}>
             <span className="mr-2 font-semibold">1.</span> Share your code
           </Button>
-          <Button className="justify-start text-left h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0" onClick={() => setPanel("pair")}>
+          <Button className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0" onClick={() => setPanel("pair")}>
             <span className="mr-2 font-semibold">2.</span> Pair programming mode
           </Button>
-          <Button className="justify-start text-left h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0" onClick={() => setPanel("multi")}>
+          <Button className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-indigo-500 hover:bg-indigo-600 text-white border-0" onClick={() => setPanel("multi")}>
             <span className="mr-2 font-semibold">3.</span> Multiplayer mode
           </Button>
         </div>
@@ -261,117 +180,5 @@ function shareCode(
       () => setCopied(false),
     )
   }
-}
-
-/** Scratch pad so learners can sketch a push path before they build blocks. */
-export function DrawPlanPanel({ onBack }: { onBack: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const drawing = useRef(false)
-  const [hasMarks, setHasMarks] = useState(false)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-    paintIsland(ctx, canvas.width, canvas.height)
-  }, [])
-
-  const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current
-    if (!canvas) return null
-    const rect = canvas.getBoundingClientRect()
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
-    return {
-      x: (event.clientX - rect.left) * scaleX,
-      y: (event.clientY - rect.top) * scaleY,
-    }
-  }
-
-  return (
-    <div id="vex-ai-draw-plan" className="text-gray-700 text-sm">
-      <BackButton colorClass="text-blue-600 hover:text-blue-800" onClick={onBack} />
-      <p className="mb-2 font-medium text-base">Draw your plan</p>
-      <p className="mb-3 text-xs text-slate-600">
-        Sketch where you will push castle pieces into the water. Use this as a rough path before you build the
-        blocks.
-      </p>
-      <canvas
-        ref={canvasRef}
-        width={280}
-        height={220}
-        className="w-full touch-none rounded-lg border-2 border-blue-300 bg-green-50"
-        onPointerDown={(event) => {
-          const canvas = canvasRef.current
-          const ctx = canvas?.getContext("2d")
-          const p = point(event)
-          if (!canvas || !ctx || !p) return
-          drawing.current = true
-          canvas.setPointerCapture(event.pointerId)
-          ctx.strokeStyle = "#1565C0"
-          ctx.lineWidth = 3
-          ctx.lineCap = "round"
-          ctx.beginPath()
-          ctx.moveTo(p.x, p.y)
-          setHasMarks(true)
-        }}
-        onPointerMove={(event) => {
-          if (!drawing.current) return
-          const ctx = canvasRef.current?.getContext("2d")
-          const p = point(event)
-          if (!ctx || !p) return
-          ctx.lineTo(p.x, p.y)
-          ctx.stroke()
-        }}
-        onPointerUp={() => {
-          drawing.current = false
-        }}
-        onPointerCancel={() => {
-          drawing.current = false
-        }}
-      />
-      <div className="mt-2 flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!hasMarks}
-          onClick={() => {
-            const canvas = canvasRef.current
-            const ctx = canvas?.getContext("2d")
-            if (!canvas || !ctx) return
-            paintIsland(ctx, canvas.width, canvas.height)
-            setHasMarks(false)
-          }}
-        >
-          Clear
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function paintIsland(ctx: CanvasRenderingContext2D, width: number, height: number) {
-  ctx.fillStyle = "#E8F5E9"
-  ctx.fillRect(0, 0, width, height)
-  // Hex hint matches Castle Crasher+'s island.
-  ctx.strokeStyle = "#8B1E1E"
-  ctx.lineWidth = 3
-  const cx = width / 2
-  const cy = height / 2
-  const r = Math.min(cx, cy) - 12
-  ctx.beginPath()
-  for (let i = 0; i < 6; i++) {
-    const a = ((-90 + i * 60) * Math.PI) / 180
-    const x = cx + r * Math.cos(a)
-    const y = cy + r * Math.sin(a)
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-  ctx.closePath()
-  ctx.stroke()
-  ctx.fillStyle = "#81C784"
-  ctx.fill()
 }
 

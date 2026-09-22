@@ -18,12 +18,25 @@ interface InvestigateWorkspace {
 export function InvestigateMenu({
   workspace,
   onBack,
+  playgroundId,
 }: {
+  playgroundId: string
   workspace: InvestigateWorkspace | null
   onBack: () => void
 }) {
-  const [mode, setMode] = useState<"list" | "blocks" | "notebook">("list")
+  const [mode, setMode] = useState<"list" | "blocks" | "notebook" | "movement" | "suggestions">("list")
 
+  if (mode === "movement" || mode === "suggestions") {
+    return <div className="space-y-3 text-sm text-slate-700">
+      <BackButton colorClass="text-red-600" onClick={() => setMode("list")} />
+      <h4 className="font-semibold">{mode === "movement" ? "Movement strategies" : "Blocks that can help you"}</h4>
+      <p>{mode === "movement"
+        ? playgroundId === "castle-crashers"
+          ? "Aim pushes toward the water, then turn before the robot reaches the red border. Approach the plow with the front of the robot to attach it and push a wider area. Try short drives and check where you end up."
+          : "Break your route into short drives and turns. Test one section at a time. Repeated patterns can use a repeat block; higher velocity changes speed, not distance."
+        : "Try drive for a measured distance, turn for a chosen angle, and repeat for a repeated movement. Use wait to pause and inspect the playground. Change one value at a time and compare the next run."}</p>
+    </div>
+  }
   if (mode === "blocks") {
     return <BlockHelp workspace={workspace} onBack={() => setMode("list")} />
   }
@@ -36,10 +49,13 @@ export function InvestigateMenu({
       <BackButton colorClass="text-red-600 hover:text-red-800" onClick={onBack} />
       <p className="mb-4 font-medium text-base">What do you want to look at?</p>
       <div className="flex flex-col gap-2">
-        <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0" onClick={() => setMode("blocks")}>
+        <Button className="justify-start text-left whitespace-normal h-auto py-3 bg-red-500 text-white" onClick={() => setMode("movement")}>Movement strategies</Button>
+        <Button className="justify-start text-left whitespace-normal h-auto py-3 bg-red-500 text-white" onClick={() => setMode("suggestions")}>Blocks that can help you</Button>
+
+        <Button className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0" onClick={() => setMode("blocks")}>
           <span className="mr-2 font-semibold">1.</span> Click on a block for help
         </Button>
-        <Button className="justify-start text-left h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0" onClick={() => setMode("notebook")}>
+        <Button className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-red-500 hover:bg-red-600 text-white border-0" onClick={() => setMode("notebook")}>
           <span className="mr-2 font-semibold">2.</span> Record screenshot for engineering notebook
         </Button>
       </div>

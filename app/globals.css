@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Keep the floating playground beside the planning sidebar, including after
+   resize. This is presentation only; saved window coordinates stay intact. */
+#vex-app-root:has(#vex-ai-assistant-sidebar) {
+  --help-sidebar-inset: 360px;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
