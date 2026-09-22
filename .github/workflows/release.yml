@@ -1,0 +1,74 @@
+name: Version Bump and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver level to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      prerelease:
+        description: Mark the GitHub release as a prerelease
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Bump version, tag, release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history so the tag lands on a real commit graph.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Never tag a tree that does not build.
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build static export
+        run: npm run build
+
+      - name: Configure git identity
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Bump version and tag
+        id: bump
+        run: |
+          # `npm version` updates package.json + package-lock.json, commits, and tags.
+          tag="$(npm version "${{ inputs.bump }}" --message 'chore(release): %s')"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Bumped to ${tag}"
+
+      - name: Push commit and tag
+        run: git push --follow-tags origin HEAD
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.bump.outputs.tag }}" \
+            --title "${{ steps.bump.outputs.tag }}" \
+            --generate-notes \
+            ${{ inputs.prerelease && '--prerelease' || '' }}

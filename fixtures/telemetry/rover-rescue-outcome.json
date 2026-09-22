@@ -1,0 +1,27 @@
+{
+  "playground": "RoverRescue",
+  "parameters": {
+    "days_explored": 0,
+    "experience_gained": 0,
+    "enemies_nuetralized": 0,
+    "minerals_consumed": 0,
+    "battery_remaining": 100,
+    "project_stopped_by_user": false
+  },
+  "_invite": {
+    "schemaVersion": 1,
+    "finalLevel": 1,
+    "mineralsDelivered": 0,
+    "distanceTravelledMm": 0,
+    "endReason": null,
+    "zonesVisited": ["A"],
+    "bridgeCrossings": 0,
+    "enemiesByType": {
+      "spider": 0,
+      "serpentOrange": 0,
+      "serpentBlue": 0,
+      "serpentPurple": 0
+    },
+    "seed": 1
+  }
+}

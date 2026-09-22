@@ -1,5 +1,15 @@
 /** Shared helpers for VEXcode VR–style robot simulation (units, angles, block traversal). */
 
+import {
+  DRIVE_MS_PER_MM_AT_50,
+  TURN_MS_PER_DEGREE_AT_50,
+  driveDurationMs as driveDurationFromMm,
+  turnDurationMs,
+} from "@/engine/motion"
+import { normalizeDegrees, shortestRotationDelta } from "@/engine/units"
+
+export { DRIVE_MS_PER_MM_AT_50, TURN_MS_PER_DEGREE_AT_50, normalizeDegrees, shortestRotationDelta, turnDurationMs }
+
 /** Coral Reef Cleanup playground (VEXcode VR docs). */
 export const CORAL_REEF_FIELD_MM = 2000
 export const CORAL_REEF_START_MM = { x: 0, y: -800 }
@@ -8,6 +18,22 @@ export const CORAL_REEF_BATTERY_SEC = 180
 export const CORAL_REEF_TRASH_COUNT = 12
 /** Front distance sensor range (VEXcode VR). */
 export const DISTANCE_SENSOR_MAX_MM = 3000
+/** Eye “near object” range (mm) — tuned for playground scale. */
+export const EYE_NEAR_MM = 250
+/** Approximate trash sprite radius on the playground (px). */
+export const TRASH_HIT_RADIUS_PX = 20
+/** Front eye offset from robot center (px). */
+export const EYE_FORWARD_OFFSET_PX = 22
+
+/**
+ * Bumper contact points sit on the front corners of the hull. The reach has to
+ * exceed the hull's own coral-collision envelope (`robotRadius` 22 + piece
+ * radius 12–20), otherwise the mission ends on impact before the bumper can
+ * ever read as pressed.
+ */
+export const BUMPER_FORWARD_PX = 20
+export const BUMPER_LATERAL_PX = 12
+export const BUMPER_CONTACT_MARGIN_PX = 14
 
 /** ~13.33 playground pixels per 100 mm (7.5 mm per pixel). */
 export const MM_PER_PIXEL = 7.5
@@ -41,34 +67,9 @@ export function pixelsToDistance(pixels: number, unit: string): number {
   return pixels * MM_PER_PIXEL
 }
 
-export function normalizeDegrees(deg: number): number {
-  let d = deg % 360
-  if (d < 0) d += 360
-  return d
-}
-
-/** Shortest signed delta from `from` to `to` (degrees). */
-export function shortestRotationDelta(from: number, to: number): number {
-  let delta = normalizeDegrees(to) - normalizeDegrees(from)
-  if (delta > 180) delta -= 360
-  if (delta < -180) delta += 360
-  return delta
-}
-
-/** Drive animation timing at 50% velocity (VEX default). */
-export const DRIVE_MS_PER_MM_AT_50 = 10
-/** Turn animation timing at 50% turn velocity — independent from drive. */
-export const TURN_MS_PER_DEGREE_AT_50 = 22
-
+/** Pixel-taking wrapper around the engine helper (which works in millimetres). */
 export function driveDurationMs(distancePixels: number, driveVelocityPercent: number): number {
-  const v = Math.max(5, Math.min(100, driveVelocityPercent))
-  const distanceMm = pixelsToDistance(distancePixels, "mm")
-  return Math.max(80, (distanceMm * DRIVE_MS_PER_MM_AT_50 * 50) / v)
-}
-
-export function turnDurationMs(degrees: number, turnVelocityPercent: number): number {
-  const v = Math.max(5, Math.min(100, turnVelocityPercent))
-  return Math.max(80, (Math.abs(degrees) * TURN_MS_PER_DEGREE_AT_50 * 50) / v)
+  return driveDurationFromMm(pixelsToDistance(distancePixels, "mm"), driveVelocityPercent)
 }
 
 /** Max drive distance (mm) before hitting playground edge along current heading. */
@@ -108,6 +109,12 @@ export interface CoralPiece {
   y: number
   radius: number
   color: string
+  /** Rendering only. Colony shape; omitted pieces pick one from `seed`. */
+  kind?: "brain" | "branch" | "fan" | "polyps" | "tube"
+  /** Rendering only. Rotation (radians) that points the colony away from its wall. */
+  angle?: number
+  /** Rendering only. Drives the deterministic per-colony detail. */
+  seed?: number
 }
 
 export interface TrashSim {
@@ -166,13 +173,58 @@ export function nearestTrashDistanceMm(
   for (const t of trashItems) {
     if (t.isCollected) continue
     const px = Math.hypot(x - t.x, y - t.y)
-    const mm = pixelsToDistance(px, "mm")
+    const mm = pixelsToDistance(Math.max(0, px - TRASH_HIT_RADIUS_PX), "mm")
     if (best === null || mm < best) best = mm
   }
   return best
 }
 
-/** Walk statement chain inside when_started (and nested C-blocks). */
+/** Nearest uncollected trash in front of the robot within maxMm (edge-to-edge). */
+export function nearestTrashInFrontMm(
+  x: number,
+  y: number,
+  rotationDeg: number,
+  trashItems: TrashSim[],
+  maxMm: number = DISTANCE_SENSOR_MAX_MM,
+  eyeOffsetPx: number = EYE_FORWARD_OFFSET_PX,
+): number | null {
+  const angleRad = (rotationDeg * Math.PI) / 180
+  const eyeX = x + Math.sin(angleRad) * eyeOffsetPx
+  const eyeY = y - Math.cos(angleRad) * eyeOffsetPx
+  const forwardX = Math.sin(angleRad)
+  const forwardY = -Math.cos(angleRad)
+
+  let best: number | null = null
+  for (const t of trashItems) {
+    if (t.isCollected) continue
+    const dx = t.x - eyeX
+    const dy = t.y - eyeY
+    if (dx * forwardX + dy * forwardY < 0) continue
+    const px = Math.hypot(dx, dy)
+    const mm = pixelsToDistance(Math.max(0, px - TRASH_HIT_RADIUS_PX), "mm")
+    if (mm > maxMm) continue
+    if (best === null || mm < best) best = mm
+  }
+  return best
+}
+
+export function isTrashNearEye(
+  x: number,
+  y: number,
+  rotationDeg: number,
+  trashItems: TrashSim[],
+  sensor: "front" | "down",
+  maxMm: number = EYE_NEAR_MM,
+): boolean {
+  if (sensor === "down") {
+    const mm = nearestTrashDistanceMm(x, y, trashItems)
+    return mm !== null && mm <= maxMm
+  }
+  const frontMm = nearestTrashInFrontMm(x, y, rotationDeg, trashItems, maxMm)
+  return frontMm !== null
+}
+
+/** Walk the statement chain under pg_events_when_started (and nested C-blocks). */
 export function forEachProgramBlock(
   startBlock: { type: string; getInputTargetBlock?: (name: string) => unknown; getNextBlock?: () => unknown },
   visit: (block: {
@@ -193,7 +245,7 @@ export function forEachProgramBlock(
       getNextBlock: () => unknown
     }
     visit(b)
-    const statementInputs = ["DO", "DO1", "DO2", "ELSE"]
+    const statementInputs = ["DO", "DO1", "DO2", "ELSE", "SUBSTACK"]
     for (const input of statementInputs) {
       if (typeof b.getInputTargetBlock === "function") {
         walk(b.getInputTargetBlock(input))
@@ -202,19 +254,125 @@ export function forEachProgramBlock(
     walk(b.getNextBlock())
   }
 
-  if (startBlock.type === "when_started" && startBlock.getInputTargetBlock) {
-    walk(startBlock.getInputTargetBlock("DO"))
+  // The hat contributes no behaviour, so start below it. Skipping it also keeps
+  // a bare hat reading as an empty program rather than a one-block one.
+  if (startBlock.type === "pg_events_when_started" && startBlock.getNextBlock) {
+    walk(startBlock.getNextBlock())
   } else {
     walk(startBlock)
   }
+}
+
+/** JavaScript for every pg_events_when_started stack, run as concurrent threads. */
+export function generateWhenStartedJavaScript(
+  workspace: { getAllBlocks: (ordered: boolean) => { type: string; isEnabled?: () => boolean }[] } | null,
+  js: { blockToCode: (block: { type: string }) => string | [string, number] },
+): string {
+  if (!workspace) return ""
+  const hats = workspace
+    .getAllBlocks(false)
+    .filter((b) => b.type === "pg_events_when_started" && (typeof b.isEnabled !== "function" || b.isEnabled()))
+
+  const bodies = hats
+    .map((hat) => {
+      const result = js.blockToCode(hat)
+      return ((Array.isArray(result) ? result[0] : result) || "").trimEnd()
+    })
+    .filter((body) => body.trim().length > 0)
+
+  if (bodies.length === 0) return ""
+  if (bodies.length === 1) return `${bodies[0]}\n`
+
+  const threads = bodies
+    .map((body, index) => `  // thread ${index + 1}\n  (async () => {\n${body}\n  })()`)
+    .join(",\n")
+  return `await Promise.all([\n${threads}\n]);\n`
 }
 
 export function registerBlockGenerator(Blockly: { JavaScript: { forBlock: Record<string, unknown> } }, type: string, fn: (block: unknown) => string | [string, number]) {
   Blockly.JavaScript.forBlock[type] = fn
 }
 
-export function getPlaygroundCanvasSize(isMaximized: boolean): { w: number; h: number } {
-  return { w: isMaximized ? 600 : 400, h: isMaximized ? 600 : 400 }
+type BlocklyXmlUtils = {
+  utils: {
+    xml: {
+      createElement: (name: string) => Element
+    }
+  }
+}
+
+/** Shadow XML for a default number literal block in value inputs. */
+export function createNumberShadowDom(Blockly: BlocklyXmlUtils, value = 0): Element {
+  const shadow = Blockly.utils.xml.createElement("shadow")
+  shadow.setAttribute("type", "math_number")
+  const field = Blockly.utils.xml.createElement("field")
+  field.setAttribute("name", "NUM")
+  field.textContent = String(value)
+  shadow.appendChild(field)
+  return shadow
+}
+
+export function attachNumberShadow(
+  block: { getInput: (name: string) => { setShadowDom: (dom: Element) => unknown } | null },
+  Blockly: BlocklyXmlUtils,
+  inputName: string,
+  value = 0,
+): void {
+  const input = block.getInput(inputName)
+  if (!input) return
+  input.setShadowDom(createNumberShadowDom(Blockly, value))
+}
+
+/** Flyout/toolbox block JSON with default number shadows on value inputs. */
+export function flyoutBlockWithNumberShadows(
+  type: string,
+  inputNames: string[],
+  defaults: Record<string, number> = {},
+): {
+  kind: "block"
+  type: string
+  inputs: Record<string, { shadow: { type: string; fields: { NUM: number } } }>
+} {
+  const inputs: Record<string, { shadow: { type: string; fields: { NUM: number } } }> = {}
+  for (const name of inputNames) {
+    inputs[name] = { shadow: { type: "math_number", fields: { NUM: defaults[name] ?? 0 } } }
+  }
+  return { kind: "block", type, inputs }
+}
+
+export const PLAYGROUND_CANVAS_SHORT_PX = 400
+export const PLAYGROUND_CANVAS_SHORT_MAXIMIZED_PX = 600
+/** Keep the floating window off the right edge of the workbench. */
+export const PLAYGROUND_WINDOW_RIGHT_GUTTER_PX = 104
+
+export function getPlaygroundCanvasSize(
+  isMaximized: boolean,
+  world?: { widthMm: number; heightMm: number },
+): { w: number; h: number } {
+  const short = isMaximized ? PLAYGROUND_CANVAS_SHORT_MAXIMIZED_PX : PLAYGROUND_CANVAS_SHORT_PX
+  if (!world || world.widthMm <= 0 || world.heightMm <= 0) {
+    return { w: short, h: short }
+  }
+  const aspect = world.widthMm / world.heightMm
+  if (aspect > 1.01) {
+    return { w: Math.round(short * aspect), h: short }
+  }
+  if (aspect < 0.99) {
+    return { w: short, h: Math.round(short / aspect) }
+  }
+  return { w: short, h: short }
+}
+
+/** The canvas spans the window, so the field edge meets the window edge. */
+export function playgroundWindowWidthPx(canvasWidth: number): number {
+  return canvasWidth
+}
+
+export function playgroundWindowX(canvasWidth: number, viewportWidth: number): number {
+  return Math.max(
+    16,
+    viewportWidth - playgroundWindowWidthPx(canvasWidth) - PLAYGROUND_WINDOW_RIGHT_GUTTER_PX,
+  )
 }
 
 /** Canvas pixel position for a VEX field coordinate (origin at playground center). */
@@ -239,8 +397,83 @@ export function getDefaultRobotPixelPosition(isMaximized: boolean): { x: number;
   return clampRobotPosition(pos.x, pos.y, w, h)
 }
 
+/** Keep a canvas point at the same field (mm) location after a playground size change. */
+export function remapPixelAcrossCanvas(
+  x: number,
+  y: number,
+  fromW: number,
+  fromH: number,
+  toW: number,
+  toH: number,
+): { x: number; y: number } {
+  const mm = pixelToFieldMm(x, y, fromW, fromH)
+  return fieldMmToPixel(mm.x, mm.y, toW, toH)
+}
+
 export function fieldRulerTicksMm(): number[] {
   return [-1000, -500, 0, 500, 1000]
+}
+
+/**
+ * Subtle yellow millimetre overlay along the inner field edges.
+ * Drawn last so ticks stay readable over coral, without covering the centre.
+ */
+export function drawFieldRulerOverlay(
+  ctx: CanvasRenderingContext2D,
+  canvasW: number,
+  canvasH: number,
+): void {
+  const inset = 28
+  const left = pixelToFieldMm(inset, 0, canvasW, canvasH).x
+  const right = pixelToFieldMm(canvasW - inset, 0, canvasW, canvasH).x
+  const top = pixelToFieldMm(0, inset, canvasW, canvasH).y
+  const bottom = pixelToFieldMm(0, canvasH - inset, canvasW, canvasH).y
+  const minorStep = 100
+  const startX = Math.ceil(left / minorStep) * minorStep
+  const startY = Math.ceil(top / minorStep) * minorStep
+
+  ctx.save()
+  ctx.lineCap = "round"
+  ctx.font = "bold 9px ui-sans-serif, system-ui, sans-serif"
+  ctx.textBaseline = "middle"
+
+  ctx.fillStyle = "rgba(255, 214, 64, 0.16)"
+  ctx.fillRect(inset, canvasH - inset - 1, canvasW - inset * 2, 14)
+  ctx.fillRect(canvasW - inset - 1, inset, 14, canvasH - inset * 2)
+
+  for (let mm = startX; mm <= right; mm += minorStep) {
+    const { x } = fieldMmToPixel(mm, 0, canvasW, canvasH)
+    const major = mm % 500 === 0
+    ctx.strokeStyle = major ? "rgba(212, 160, 12, 0.72)" : "rgba(212, 160, 12, 0.38)"
+    ctx.lineWidth = major ? 1.4 : 0.8
+    ctx.beginPath()
+    ctx.moveTo(x, canvasH - inset - 1)
+    ctx.lineTo(x, canvasH - inset - (major ? 11 : 6))
+    ctx.stroke()
+    if (major) {
+      ctx.fillStyle = "rgba(110, 72, 8, 0.72)"
+      ctx.textAlign = "center"
+      ctx.fillText(String(mm), x, canvasH - inset - 16)
+    }
+  }
+
+  for (let mm = startY; mm <= bottom; mm += minorStep) {
+    const { y } = fieldMmToPixel(0, mm, canvasW, canvasH)
+    const major = mm % 500 === 0
+    ctx.strokeStyle = major ? "rgba(212, 160, 12, 0.72)" : "rgba(212, 160, 12, 0.38)"
+    ctx.lineWidth = major ? 1.4 : 0.8
+    ctx.beginPath()
+    ctx.moveTo(canvasW - inset - 1, y)
+    ctx.lineTo(canvasW - inset - (major ? 11 : 6), y)
+    ctx.stroke()
+    if (major) {
+      ctx.fillStyle = "rgba(110, 72, 8, 0.72)"
+      ctx.textAlign = "right"
+      ctx.fillText(String(mm), canvasW - inset - 14, y)
+    }
+  }
+
+  ctx.restore()
 }
 
 /** Place trash away from coral borders and the default spawn point. */

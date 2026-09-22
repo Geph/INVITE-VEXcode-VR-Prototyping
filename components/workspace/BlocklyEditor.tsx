@@ -1,0 +1,253 @@
+"use client"
+
+import type { ReactNode, Ref } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { dismissBlocklyFieldEditors } from "@/blocks/fields"
+import { isBlocklyFieldEditorTarget } from "@/lib/blockly-widget-form"
+import { generateWhenStartedJavaScript } from "@/lib/robot-runtime"
+import { CategoryRail, type RailCategory } from "./CategoryRail"
+import { DeletedBlocksModal, TrashcanButton } from "./Trashcan"
+import { useBlocklyInjection, useBlocklyLoader, useBlocklyWidgetFix } from "./use-blockly-workspace"
+
+export interface FieldPickerEvent {
+  blockId: string
+  blockType: string
+  fieldName: string
+  value: string
+  clientX: number
+  clientY: number
+}
+
+export interface BlocklyEditorProps {
+  toolbox: unknown[]
+  selectedCategory: string | null
+  onSelectCategory: (category: string) => void
+  railCategories: RailCategory[]
+  onRegisterBlocks: (Blockly: any) => void
+  onWorkspaceReady: (workspace: any) => void
+  onBlocklyLoaded?: () => void
+  onCodeChange?: (code: string) => void
+  onTrash?: () => void
+  onFieldPicker?: (event: FieldPickerEvent) => void
+  codeView: "blocks" | "python"
+  pythonCode: string
+  workspaceContainerRef?: Ref<HTMLDivElement>
+  overlay?: ReactNode
+}
+
+const PICKER_FIELDS: Record<string, string> = {
+  pg_drivetrain_turn_for: "DEGREES",
+  pg_drivetrain_turn_to_rotation: "ROTATION",
+  pg_drivetrain_set_rotation: "ROTATION",
+  pg_drivetrain_turn_to_heading: "HEADING",
+  pg_drivetrain_set_heading: "HEADING",
+}
+
+/** Blockly keeps getWidth() after setVisible(false), so metrics leave a blank strip. */
+type FlyoutWidthPatch = {
+  getWidth: () => number
+  setVisible: (visible: boolean) => void
+  __inviteOrigGetWidth?: () => number
+}
+
+function setFlyoutExpanded(flyout: FlyoutWidthPatch | null | undefined, visible: boolean) {
+  if (!flyout) return
+  if (!flyout.__inviteOrigGetWidth) {
+    flyout.__inviteOrigGetWidth = flyout.getWidth.bind(flyout)
+  }
+  const measured = flyout.__inviteOrigGetWidth
+  flyout.getWidth = () => (visible ? measured() : 0)
+  flyout.setVisible(visible)
+}
+
+export function BlocklyEditor({
+  toolbox,
+  selectedCategory,
+  onSelectCategory,
+  railCategories,
+  onRegisterBlocks,
+  onWorkspaceReady,
+  onBlocklyLoaded,
+  onCodeChange,
+  onTrash,
+  onFieldPicker,
+  codeView,
+  pythonCode,
+  workspaceContainerRef,
+  overlay,
+}: BlocklyEditorProps) {
+  const blocklyDivRef = useRef<HTMLDivElement>(null)
+  const { blocklyLoaded, blocklyLoadError } = useBlocklyLoader(onRegisterBlocks)
+  const workspace = useBlocklyInjection(blocklyLoaded, blocklyDivRef, onWorkspaceReady)
+  useBlocklyWidgetFix(blocklyLoaded)
+
+  // Held in a ref so an inline parent callback cannot re-fire this every render.
+  const onLoadedRef = useRef(onBlocklyLoaded)
+  onLoadedRef.current = onBlocklyLoaded
+
+  useEffect(() => {
+    if (blocklyLoaded) onLoadedRef.current?.()
+  }, [blocklyLoaded])
+
+  const [deletedBlocks, setDeletedBlocks] = useState<string | null>(null)
+  const [showDeletedBlocks, setShowDeletedBlocks] = useState(false)
+  /** Only the block picker column — the category rail stays put. */
+  const [flyoutHidden, setFlyoutHidden] = useState(false)
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded) return
+    workspace.updateToolbox({
+      kind: "flyoutToolbox",
+      contents: toolbox,
+    })
+    workspace.getToolbox()?.setSelectedItem(null)
+    setFlyoutExpanded(workspace.getFlyout() as FlyoutWidthPatch | null, !flyoutHidden)
+    window.Blockly?.svgResize?.(workspace)
+  }, [toolbox, workspace, blocklyLoaded, flyoutHidden])
+
+  useEffect(() => {
+    if (!workspace || !onCodeChange) return
+    const emit = () => {
+      onCodeChange(generateWhenStartedJavaScript(workspace, window.Blockly.JavaScript))
+    }
+    emit()
+    workspace.addChangeListener(emit)
+    return () => workspace.removeChangeListener(emit)
+  }, [workspace, onCodeChange])
+
+  useEffect(() => {
+    if (!workspace || !blocklyLoaded || !onFieldPicker) return
+
+    const openCustomPicker = (e: PointerEvent) => {
+      const target = e.target as Element
+      if (isBlocklyFieldEditorTarget(target)) return
+
+      const blockSvg = target.closest(".blocklyDraggable")
+      if (!blockSvg) return
+
+      const blockId = blockSvg.getAttribute("data-id")
+      if (!blockId) return
+
+      const block = workspace.getBlockById(blockId)
+      if (!block) return
+
+      const fieldName = PICKER_FIELDS[block.type]
+      if (!fieldName) return
+
+      const field = block.getField(fieldName) as { getSvgRoot?: () => SVGElement | null } | null
+      const fieldSvg = field?.getSvgRoot?.()
+      if (!fieldSvg || !(target instanceof Node) || !fieldSvg.contains(target)) return
+
+      e.preventDefault()
+      e.stopPropagation()
+      e.stopImmediatePropagation()
+      dismissBlocklyFieldEditors()
+
+      onFieldPicker({
+        blockId: block.id,
+        blockType: block.type,
+        fieldName,
+        value: block.getFieldValue(fieldName),
+        clientX: e.clientX,
+        clientY: e.clientY,
+      })
+    }
+
+    const workspaceSvg = workspace.getParentSvg()
+    if (workspaceSvg) workspaceSvg.addEventListener("pointerdown", openCustomPicker, true)
+    return () => {
+      if (workspaceSvg) workspaceSvg.removeEventListener("pointerdown", openCustomPicker, true)
+    }
+  }, [blocklyLoaded, workspace, onFieldPicker])
+
+  const handleTrash = useCallback(() => {
+    if (workspace) {
+      const xml = window.Blockly.Xml.workspaceToDom(workspace)
+      setDeletedBlocks(window.Blockly.Xml.domToText(xml))
+      workspace.clear()
+    }
+    onTrash?.()
+  }, [workspace, onTrash])
+
+  const handleRestoreBlocks = useCallback(() => {
+    if (workspace && deletedBlocks) {
+      const xml = window.Blockly.Xml.textToDom(deletedBlocks)
+      window.Blockly.Xml.domToWorkspace(xml, workspace)
+      setShowDeletedBlocks(false)
+    }
+  }, [workspace, deletedBlocks])
+
+  const handleSelectCategory = useCallback(
+    (category: string) => {
+      onSelectCategory(category)
+      if (flyoutHidden) setFlyoutHidden(false)
+    },
+    [flyoutHidden, onSelectCategory],
+  )
+
+  return (
+    <>
+      <CategoryRail
+        selectedCategory={selectedCategory}
+        onSelectCategory={handleSelectCategory}
+        categories={railCategories}
+        footer={
+          <TrashcanButton
+            hasDeleted={Boolean(deletedBlocks)}
+            onClick={() => (deletedBlocks ? setShowDeletedBlocks(true) : handleTrash())}
+          />
+        }
+      />
+
+      <button
+        id="vex-btn-hide-flyout"
+        type="button"
+        className="z-10 flex w-7 shrink-0 flex-col items-center justify-center gap-1 border-r border-[#d5deea] bg-[#e8eef6] text-[10px] font-semibold tracking-wide text-slate-600 transition-colors hover:bg-[#dce5f0] hover:text-slate-900"
+        aria-label={flyoutHidden ? "Show block library" : "Hide block library"}
+        aria-pressed={flyoutHidden}
+        title={flyoutHidden ? "Show block library" : "Hide block library"}
+        onClick={() => setFlyoutHidden((hidden) => !hidden)}
+      >
+        {flyoutHidden ? <ChevronRight className="h-4 w-4" aria-hidden /> : <ChevronLeft className="h-4 w-4" aria-hidden />}
+        <span className="[writing-mode:vertical-rl] rotate-180">{flyoutHidden ? "Show" : "Hide"}</span>
+      </button>
+
+      <div id="vex-blockly-workspace" ref={workspaceContainerRef} className="flex-1 relative">
+        {!blocklyLoaded && (
+          <div id="vex-blockly-loading" className="absolute inset-0 flex items-center justify-center">
+            {blocklyLoadError ? (
+              <p className="text-red-600">Could not load the block editor: {blocklyLoadError}</p>
+            ) : (
+              <p className="text-gray-600">Loading Blockly...</p>
+            )}
+          </div>
+        )}
+        <div
+          id="vex-blockly-canvas"
+          ref={blocklyDivRef}
+          className="w-full h-full"
+          style={{ display: codeView === "blocks" ? "block" : "none" }}
+        />
+        {codeView === "blocks" && overlay}
+        {codeView === "python" && (
+          <div id="vex-python-code-view" className="w-full h-full bg-gray-900 text-gray-100 font-mono text-sm overflow-auto p-4">
+            <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
+              <code>{pythonCode}</code>
+            </pre>
+          </div>
+        )}
+      </div>
+
+      <DeletedBlocksModal
+        open={Boolean(showDeletedBlocks && deletedBlocks)}
+        onClose={() => setShowDeletedBlocks(false)}
+        onRestore={handleRestoreBlocks}
+        onClear={() => {
+          setDeletedBlocks(null)
+          setShowDeletedBlocks(false)
+        }}
+      />
+    </>
+  )
+}
