@@ -7,7 +7,7 @@ import type { RoverRescueState } from "@/playgrounds/rover-rescue"
 import type { CastleCrashersState } from "@/playgrounds/castle-crashers"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
 import { CompareMenu } from "./compare-panel"
-import { FeelMenu, MainMenu, PartnerMenu, PlanMenu } from "./help-panels"
+import { DrawPlanPanel, FeelMenu, MainMenu, PartnerMenu, PlanMenu } from "./help-panels"
 import { InvestigateMenu } from "./investigate-panel"
 import { PredictPreview } from "./predict-preview"
 import type { SurveyStep } from "./types"
@@ -34,6 +34,8 @@ export function OptionTree({
   reefState,
   roverState,
   castleState,
+  playgroundVisible,
+  onOpenPlayground,
 }: {
   aiStep: SurveyStep
   setAiStep: (step: SurveyStep) => void
@@ -44,12 +46,30 @@ export function OptionTree({
   reefState: OceanReefState
   roverState: RoverRescueState
   castleState: CastleCrashersState
+  playgroundVisible: boolean
+  onOpenPlayground: () => void
 }) {
-  if (aiStep === "main") return <MainMenu setAiStep={setAiStep} />
+  if (aiStep === "main") {
+    return (
+      <MainMenu
+        setAiStep={setAiStep}
+        playgroundVisible={playgroundVisible}
+        onOpenPlayground={onOpenPlayground}
+      />
+    )
+  }
   if (aiStep === "strategy") {
-    return <PlanMenu playgroundId={playgroundId} onBack={() => setAiStep("main")} onExamples={() => setAiStep("strategy-examples")} />
+    return (
+      <PlanMenu
+        playgroundId={playgroundId}
+        onBack={() => setAiStep("main")}
+        onExamples={() => setAiStep("strategy-examples")}
+        onDraw={() => setAiStep("strategy-draw")}
+      />
+    )
   }
   if (aiStep === "strategy-examples") return <StrategyExamples onBack={() => setAiStep("strategy")} />
+  if (aiStep === "strategy-draw") return <DrawPlanPanel onBack={() => setAiStep("strategy")} />
   if (aiStep === "predict") {
     return (
       <div className="space-y-3">

@@ -70,9 +70,9 @@ export function CastleLevelToggle({
       type="button"
       className="absolute bottom-3 right-3 z-10 rounded border border-amber-700 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-950"
       onClick={() => onChange(level === 1 ? 2 : 1)}
-      title="State Select — switch Castle Crasher+ level"
+      title={level === 1 ? "Switch to Advanced" : "Switch to Basic"}
     >
-      Level {level}
+      {level === 1 ? "Basic" : "Advanced"}
     </button>
   )
 }

@@ -11,3 +11,4 @@ export type SurveyStep =
   | "feel"
   | "partner"
   | "strategy-examples"
+  | "strategy-draw"

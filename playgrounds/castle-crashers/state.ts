@@ -19,6 +19,8 @@ export interface CastlePiece {
   pushable: boolean
   /** True once the piece has been shoved past the hex into the water. */
   cleared: boolean
+  /** 0 = standing plan view, 1 = fallen masonry seen from above. */
+  topple: number
 }
 
 export interface CastleCrashersState {
@@ -29,6 +31,7 @@ export interface CastleCrashersState {
   missionMs: number
   weightClearedKg: number
   pieces: CastlePiece[]
+  plowAttached: boolean
   missionOver: boolean
   missionReason?: "water" | "stopped"
   projectStoppedByUser: boolean
@@ -45,6 +48,7 @@ export function createCastleCrashersState(seed: number, level: CastleLevel = 1):
     missionMs: 0,
     weightClearedKg: 0,
     pieces: specs.map(fromSpec),
+    plowAttached: false,
     missionOver: false,
     projectStoppedByUser: false,
     gpsXMm: START_POSE.xMm,
@@ -64,10 +68,8 @@ export function isCastleCrashersPlayground(id: string): boolean {
 export function insideHex(xMm: number, yMm: number, radiusMm = HEX_RADIUS_MM - WATER_MARGIN_MM): boolean {
   const ax = Math.abs(xMm)
   const ay = Math.abs(yMm)
-  if (ay > radiusMm) return false
-  // Vertical distance from a flat side of a pointy-top hex.
   const SQRT3 = Math.sqrt(3)
-  return ax * SQRT3 + ay <= radiusMm * SQRT3
+  return ax <= radiusMm * SQRT3 / 2 && ay + ax / SQRT3 <= radiusMm
 }
 
 function fromSpec(spec: CastlePieceSpec): CastlePiece {
@@ -82,5 +84,6 @@ function fromSpec(spec: CastlePieceSpec): CastlePiece {
     weightKg: spec.weightKg,
     pushable: spec.pushable,
     cleared: false,
+    topple: 0,
   }
 }

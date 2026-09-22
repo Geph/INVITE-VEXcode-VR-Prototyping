@@ -15,7 +15,6 @@ export interface FieldPickerEvent {
   blockType: string
   fieldName: string
   value: string
-  direction?: string
   clientX: number
   clientY: number
 }
@@ -43,7 +42,23 @@ const PICKER_FIELDS: Record<string, string> = {
   pg_drivetrain_set_rotation: "ROTATION",
   pg_drivetrain_turn_to_heading: "HEADING",
   pg_drivetrain_set_heading: "HEADING",
-  pg_drivetrain_drive_for: "DISTANCE",
+}
+
+/** Blockly keeps getWidth() after setVisible(false), so metrics leave a blank strip. */
+type FlyoutWidthPatch = {
+  getWidth: () => number
+  setVisible: (visible: boolean) => void
+  __inviteOrigGetWidth?: () => number
+}
+
+function setFlyoutExpanded(flyout: FlyoutWidthPatch | null | undefined, visible: boolean) {
+  if (!flyout) return
+  if (!flyout.__inviteOrigGetWidth) {
+    flyout.__inviteOrigGetWidth = flyout.getWidth.bind(flyout)
+  }
+  const measured = flyout.__inviteOrigGetWidth
+  flyout.getWidth = () => (visible ? measured() : 0)
+  flyout.setVisible(visible)
 }
 
 export function BlocklyEditor({
@@ -87,8 +102,7 @@ export function BlocklyEditor({
       contents: toolbox,
     })
     workspace.getToolbox()?.setSelectedItem(null)
-    const flyout = workspace.getFlyout()
-    flyout?.setVisible(!flyoutHidden)
+    setFlyoutExpanded(workspace.getFlyout() as FlyoutWidthPatch | null, !flyoutHidden)
     window.Blockly?.svgResize?.(workspace)
   }, [toolbox, workspace, blocklyLoaded, flyoutHidden])
 
@@ -135,7 +149,6 @@ export function BlocklyEditor({
         blockType: block.type,
         fieldName,
         value: block.getFieldValue(fieldName),
-        direction: block.type === "pg_drivetrain_drive_for" ? block.getFieldValue("DIRECTION") || "forward" : undefined,
         clientX: e.clientX,
         clientY: e.clientY,
       })

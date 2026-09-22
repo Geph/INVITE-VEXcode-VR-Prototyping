@@ -1,148 +1,65 @@
 import type { Camera, Viewport } from "@/engine"
 import { worldToScreen } from "@/engine"
-import { HEX_RADIUS_MM } from "../config"
-import { hexVertices } from "../layout"
+import { PLOW_FRONT_MM, PLOW_HALF_WIDTH_MM, PLOW_START } from "../config"
 import type { CastlePiece } from "../state"
+import { paintPiece } from "./masonry"
+export { drawCastleField } from "./scenery"
 
-export function drawCastleField(
-  ctx: CanvasRenderingContext2D,
-  cam: Camera,
-  viewport: Viewport,
-  elapsedMs: number,
-): void {
-  drawWater(ctx, viewport, elapsedMs)
-  const verts = hexVertices().map((p) => worldToScreen(p, cam, viewport))
-  ctx.beginPath()
-  ctx.moveTo(verts[0].x, verts[0].y)
-  for (const v of verts.slice(1)) ctx.lineTo(v.x, v.y)
-  ctx.closePath()
-  ctx.fillStyle = "#4CAF50"
-  ctx.fill()
-  ctx.lineWidth = 6
-  ctx.strokeStyle = "#8B1E1E"
-  ctx.stroke()
-
-  // Inner grass highlight.
-  const inner = hexVertices(HEX_RADIUS_MM * 0.96).map((p) => worldToScreen(p, cam, viewport))
-  ctx.beginPath()
-  ctx.moveTo(inner[0].x, inner[0].y)
-  for (const v of inner.slice(1)) ctx.lineTo(v.x, v.y)
-  ctx.closePath()
-  ctx.fillStyle = "rgba(255,255,255,0.06)"
-  ctx.fill()
-}
-
-export function drawCastlePieces(
-  ctx: CanvasRenderingContext2D,
-  pieces: CastlePiece[],
-  cam: Camera,
-  viewport: Viewport,
-): void {
-  for (const piece of pieces) {
+export function drawCastlePieces(ctx: CanvasRenderingContext2D, pieces: CastlePiece[], cam: Camera, viewport: Viewport): void {
+  // Foundations first; roofs and turrets cover their adjoining wall ends.
+  const layer = (p: CastlePiece) => p.kind === "keep" || p.kind === "ramp" ? 0
+    : p.kind === "wall" || p.kind === "castle-wall" ? 1 : 2
+  for (const piece of [...pieces].sort((a, b) => layer(a) - layer(b))) {
     if (piece.cleared) continue
-    const screen = worldToScreen({ x: piece.xMm, y: piece.yMm }, cam, viewport)
-    const scale = cam.zoom
-    ctx.save()
-    ctx.translate(screen.x, screen.y)
-    ctx.rotate((piece.headingDeg * Math.PI) / 180)
-    paintPiece(ctx, piece, scale)
+    const p = worldToScreen({ x: piece.xMm, y: piece.yMm }, cam, viewport)
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(piece.headingDeg * Math.PI / 180); ctx.scale(cam.zoom, cam.zoom)
+    paintPiece(ctx, piece)
     ctx.restore()
   }
 }
 
-function drawWater(ctx: CanvasRenderingContext2D, viewport: Viewport, elapsedMs: number) {
-  const g = ctx.createLinearGradient(0, 0, viewport.widthPx, viewport.heightPx)
-  g.addColorStop(0, "#1E88E5")
-  g.addColorStop(0.5, "#42A5F5")
-  g.addColorStop(1, "#1565C0")
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, viewport.widthPx, viewport.heightPx)
-
-  ctx.strokeStyle = "rgba(255,255,255,0.18)"
-  ctx.lineWidth = 1.5
-  const phase = elapsedMs * 0.002
-  for (let i = 0; i < 18; i++) {
-    const y = ((i * 47 + phase * 30) % (viewport.heightPx + 40)) - 20
-    ctx.beginPath()
-    ctx.moveTo(0, y)
-    for (let x = 0; x <= viewport.widthPx; x += 24) {
-      ctx.lineTo(x, y + Math.sin(x * 0.04 + phase + i) * 4)
-    }
-    ctx.stroke()
-  }
+/** The blade opens towards the robot's forward direction (local screen -Y). */
+function paintPlow(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = "#252a25"; ctx.fillRect(-9, 0, 18, 34)
+  ctx.beginPath(); ctx.arc(0, 35, 14, 0, Math.PI * 2); ctx.fill()
+  ctx.lineJoin = "bevel"; ctx.beginPath()
+  ctx.moveTo(-PLOW_HALF_WIDTH_MM, -32); ctx.lineTo(-73, 0); ctx.lineTo(73, 0); ctx.lineTo(PLOW_HALF_WIDTH_MM, -32)
+  ctx.strokeStyle = "#594e3a"; ctx.lineWidth = 20; ctx.stroke()
+  ctx.strokeStyle = "#9a7a4f"; ctx.lineWidth = 12; ctx.stroke()
+  ctx.strokeStyle = "#b29a74"; ctx.lineWidth = 3; ctx.stroke()
+  ctx.fillStyle = "#594936"
+  for (const x of [-67, 67]) ctx.fillRect(x - 3, -5, 6, 8)
 }
 
-function paintPiece(ctx: CanvasRenderingContext2D, piece: CastlePiece, zoom: number) {
-  const w = piece.halfWMm * 2 * zoom
-  const h = piece.halfHMm * 2 * zoom
-  if (piece.kind === "rock") {
-    ctx.fillStyle = "#B0BEC5"
-    ctx.beginPath()
-    ctx.ellipse(0, 0, w * 0.55, h * 0.45, 0.3, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = "#78909C"
-    ctx.stroke()
-    return
-  }
-  if (piece.kind === "tree") {
-    ctx.fillStyle = "#2E7D32"
-    ctx.beginPath()
-    ctx.arc(0, 0, Math.max(w, h) * 0.45, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = "#5D4037"
-    ctx.fillRect(-4 * zoom, 0, 8 * zoom, h * 0.4)
-    return
-  }
-  if (piece.kind === "tower") {
-    ctx.fillStyle = "#ECEFF1"
-    ctx.fillRect(-w / 2, -h / 2, w, h)
-    ctx.fillStyle = "#42A5F5"
-    ctx.fillRect(-w / 2, -h / 2, w, h * 0.35)
-    ctx.fillStyle = "#E53935"
-    ctx.beginPath()
-    ctx.moveTo(0, -h * 0.85)
-    ctx.lineTo(w * 0.55, -h * 0.15)
-    ctx.lineTo(-w * 0.55, -h * 0.15)
-    ctx.closePath()
-    ctx.fill()
-    return
-  }
-  if (piece.kind === "keep") {
-    ctx.fillStyle = "#90CAF9"
-    ctx.fillRect(-w / 2, -h / 2, w, h)
-    ctx.strokeStyle = "#1565C0"
-    ctx.lineWidth = 2
-    ctx.strokeRect(-w / 2, -h / 2, w, h)
-    ctx.fillStyle = "#E53935"
-    ctx.fillRect(-w * 0.2, -h * 0.55, w * 0.4, h * 0.25)
-    return
-  }
-  // wall / roof
-  ctx.fillStyle = "#90A4AE"
-  ctx.fillRect(-w / 2, -h / 2, w, h)
-  ctx.strokeStyle = "#546E7A"
-  ctx.strokeRect(-w / 2, -h / 2, w, h)
+export function drawCastlePlow(ctx: CanvasRenderingContext2D, cam: Camera, viewport: Viewport): void {
+  const p = worldToScreen({ x: PLOW_START.xMm, y: PLOW_START.yMm }, cam, viewport)
+  ctx.save(); ctx.translate(p.x, p.y); ctx.scale(cam.zoom, cam.zoom); paintPlow(ctx); ctx.restore()
 }
 
-export function drawCastleRobot(
-  ctx: CanvasRenderingContext2D,
-  robot: { xMm: number; yMm: number; headingDeg: number },
-  cam: Camera,
-  viewport: Viewport,
-): void {
+export function drawCastleRobot(ctx: CanvasRenderingContext2D,
+  robot: { xMm: number; yMm: number; headingDeg: number }, cam: Camera, viewport: Viewport, plowAttached = false): void {
   const p = worldToScreen({ x: robot.xMm, y: robot.yMm }, cam, viewport)
-  const s = Math.max(8, 18 * cam.zoom * 12)
-  ctx.save()
-  ctx.translate(p.x, p.y)
-  ctx.rotate((robot.headingDeg * Math.PI) / 180)
-  ctx.fillStyle = "#263238"
-  ctx.fillRect(-s * 0.45, -s * 0.35, s * 0.9, s * 0.7)
-  ctx.fillStyle = "#FFD54F"
-  ctx.beginPath()
-  ctx.moveTo(0, -s * 0.55)
-  ctx.lineTo(s * 0.25, 0)
-  ctx.lineTo(-s * 0.25, 0)
-  ctx.closePath()
-  ctx.fill()
+  ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(robot.headingDeg * Math.PI / 180); ctx.scale(cam.zoom, cam.zoom)
+  ctx.fillStyle = "#24302355"; ctx.fillRect(-57, -55, 125, 140)
+  // Four rubber wheels, machined chassis rails, battery and front sensors.
+  for (const x of [-55, 42]) for (const y of [-50, 22]) {
+    ctx.fillStyle = "#252b2b"; ctx.fillRect(x, y, 19, 42); ctx.fillStyle = "#626762"
+    for (let t = 0; t < 5; t++) ctx.fillRect(x + 2, y + 4 + t * 7, 15, 2)
+  }
+  ctx.fillStyle = "#848d87"; ctx.fillRect(-45, -53, 90, 122)
+  ctx.fillStyle = "#c3c6b8"; ctx.fillRect(-39, -48, 78, 109)
+  ctx.fillStyle = "#575f59"; ctx.fillRect(-25, -21, 50, 57)
+  ctx.fillStyle = "#aab1a3"; ctx.fillRect(-20, -17, 40, 43)
+  ctx.fillStyle = "#283730"; ctx.fillRect(-12, -8, 24, 18)
+  ctx.fillStyle = "#5faab0"; ctx.fillRect(-8, -5, 16, 9)
+  for (const x of [-37, 27]) {
+    ctx.fillStyle = "#d8dbca"; ctx.fillRect(x, -71, 10, 125); ctx.fillStyle = "#747970"
+    for (let y = -45; y < 54; y += 14) ctx.fillRect(x + 3, y, 4, 5)
+    ctx.fillStyle = "#dda83d"; ctx.fillRect(x - 3, -72, 16, 13)
+    ctx.fillStyle = "#eef3e7"; ctx.fillRect(x - 2, -62, 14, 16)
+  }
+  ctx.strokeStyle = "#c0a447"; ctx.lineWidth = 3
+  ctx.beginPath(); ctx.moveTo(-23, 24); ctx.lineTo(-29, 44); ctx.lineTo(22, 44); ctx.lineTo(25, 17); ctx.stroke()
+  if (plowAttached) { ctx.translate(0, -PLOW_FRONT_MM); paintPlow(ctx) }
   ctx.restore()
 }

@@ -33,6 +33,8 @@ export type AIAssistantProps = {
   reefState: OceanReefState
   roverState: RoverRescueState
   castleState: CastleCrashersState
+  playgroundVisible: boolean
+  onOpenPlayground: () => void
   ref?: React.Ref<AIAssistantHandle>
 }
 
@@ -46,6 +48,8 @@ export function AIAssistant({
   reefState,
   roverState,
   castleState,
+  playgroundVisible,
+  onOpenPlayground,
   ref,
 }: AIAssistantProps) {
   const aiAssistantRef = useRef<HTMLDivElement>(null)
@@ -111,6 +115,8 @@ export function AIAssistant({
         reefState={reefState}
         roverState={roverState}
         castleState={castleState}
+        playgroundVisible={playgroundVisible}
+        onOpenPlayground={onOpenPlayground}
       />
     </AssistantWindow>
   )

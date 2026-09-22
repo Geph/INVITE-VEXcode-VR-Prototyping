@@ -20,7 +20,6 @@ import { railCategoriesFor } from "@/components/workspace/CategoryRail"
 import { CelebrationOverlay } from "@/components/workspace/CelebrationOverlay"
 import { DEFAULT_ROBOT_CAPABILITIES } from "@/components/workspace/RobotConfigWindow"
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader"
-import { PlaygroundDistancePicker } from "@/components/workspace/PlaygroundDistancePicker"
 import { updateBlocklyNumberField } from "@/components/workspace/update-blockly-field"
 import { isCastleCrashersPlayground, isRoverRescuePlayground } from "@/hooks/playground-motion"
 import { CastleCrashersHud, CastleLevelToggle, createCastleCrashersState } from "@/playgrounds/castle-crashers"
@@ -62,13 +61,6 @@ export function VexWorkbench() {
   const blocklyPickerRef = useRef<{ blockId: string; fieldName: string } | null>(null)
   const [anglePickerState, setAnglePickerState] = useState({ isOpen: false, angle: 90, x: 0, y: 0 })
   const [compassPickerState, setCompassPickerState] = useState({ isOpen: false, heading: 0, x: 0, y: 0 })
-  const [distancePickerState, setDistancePickerState] = useState({
-    isOpen: false,
-    distance: 200,
-    direction: "forward",
-    x: 0,
-    y: 0,
-  })
 
   const session = usePlaygroundSession(robotCapabilities.eyeSensor)
   const {
@@ -232,14 +224,6 @@ export function VexWorkbench() {
         x: event.clientX,
         y: event.clientY,
       })
-    } else if (event.blockType === "pg_drivetrain_drive_for") {
-      setDistancePickerState({
-        isOpen: true,
-        distance: Number(event.value) || 200,
-        direction: event.direction || "forward",
-        x: event.clientX,
-        y: event.clientY,
-      })
     }
   }, [])
 
@@ -329,6 +313,8 @@ export function VexWorkbench() {
           reefState={session.reefState}
           roverState={session.roverState}
           castleState={session.castleState}
+          playgroundVisible={session.playgroundState.isVisible}
+          onOpenPlayground={session.handleOpenPlayground}
         />
       </div>
 
@@ -443,24 +429,6 @@ export function VexWorkbench() {
           onClose={() => {
             blocklyPickerRef.current = null
             setCompassPickerState((prev) => ({ ...prev, isOpen: false }))
-          }}
-        />
-      )}
-
-      {distancePickerState.isOpen && (
-        <PlaygroundDistancePicker
-          value={distancePickerState.distance}
-          direction={distancePickerState.direction}
-          playgroundId={session.playgroundId}
-          playground={session.activePlayground}
-          robot={session.robotState}
-          reefState={session.reefState}
-          roverState={session.roverState}
-          castleState={session.castleState}
-          onApply={applyPickerValue}
-          onClose={() => {
-            blocklyPickerRef.current = null
-            setDistancePickerState((prev) => ({ ...prev, isOpen: false }))
           }}
         />
       )}
