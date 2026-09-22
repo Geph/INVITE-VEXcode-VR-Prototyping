@@ -4,6 +4,16 @@ alwaysApply: true
 
 # INVITE VEXcode VR Prototyping — project rules
 
+## Handoff documentation
+
+Read [AGENTS.md](../../AGENTS.md), [docs/README.md](../../docs/README.md), and
+[the current architecture](../../docs/ARCHITECTURE.md) before changing this project.
+For substantive changes, update current docs and add a dated record linked from
+[docs/CHANGELOG.md](../../docs/CHANGELOG.md). Use
+[the record template](../../docs/changes/TEMPLATE.md), including evidence, intentional
+behavior/test changes, validation results, and known limitations. Historical phase
+plans are context; the user's current task defines the work being requested.
+
 ## Architecture
 - engine/ is pure TypeScript: no React, no DOM, no imports from components/ or app/.
 - playgrounds/ may import engine/ and blocks/, never components/ or app/.

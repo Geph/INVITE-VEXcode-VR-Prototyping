@@ -1,168 +1,156 @@
-# Target architecture
+# Current architecture
 
-This is the **target** structure. Phase 1 landed `engine/` as pure TypeScript modules. The running app is still the `components/vex-workspace.tsx` monolith; `lib/robot-runtime.ts` re-exports the pieces that moved and keeps the pixel-based Ocean Reef helpers.
+Last reconciled with the working tree: 2026-09-22. This describes the implementation,
+including local Castle gameplay changes, not a planned end state. See the
+[documentation index](README.md), [change history](CHANGELOG.md), and
+[archived original plan](history/ARCHITECTURE-original-plan.md).
 
-Field, economy, sensing, and block numbers live in [`ROVER-RESCUE-SPEC.md`](./ROVER-RESCUE-SPEC.md). This file is Part 2 of the build plan: the tree, the `PlaygroundDefinition` contract, and the five invariants. Do not widen the contract with Rover Rescue special cases.
+## Module map
 
-## Why this split
+| Path | Responsibility |
+| --- | --- |
+| `app/page.tsx` | Static Next.js page rendering `VexWorkbench` |
+| `components/workspace/VexWorkbench.tsx` | Client host composing editor, session, runner, playground windows and outcome UI |
+| `components/workspace/BlocklyEditor.tsx`, `use-blockly-workspace.ts` | Blockly workspace lifecycle and block editing |
+| `components/playground/` | Shared window, controls, picker and readouts |
+| `hooks/usePlaygroundSession.ts` | Active playground, robot pose, separate playground state refs, camera/window state and reset/spawn helpers |
+| `hooks/useProgramRunner.ts` | Start/Step/Stop/Reset, generated JavaScript execution, event watcher lifecycle and run state |
+| `hooks/program-robot-api.ts` | `robot.*` API injected into programs; motion queue, runtime settings, console, variables, broadcasts and playground API delegation |
+| `hooks/useRobotAnimation.ts`, `playground-motion.ts` | Animated host pose, movement targets, direction conventions and collision constraints |
+| `hooks/usePlaygroundDraw.ts` | Playground-specific simulation/render integration and mission callbacks |
+| `hooks/usePlaygroundMission.ts` | Ocean Reef mission handling; other playgrounds have separate outcome paths |
+| `engine/` | Pure TypeScript units, motion timing, geometry, camera, sensors, clock, seeded RNG and interpreter utilities |
+| `playgrounds/types.ts`, `registry.ts` | Authoritative playground contract, registered definitions and legacy ID aliases |
+| `playgrounds/ocean-reef/` | Coral/trash state, legacy sensor adapters, collection, collision and canvas art |
+| `playgrounds/rover-rescue/` | Map, terrain, entities, battery/minerals/combat/AI systems, sensors, mission and HUD |
+| `playgrounds/castle-crashers/` | Hex field, component layout/state, debris physics, scoring, canvas art, HUD and results |
+| `blocks/common/`, `blocks/registry.ts`, `blocks/toolbox.ts` | Common definitions, generators and category installation |
+| `blocks/fields/`, `blocks/generators/` | Custom field editors and Python program generation |
+| `lib/robot-runtime.ts`, `lib/python-generator.ts` | Compatibility helpers/re-exports; legacy Reef pixel helpers remain here |
+| `lib/use-blockly-collab.ts`, `scripts/collab-server.mjs` | Client block/cursor synchronization and separate WebSocket relay |
+| `lib/session-log.ts`, `telemetry/` | Local session events, research identity and event emission; schema in `LOGGING-SPEC.md` |
+| `tests/` | Vitest engine, playground, block, host and telemetry checks |
 
-Ocean Reef is a single-screen, fixed-field simulator. Rover Rescue is a large open world with an economy, a clock, and combat. The last row is the one that decides everything else — you cannot bolt a 12 m world onto a component that stores pose in canvas pixels.
+## Program execution and state flow
 
-| Concern | Ocean Reef today | Rover Rescue needs |
+1. `app/page.tsx` mounts `VexWorkbench`. The session resolves a registry ID from
+   the picker or `?playground=...` and applies its `world.startPose`.
+2. The editor installs common blocks plus the active definition's categories.
+   `generateWhenStartedJavaScript` collects enabled started stacks; multiple stacks
+   use concurrent async functions. Python generation is a separate display/export path.
+3. The runner initializes runtime settings and pose, generates JavaScript, creates
+   the host `robot.*` API and executes it using `AsyncFunction`. Step mode gates
+   individual statements. Bumper and Rover event hats are polled separately.
+4. Host drive/turn methods queue motion and update a shared pose ref plus React
+   state through `useRobotAnimation`. Playground API methods read the relevant
+   world state. Castle must receive `castleStateRef`; do not fall back to Reef state.
+5. `usePlaygroundDraw` ticks and paints the active world and sends mission callbacks
+   to the host. UI snapshots and mutable refs are both used; avoid replacing a live
+   ref with stale React state when wiring reset or lifecycle changes.
+6. Stop cancels active animation and requests program unwinding. The correct
+   playground's `markStoppedByUser` records a user stop. Castle waits for queued
+   motion before displaying natural-completion results. Remaining async/event
+   lifetime problems are listed in [the audit](BLOCK-AUDIT.md).
+
+The shared contract supports creation/reset, tick/render, block installation, API
+creation, outcomes and telemetry adapters. Use [the actual interface](../playgrounds/types.ts)
+instead of copying it into a feature-specific contract. The host still contains
+playground-specific branches: the generic interface does not mean every lifecycle
+is fully abstracted or every registered API is implemented.
+
+## Coordinates, scale and clocks
+
+| Playground | Physical dimensions | Coordinate/render details |
 | --- | --- | --- |
-| Field size | 2000 mm square, fits the canvas | 12000 × 6000 mm — 18× the area |
-| Camera | none; canvas is the field | pan + zoom, world↔screen transform, follow-rover mode |
-| Robot state | stored in canvas pixels, converted to mm for sensors | must be stored in world mm; pixels are a render detail |
-| Entities | 12 trash items, one flat array | minerals, obstacles, 4 enemy types, base, river, bridges — needs a broadphase grid |
-| Time | wall-clock animation only | a mission clock (50 in-game days), battery drain, a standby fast-forward mode |
-| State | robot pose + score | battery, XP, level, absorb, capacity, storage, days, per-enemy HP/radiation |
-| Sensors | bumper / distance / eye | AI detect (360°, 800 mm), AI sight (40° cone, 1000 mm) with per-object attribute reporting |
-| Autonomy | none | `go to [minerals/enemy/base]` — pathfinding around obstacles and over bridges |
-| Failure | hit coral → game over | battery reaches 0 → game over; river is a hazard; enemies attack |
-| Code shape | `vex-workspace.tsx`, playground hard-wired into the editor | playground must be a swappable module |
+| Ocean Reef | 2000 × 2000 mm | Historical +Y-down remains. Projection uses canvas size; enlarging the window does not enlarge the world. Sensor adapters project into a separate fixed-scale virtual canvas. |
+| Rover Rescue | 12000 × 6000 mm | Engine +Y north, camera inverts screen Y; fit/pan/zoom/follow are presentation operations. |
+| Castle Crasher+ | 3288-mm vertex-to-vertex hex diameter | Engine +Y north; start `(1014, 50)` facing left at -90°. `FIELD_WIDTH_MM`/`FIELD_HEIGHT_MM` include water padding for camera framing; they are not the island diameter. |
 
-That is why Phases 1–3 rewrite the host **before** any Rover Rescue code is written.
+Robot/world positions are in millimetres; inches convert at 25.4 mm/inch. Legacy
+Reef pen trails and some sensor/art helpers still use pixels, so this is not a fully
+pixel-free host. Do not feed an engine mm duration into the legacy pixel-taking
+`lib/robot-runtime.ts` wrapper without conversion.
 
-Current picker ids stay until Phase 3: `ocean-cleanup` is Ocean Reef, `rescue-rover` is Rover Rescue. Target ids are `ocean-reef` and `rover-rescue`.
+Shared motion constants are 5 ms/mm and 11 ms/degree at 50% velocity, changed from
+10 and 22 on 2026-09-22. This affects all playgrounds, not just Castle. The 80-ms
+minimum duration remains for finite moves. Zero velocity gives zero speed and infinite
+duration for nonzero moves, so animation stays at the starting pose until canceled.
+Physical rotation is unwrapped to preserve full revolutions. Drivetrain heading and
+rotation setters change independent per-run reference offsets; GPS remains physical.
 
-## Target tree
+Castle accumulates fixed 60-Hz simulation steps with `SimulationClock`; the host
+interpolates sampled robot movement across steps. The Castle loop continues when
+its window is hidden/minimized. Rover's host currently passes bounded render-frame
+deltas to `tickRoverRescue`; standby owns its own advancement. Ocean uses its legacy
+animation/mission paths. Fixed-step simulation everywhere is a design goal, not an
+established property of all current host paths.
 
-```
-app/
-  layout.tsx  page.tsx  globals.css
+## Castle lifecycle and extension points
 
-engine/                        # pure TypeScript, no React, unit-testable
-  units.ts                     # mm ↔ px, inches, angle normalisation
-  camera.ts                    # pan/zoom, world↔screen, viewport culling
-  world.ts                     # World, Entity, spatial hash grid
-  motion.ts                    # drive/turn kinematics, velocity, timeout
-  collision.ts                 # circle/polygon/polyline tests, point-in-zone
-  sensors.ts                   # raycast, cone FOV, radial detect
-  clock.ts                     # fixed-timestep tick, in-game time, fast-forward
-  rng.ts                       # seeded PRNG (already have seededRandom)
-  interpreter.ts               # AsyncFunction runner, ProgramStopped, event hats
-  types.ts
+- `config.ts`: documented field/start values and tunable contact, debris, scoring,
+  splash and results-delay constants. Keep these categories distinguishable.
+- `layout.ts`: approximate component positions, dimensions and levels; Basic has
+  no trees, Advanced adds immovable trees. Layout is not an official measured mesh.
+- `state.ts`: component position/orientation, velocities, topple/cleared flags,
+  clearing timestamps, kilograms, mission/display clocks and outcome reason.
+- `systems/physics.ts`: pushes and secondary contacts, friction/spin, plow pickup,
+  fixed-obstacle sweep, water-fall detection and one-time score increments.
+- `art/`, `render.ts`: original canvas artwork, toppled pieces and splash ripples.
+  The result phase shows the water background instead of the island.
+- `hud.tsx`, `results.tsx`: live kilograms/time, delayed result card, retry and a
+  downloadable SVG certificate. Retry resets the world and robot; it does not erase
+  the learner's blocks. Certificate graphics are original prototype artwork.
 
-playgrounds/
-  registry.ts                  # id → PlaygroundDefinition
-  ocean-reef/                  # existing playground, ported to the contract
-    config.ts art.ts entities.ts blocks.ts api.ts render.ts index.ts
-  rover-rescue/
-    config.ts                  # every constant from ROVER-RESCUE-SPEC.md
-    map-spec.ts                # zones, river, bridges, base, spawn tables
-    entities/                  # mineral.ts enemy.ts obstacle.ts base.ts
-    systems/                   # spawn.ts physics.ts enemy-ai.ts sensing.ts combat.ts
-                               # battery.ts leveling.ts minerals.ts mission.ts navigation.ts
-    art/                       # terrain.ts river.ts flora.ts rocks.ts rover.ts mineral.ts spider.ts serpent.ts base.ts
-    render.ts                  # composes art/ through the camera
-    blocks.ts                  # the 1:1 block definitions
-    api.ts                     # robot.* implementations
-    hud/                       # Battery.tsx Strength.tsx LevelBox.tsx Minimap.tsx MapView.tsx AIOverlay.tsx MissionDialog.tsx Stats.tsx
-    index.ts
+Water, user stop and natural program completion are separate reasons. Debris can
+settle briefly after mission end; the mission timer stops while the display clock
+continues. Score is counted only once per cleared component, including a component
+that crosses the edge on the same step as the robot. Piece masses and physics are
+approximations, not validated 3D or score parity. Castle exposes X/Y GPS and position angle in Sensing; other Castle sensors remain unimplemented.
 
-blocks/
-  common/                      # drivetrain.ts logic.ts operators.ts console.ts control.ts events.ts
-  fields/                      # angle-wheel.ts compass.ts distance-slider.ts
-  registry.ts  toolbox.ts
-  generators/                  # javascript.ts python.ts
+## Learner planning and Switch code
 
-components/
-  workspace/                   # BlocklyEditor.tsx Toolbar.tsx CategoryRail.tsx Trashcan.tsx
-  playground/                  # PlaygroundWindow.tsx PlaygroundCanvas.tsx ZoomControls.tsx Console.tsx
-  ai-assistant/                # unchanged behaviour, extracted from the monolith
-  ui/                          # shadcn primitives (unchanged)
+`AIAssistant` owns a session-local plan cycle outside the conditional sidebar/menu.
+`plan-cycle.ts` holds draw → build → running → review transitions; `plan-panel.tsx`
+shows a playground map and accepts blue drawing strokes in fixed canvas coordinates.
+The host supplies `isRunning` and actual robot positions in world mm. Running samples
+(at least 2 mm apart) become an orange dashed path projected by the same camera.
+Closing Help preserves recording. Completion reopens Plan with the comparison and a
+new-plan action. Reset is excluded from travelled paths. Selecting another playground
+remounts the assistant; a page reload also discards plans. No persistence or telemetry
+schema changes were introduced. Castle previews use a fresh layout at the selected
+level so the castle remains visible after the results screen replaces the live scene.
 
-collab/                        # existing use-blockly-collab.ts + overlay, untouched this cycle
-scripts/                       # collab-server.mjs, geometry checks
-tests/engine/                  # characterisation of today's robot-runtime.ts (this phase)
-docs/
-  ARCHITECTURE.md  ROVER-RESCUE-SPEC.md  phases/00..10.md
-```
+`engine/switch-python.ts` is an explicit VEX Python command adapter. The Switch block
+passes its text to `robot.runSwitchCode`; the adapter validates the entire block before
+execution and generates calls to the existing host API. It supports literal command
+arguments, constants, and four-space-indented `for … in range(integer)` repeats. Loop
+iterations yield so Stop can interrupt them. It rejects unsupported Python with line
+numbers; it is not a general Python runtime. See the dated change record for syntax
+and inherited drivetrain limitations.
 
-`app/` stays a static Next export. It does not learn about individual playgrounds.
+## Compatibility and maintenance boundaries
 
-## PlaygroundDefinition
+- Keep `engine/` free of React/DOM dependencies. Playground modules should not
+  import the host's `components/` or `app/` directories.
+- Preserve `pg_*` block identifiers, saved-workspace migration and the logging
+  schema, including external spellings such as `CasteCrasherPlus` and
+  `enemies_nuetralized`. Put INVITE additions under `_invite`.
+- Prefer seeded RNG for simulation/replay. The random operator and some historical
+  visual helpers have separate behavior; do not claim universal deterministic replay.
+- Keep block definitions and their JavaScript/Python generators together where
+  the current module organization permits. Verify both generation and runtime
+  semantics; a generated block that does not throw can still do nothing.
+- Preserve historical records. Update this page for current behavior, and add a
+  dated record describing why behavior changed and what was tested.
 
-Everything downstream depends on this interface being right. Define it in Phase 2 and do not let Rover Rescue widen it with special cases.
+## Build and validation
 
-```ts
-export interface PlaygroundDefinition<S = unknown> {
-  id: string
-  name: string
-  world: {
-    widthMm: number
-    heightMm: number
-    gridMm: number
-    startPose: { xMm: number; yMm: number; headingDeg: number }
-    camera: { minZoom: number; maxZoom: number; initialZoom: number; follow: boolean }
-  }
-  createState(seed: number): S
-  reset(state: S, seed: number): S
-  tick(state: S, dtMs: number, robot: RobotState): S      // pure; no React, no canvas
-  render(ctx: CanvasRenderingContext2D, state: S, robot: RobotState, cam: Camera): void
-  renderOverlay?(ctx: CanvasRenderingContext2D, state: S, robot: RobotState, cam: Camera): void
-  blocks: BlockCategory[]                                  // block defs + toolbox entries
-  createApi(deps: PlaygroundApiDeps<S>): Record<string, (...args: any[]) => unknown>
-  hud?: React.ComponentType<{ state: S; robot: RobotState }>
-  isMissionOver(state: S): { over: boolean; reason?: string; won?: boolean }
-}
-```
+Next.js static export (`next.config.mjs`) writes `out/`. GitHub Pages builds use a
+base path. Collaboration requires the separate Node WebSocket process; it is not
+included in the static export. See [local commands](README.md#local-development)
+and [CI](../.github/workflows/ci.yml).
 
-The host looks up a definition by id, calls `createState` / `createApi`, injects that API into the generated program, and asks the definition to `tick` and `render`. Ocean Reef can set `follow: false` and a zoom that fits the 2000 mm field. Rover Rescue uses pan/zoom with follow-rover over the 12000 × 6000 mm field.
-
-`tick` returns the next state. It does not mutate React state or touch a canvas. `standby` is many `tick` steps without `render`.
-
-## Five invariants
-
-These are merge gates. A change that breaks one is incomplete.
-
-1. **All simulation state is in world millimetres.** Pixels exist only inside `engine/camera.ts` and the render functions. This is the single biggest change from the current code, which stores pose in canvas pixels and converts to mm for sensors.
-
-2. **`tick()` is pure and framerate-independent.** Fixed 16.67 ms steps accumulated from `requestAnimationFrame`; a slow frame runs multiple steps. `standby` just runs many steps without rendering.
-
-3. **The engine never imports React, and playground modules never import `components/`.** HUD components live under the playground's `hud/` and are passed in through `PlaygroundDefinition.hud`. Engine code stays unit-testable in Node.
-
-4. **Block definition, JS generator, and Python generator for a block live together in one file**, so adding a block is one edit, not three.
-
-5. **Ocean Reef must keep working identically through Phases 1–3.** It is the regression test. Characterisation in `tests/engine/` describes today's `lib/robot-runtime.ts` behaviour, including the oddities below. Phases 1–3 may move code. They must not change those assertions. If a later phase *intends* to fix an oddity, it updates the test and this list in the same change.
-
-## Phase map (not this change)
-
-| Phase | Intent |
-| --- | --- |
-| 0 (this) | Docs, Vitest, characterisation tests, CI. No refactor. |
-| 1 | Move shared math from `lib/robot-runtime.ts` into `engine/` without behaviour change. |
-| 2 | Define `PlaygroundDefinition` and extract Ocean Reef as the first implementation. |
-| 3 | Thin the monolith into `components/workspace` + `components/playground` that swap definitions. |
-| 4+ | Implement Rover Rescue against [`ROVER-RESCUE-SPEC.md`](./ROVER-RESCUE-SPEC.md). Phase 4 includes a zone-vertex debug overlay. |
-
-## Known oddities (current Ocean Reef code)
-
-Characterisation tests lock these in. They look wrong next to official VEX docs; they are what `lib/robot-runtime.ts` does today.
-
-- **Field +Y is canvas-down.** `fieldMmToPixel` adds field-Y to canvas-Y, so positive field millimetres move toward the bottom of the window. Official VEX +Y is north. Ocean Reef's start `{ x: 0, y: -800 }` therefore sits *above* the canvas centre, even though the status bar reports Y as −800. The rewrite stores pose in world mm with +Y north; only the camera inverts Y.
-- **`pixelToFieldMm` rounds.** The inverse snaps to integer millimetres. A pixel that is not an exact millimetre multiple does not round-trip through `fieldMmToPixel`.
-- **Three different “edge” margins.** `clampRobotPosition` and `maxDriveDistanceMm` default to 35 px. `raycastToBorder` hard-codes 20 px. Trash placement uses 55 px. The hull never shares one inset with the distance sensor.
-- **`raycastToBorder` caps at 2000 mm by default**, not `DISTANCE_SENSOR_MAX_MM` (3000).
-- **Unit strings are not VEX constants.** Only `"inches"` and `"INCHES"` convert as inches. `"INCH"`, `"in"`, `"MM"`, and anything else are treated as millimetres.
-- **Velocity is clamped to 5–100.** `driveDurationMs` and `turnDurationMs` raise 0% to 5% and drop values above 100%. Both also floor duration at 80 ms.
-- **Raycasts step 2 px.** `maxDriveDistanceMm` and `raycastToBorder` can report a hit up to almost 2 px past the real edge or coral surface.
-- **“In front” is a half-plane, not a cone.** `nearestTrashInFrontMm` keeps anything with a non-negative forward dot product. Official Rover Rescue vision is a 40° cone; Ocean Reef does not implement that.
-- **Front eye vs down eye.** `isTrashNearEye("front")` uses the 22 px eye offset and the half-plane. `"down"` uses omnidirectional distance from the robot centre.
-- **Trash range is edge-to-edge.** Both nearest-trash helpers subtract `TRASH_HIT_RADIUS_PX` (20) before converting to millimetres, and clamp that to ≥ 0. A robot sitting on a sprite reports 0 mm, not a negative.
-- **`createInitialTrashItems` can return fewer than `count`.** Placement gives up after `count * 50` attempts. Items that land on coral (28 px margin) or within 70 px of the spawn point are skipped.
-- **`forEachProgramBlock` skips the `when_started` hat.** A workspace that is only the hat visits nothing, so a bare hat is an empty program. Nested mouths still walk `DO` / `DO1` / `DO2` / `ELSE`.
-- **`generateWhenStartedJavaScript` wraps extra hats in `Promise.all`.** Disabled hats are dropped. Empty bodies are dropped. One non-empty body is emitted raw; two or more become concurrent async IIFEs.
-- **`seededRandom` is `sin(seed * 9999)` fractional part.** It is deterministic and SSR-safe. It is not a stepped PRNG; the same seed always returns the same value.
-- **`normalizeDegrees(-360)` is `-0`.** In JavaScript `-360 % 360` is `-0`, and `-0 < 0` is false, so the wrap-around branch does not run. Callers that use `Object.is` or serialise the value will see a signed zero.
-
-## Current mapping (phase 0)
-
-| Target | Today |
-| --- | --- |
-| `engine/*` | implemented; Ocean Reef still talks to it through `lib/robot-runtime.ts` shims |
-| `playgrounds/ocean-reef/*` | inlined in `components/vex-workspace.tsx` |
-| `playgrounds/registry.ts` | `PlaygroundId` union (`ocean-cleanup` / `rescue-rover` / `castle-crashers`) |
-| `blocks/` | `define*Blocks` functions in that component + `lib/python-generator.ts` |
-| `components/workspace` + `playground` | the same monolith |
-| characterisation suite | `tests/engine/*.test.ts` (this phase) |
+The 2026-09-22 gameplay validation recorded 321 passing tests and 5 expected failures
+across 49 files, plus a passing lint/typecheck/build and manual Castle browser flows.
+This is a historical checkpoint, not a guarantee about a future checkout. Known
+failures are tracked in [issue #5](https://github.com/Geph/INVITE-VEXcode-VR-Prototyping/issues/5).
