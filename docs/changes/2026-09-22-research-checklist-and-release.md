@@ -36,6 +36,13 @@ and documentation are grouped into reviewable commits. The final push to `Mars-R
 triggers existing CI and Pages workflows; their eventual status must be verified
 before reporting deployment complete. No release tag or version bump is requested.
 
+## Branch handoff
+
+The subsequent Castle/planning PR targets `main`. For future tasks, begin on an
+up-to-date local `main` and branch from it; use `Mars-Rover` only when continuing
+that specific PR. This policy is recorded in root `AGENTS.md` and deployment docs.
+The local main checkout was fast-forwarded after PR creation, without merging the PR.
+
 ## Follow-up
 
 Keep issue #3 and the unresolved portions of issue #5 open. The official Castle

@@ -13,6 +13,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 This is an educational research prototype. Changes to motion, scoring, blocks or
 telemetry can alter learners' experiences and the interpretation of research data.
 
+For new work, start from current `main`: `git switch main` and
+`git pull --ff-only origin main`, then create a task branch (default prefix
+`codex/`). Open a PR back to `main`. `Mars-Rover` is the head of the existing
+Castle/planning PR; do not treat it as the base for subsequent tasks. If a PR has
+not merged yet, use its branch only when explicitly continuing that PR.
+
 Before working, read [docs/README.md](docs/README.md), the relevant sections of
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and the latest relevant entry in
 [docs/CHANGELOG.md](docs/CHANGELOG.md). Check `git status` and preserve existing work.

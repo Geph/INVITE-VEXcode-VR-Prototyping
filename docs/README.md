@@ -28,7 +28,9 @@ when they affect timing, task difficulty, feedback, or recorded events.
 
 ## Continuing work
 
-1. Inspect the working tree and latest relevant change record before editing.
+1. Start from updated `main` for new work; continue another branch only when the
+   task is explicitly about that branch/PR. Inspect the working tree and latest
+   relevant change record before editing.
 2. Read the feature code and its tests; consult bundled Next.js docs before changing
    framework code. Preserve block IDs and the logging contract.
 3. Keep implementation, tests and the documentation trail together. Use

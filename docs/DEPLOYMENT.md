@@ -11,6 +11,10 @@ sets it to `/INVITE-VEXcode-VR-Prototyping`.
 - [Release](../.github/workflows/release.yml): manual version/tag/release operation.
   A normal deployment does not need a version bump or GitHub release.
 
+New development starts from updated `main` and reaches it through a PR. Existing
+`SV` and `Mars-Rover` pushes still trigger deployment because the workflow is
+configured that way; this is not the starting branch policy.
+
 All three deployment branches share the same Pages environment and live URL.
 Check the exact commit and successful deployment run, not merely that push worked.
 CI and deployment are separate workflows; successful publishing does not prove CI
