@@ -41,11 +41,11 @@ export function CompareMenu({
       <BackButton colorClass="text-green-600 hover:text-green-800" onClick={onBack} />
       <p className="mb-4 font-medium text-base">What would you like to compare?</p>
       <div className="flex flex-col gap-2">
-        <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0" onClick={() => setMode("scores")}>
+        <Button className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0" onClick={() => setMode("scores")}>
           <span className="mr-2 font-semibold">1.</span> Score history
         </Button>
-        <Button className="justify-start text-left h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0" onClick={() => setMode("versions")}>
-          <span className="mr-2 font-semibold">2.</span> Compare versions
+        <Button className="justify-start text-left whitespace-normal break-words h-auto py-3 px-4 bg-green-500 hover:bg-green-600 text-white border-0" onClick={() => setMode("versions")}>
+          <span className="mr-2 font-semibold">2.</span> Compare to previous versions of your code
         </Button>
       </div>
     </div>
@@ -99,7 +99,7 @@ function CompareVersions({ workspace, onBack }: { workspace: VersionWorkspace | 
   return (
     <div id="vex-ai-versions" className="text-gray-700 text-sm">
       <BackButton colorClass="text-green-600 hover:text-green-800" onClick={onBack} />
-      <p className="mb-2 font-medium">Compare versions</p>
+      <p className="mb-2 font-medium">Compare to previous versions of your code</p>
       <Button className="mb-3 bg-green-500 hover:bg-green-600 text-white" onClick={capture}>
         Save this version
       </Button>

@@ -2,27 +2,29 @@ import type { RobotState } from "./types"
 import { normalizeDegrees } from "./units"
 
 /** Drive animation timing at 50% velocity (VEX default). */
-export const DRIVE_MS_PER_MM_AT_50 = 10
+export const DRIVE_MS_PER_MM_AT_50 = 5
 /** Turn animation timing at 50% turn velocity — independent from drive. */
-export const TURN_MS_PER_DEGREE_AT_50 = 22
+export const TURN_MS_PER_DEGREE_AT_50 = 11
 
 function clampVelocity(percent: number): number {
-  return Math.max(5, Math.min(100, percent))
+  return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0
 }
 
 /** Duration to drive `distanceMm` at the given velocity %. Floor 80 ms. */
 export function driveDurationMs(distanceMm: number, driveVelocityPercent: number): number {
   const v = clampVelocity(driveVelocityPercent)
+  if (distanceMm === 0) return 80
   return Math.max(80, (distanceMm * DRIVE_MS_PER_MM_AT_50 * 50) / v)
 }
 
 /** Duration to turn `degrees` at the given velocity %. Floor 80 ms. */
 export function turnDurationMs(degrees: number, turnVelocityPercent: number): number {
   const v = clampVelocity(turnVelocityPercent)
+  if (degrees === 0) return 80
   return Math.max(80, (Math.abs(degrees) * TURN_MS_PER_DEGREE_AT_50 * 50) / v)
 }
 
-/** Millimetres travelled in `dtMs` at `velocityPercent` (50% → 100 mm/s). */
+/** Millimetres travelled in `dtMs` at `velocityPercent` (50% → 200 mm/s). */
 export function driveSpeedMmPerMs(velocityPercent: number): number {
   const v = clampVelocity(velocityPercent)
   return (v / 50) / DRIVE_MS_PER_MM_AT_50

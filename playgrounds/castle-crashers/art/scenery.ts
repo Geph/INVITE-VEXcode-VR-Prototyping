@@ -72,7 +72,7 @@ function makeWaterTile(): HTMLCanvasElement | null {
   return tile
 }
 
-export function drawCastleField(ctx: CanvasRenderingContext2D, cam: Camera, viewport: Viewport, elapsedMs: number): void {
+export function drawCastleField(ctx: CanvasRenderingContext2D, cam: Camera, viewport: Viewport, elapsedMs: number, showIsland = true): void {
   ctx.save(); ctx.fillStyle = "#098da9"; ctx.fillRect(0, 0, viewport.widthPx, viewport.heightPx)
   if (!waterTile) waterTile = makeWaterTile()
   let pattern = patterns.get(ctx)
@@ -88,6 +88,7 @@ export function drawCastleField(ctx: CanvasRenderingContext2D, cam: Camera, view
     ctx.fillStyle = `rgba(99,213,226,${0.025 + Math.sin(elapsedMs / 2500) * 0.015})`
     ctx.fillRect(0, 0, viewport.widthPx, viewport.heightPx)
   }
+  if (!showIsland) { ctx.restore(); return }
   const verts = hexVertices().map((p) => worldToScreen(p, cam, viewport))
   ctx.beginPath(); ctx.moveTo(verts[0].x, verts[0].y)
   for (const v of verts.slice(1)) ctx.lineTo(v.x, v.y)

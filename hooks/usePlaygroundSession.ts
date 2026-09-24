@@ -104,6 +104,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
   const castleStateRef = useRef(castleState)
 
   const { cancelRobotAnimation, animateRobotFluidRef } = useRobotAnimation({
+    castleStateRef,
     playgroundId,
     playgroundMaximized: playgroundState.isMaximized,
     setRobotState,
@@ -115,7 +116,7 @@ export function usePlaygroundSession(eyeSensor: boolean) {
     const playground = getPlayground(id) ?? getPlayground(DEFAULT_PLAYGROUND_ID)!
     const pose = playground.world.startPose
     robotStateRef.current = { x: pose.xMm, y: pose.yMm, rotation: pose.headingDeg }
-    setRobotState(initialHostRobot(pose.xMm, pose.yMm))
+    setRobotState(initialHostRobot(pose.xMm, pose.yMm, pose.headingDeg))
   }, [])
 
   useEffect(() => {

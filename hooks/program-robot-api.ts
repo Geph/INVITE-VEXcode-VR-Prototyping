@@ -1,4 +1,6 @@
 import type React from "react"
+import { compileSwitchPython } from "@/engine/switch-python"
+import type { CastleCrashersState } from "@/playgrounds/castle-crashers/state"
 import { createRng, type RobotState as EngineRobotState } from "@/engine"
 import { driveTargetMm, isRoverRescuePlayground } from "./playground-motion"
 import {
@@ -24,6 +26,7 @@ import type { PlaygroundDefinition } from "@/playgrounds/types"
 export interface ProgramRobotApiContext {
   runtimeRef: { current: ProgramRuntime }
   robotStateRef: { current: HostRobotPose }
+  castleStateRef?: { current: CastleCrashersState }
   reefStateRef: { current: any }
   roverStateRef?: { current: any }
   setRobotState: React.Dispatch<React.SetStateAction<HostRobotState>>
@@ -86,6 +89,8 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
 
   let motionQueue: Promise<void> = Promise.resolve()
   let outstandingMotion = 0
+  let headingOffset = 0
+  let rotationOffset = 0
   const variables = new Map<string, unknown>()
   const broadcastHandlers: Array<{ message: string; run: (robot: unknown) => Promise<void>; busy: boolean }> = []
   const withMotionLock = async <T,>(fn: () => Promise<T>): Promise<T> => {
@@ -112,7 +117,9 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
       ctx.robotStateRef.current = { x: next.xMm, y: next.yMm, rotation: next.headingDeg }
     },
   }
-  const worldRef = isRoverRescuePlayground(ctx.activePlayground.id)
+  const worldRef = ctx.activePlayground.id === "castle-crashers" && ctx.castleStateRef
+    ? ctx.castleStateRef
+    : isRoverRescuePlayground(ctx.activePlayground.id)
     ? (ctx.roverStateRef ?? ctx.reefStateRef)
     : ctx.reefStateRef
   const playgroundApi = ctx.activePlayground.createApi({
@@ -126,7 +133,9 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
   const flagStoppedByUser = () => {
     const mark = ctx.activePlayground.markStoppedByUser
     if (!mark) return
-    if (isRoverRescuePlayground(ctx.activePlayground.id) && ctx.roverStateRef) {
+    if (ctx.activePlayground.id === "castle-crashers" && ctx.castleStateRef) {
+      ctx.castleStateRef.current = mark(ctx.castleStateRef.current)
+    } else if (isRoverRescuePlayground(ctx.activePlayground.id) && ctx.roverStateRef) {
       ctx.roverStateRef.current = mark(ctx.roverStateRef.current)
     } else {
       ctx.reefStateRef.current = mark(ctx.reefStateRef.current)
@@ -134,6 +143,13 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
   }
 
   const robotAPI = {
+    runSwitchCode: async (source: string) => {
+      throwIfStopped()
+      const code = compileSwitchPython(source)
+      const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (...args: string[]) => (robot: unknown) => Promise<void>
+      await new AsyncFunction("robot", code)(robotAPI)
+      throwIfStopped()
+    },
     __step: async (blockId: string) => {
       throwIfStopped()
       ctx.highlightProgramBlock(blockId)
@@ -196,8 +212,8 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
         throwIfStopped()
         const multiplier = direction === "right" ? 1 : -1
         const turnAmount = degrees === undefined ? 90 : Number(degrees)
-        const targetRotation = normalizeDegrees(ctx.robotStateRef.current.rotation + turnAmount * multiplier)
-        const delta = Math.abs(shortestRotationDelta(ctx.robotStateRef.current.rotation, targetRotation))
+        const targetRotation = ctx.robotStateRef.current.rotation + turnAmount * multiplier
+        const delta = Math.abs(turnAmount)
         const duration = turnDurationMs(delta, ctx.runtimeRef.current.turnVelocity)
         await ctx.animateRobotFluid({ rotation: targetRotation }, duration, ctx.robotStateRef)
         throwIfStopped()
@@ -210,18 +226,19 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     turnToHeading: async (heading: number) =>
       withMotionLock(async () => {
         throwIfStopped()
-        const target = normalizeDegrees(Number(heading))
-        const delta = Math.abs(shortestRotationDelta(ctx.robotStateRef.current.rotation, target))
+        const current = ctx.robotStateRef.current.rotation
+        const target = current + shortestRotationDelta(current + headingOffset, Number(heading))
+        const delta = Math.abs(target - current)
         const duration = turnDurationMs(delta, ctx.runtimeRef.current.turnVelocity)
         await ctx.animateRobotFluid({ rotation: target }, duration, ctx.robotStateRef)
-        ctx.runtimeRef.current.heading = target
+        ctx.runtimeRef.current.heading = normalizeDegrees(target + headingOffset)
         throwIfStopped()
       }),
     turnToRotation: async (rotation: number) =>
       withMotionLock(async () => {
         throwIfStopped()
-        const target = normalizeDegrees(Number(rotation))
-        const delta = Math.abs(shortestRotationDelta(ctx.robotStateRef.current.rotation, target))
+        const target = Number(rotation) - rotationOffset
+        const delta = Math.abs(target - ctx.robotStateRef.current.rotation)
         const duration = turnDurationMs(delta, ctx.runtimeRef.current.turnVelocity)
         await ctx.animateRobotFluid({ rotation: target }, duration, ctx.robotStateRef)
         throwIfStopped()
@@ -264,13 +281,11 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     setDriveHeading: (heading: number) => {
       const h = normalizeDegrees(Number(heading))
       ctx.runtimeRef.current.heading = h
-      ctx.setRobotState((prev) => ({ ...prev, heading: h, rotation: h }))
-      ctx.robotStateRef.current.rotation = h
+      headingOffset = h - ctx.robotStateRef.current.rotation
+      ctx.setRobotState((prev) => ({ ...prev, heading: h }))
     },
     setDriveRotation: (rotation: number) => {
-      const r = normalizeDegrees(Number(rotation))
-      ctx.setRobotState((prev) => ({ ...prev, rotation: r }))
-      ctx.robotStateRef.current.rotation = r
+      rotationOffset = Number(rotation) - ctx.robotStateRef.current.rotation
     },
     setDriveTimeout: async (seconds: number) => {
       ctx.runtimeRef.current.driveTimeoutSec = Number(seconds)
@@ -396,5 +411,5 @@ export function createProgramRobotApi(ctx: ProgramRobotApiContext) {
     }
   }
 
-  return { robotAPI, pushConsoleLine, registerBroadcastHandlers }
+  return { robotAPI, pushConsoleLine, registerBroadcastHandlers, waitForMotion: () => motionQueue }
 }

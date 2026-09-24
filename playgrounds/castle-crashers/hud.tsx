@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import type { CastleCrashersState } from "./state"
 import type { CastleLevel } from "./config"
+import { RESULTS_DELAY_MS } from "./config"
+import { CastleResults } from "./results"
 
 function formatTimer(ms: number): string {
   const totalTenths = Math.floor(ms / 100)
@@ -15,24 +17,28 @@ function formatTimer(ms: number): string {
 
 export function CastleCrashersHud({
   stateRef,
+  onRetry,
 }: {
   stateRef: { current: CastleCrashersState }
+  onRetry: () => void
 }) {
   const [snap, setSnap] = useState(() => ({
     kg: stateRef.current.weightClearedKg,
     ms: stateRef.current.missionMs,
     reason: stateRef.current.missionReason,
+    showResults: false,
   }))
 
   useEffect(() => {
     let frame = 0
     const tick = () => {
       const s = stateRef.current
+      const showResults = s.missionOver && s.elapsedMs - (s.endedAtMs ?? s.elapsedMs) >= RESULTS_DELAY_MS
       setSnap((prev) => {
-        if (prev.kg === s.weightClearedKg && prev.ms === s.missionMs && prev.reason === s.missionReason) {
+        if (prev.kg === s.weightClearedKg && prev.ms === s.missionMs && prev.reason === s.missionReason && prev.showResults === showResults) {
           return prev
         }
-        return { kg: s.weightClearedKg, ms: s.missionMs, reason: s.missionReason }
+        return { kg: s.weightClearedKg, ms: s.missionMs, reason: s.missionReason, showResults }
       })
       frame = requestAnimationFrame(tick)
     }
@@ -41,9 +47,10 @@ export function CastleCrashersHud({
   }, [stateRef])
 
   return (
+    <>
     <div id="vex-castle-hud" className="pointer-events-none absolute bottom-3 left-3 z-10 space-y-1">
       <div className="rounded border border-black bg-white px-2 py-1 text-xs font-semibold text-black">
-        Castle Cleared: {snap.kg} kg
+        Castle Cleared: {Math.round(snap.kg)} kg
       </div>
       <div className="rounded border border-black bg-white px-2 py-1 text-xs font-mono text-black">
         {formatTimer(snap.ms)}
@@ -54,6 +61,8 @@ export function CastleCrashersHud({
         </div>
       ) : null}
     </div>
+    {snap.showResults && <CastleResults kg={snap.kg} ms={snap.ms} reason={snap.reason ?? "complete"} onRetry={onRetry} />}
+    </>
   )
 }
 

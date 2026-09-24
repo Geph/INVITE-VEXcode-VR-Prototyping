@@ -21,6 +21,10 @@ export interface CastlePiece {
   cleared: boolean
   /** 0 = standing plan view, 1 = fallen masonry seen from above. */
   topple: number
+  vxMmSec: number
+  vyMmSec: number
+  spinDegSec: number
+  clearedAtMs?: number
 }
 
 export interface CastleCrashersState {
@@ -33,7 +37,8 @@ export interface CastleCrashersState {
   pieces: CastlePiece[]
   plowAttached: boolean
   missionOver: boolean
-  missionReason?: "water" | "stopped"
+  endedAtMs?: number
+  missionReason?: "water" | "stopped" | "complete"
   projectStoppedByUser: boolean
   gpsXMm: number
   gpsYMm: number
@@ -85,5 +90,8 @@ function fromSpec(spec: CastlePieceSpec): CastlePiece {
     pushable: spec.pushable,
     cleared: false,
     topple: 0,
+    vxMmSec: 0,
+    vyMmSec: 0,
+    spinDegSec: 0,
   }
 }

@@ -32,12 +32,13 @@ function legacyCoral(width: number, height: number) {
     })
   }
   for (let x = 0; x < width; x += 30) {
-    pushPiece(x + 15, 15, x, Math.PI)
-    pushPiece(x + 15, height - 15, x + 1000, 0)
+    // The 2000-mm field boundary now coincides with the canvas edge.
+    pushPiece(x + 15, 0, x, Math.PI)
+    pushPiece(x + 15, height, x + 1000, 0)
   }
   for (let y = 30; y < height - 30; y += 30) {
-    pushPiece(15, y + 15, y + 2000, Math.PI / 2)
-    pushPiece(width - 15, y + 15, y + 3000, -Math.PI / 2)
+    pushPiece(0, y + 15, y + 2000, Math.PI / 2)
+    pushPiece(width, y + 15, y + 3000, -Math.PI / 2)
   }
   return pieces
 }

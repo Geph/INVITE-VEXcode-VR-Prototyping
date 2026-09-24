@@ -4,7 +4,6 @@ import { clampRoverMm } from "@/playgrounds/rover-rescue/api"
 import { riverHazardFromState, type RoverRescueState } from "@/playgrounds/rover-rescue/state"
 import { planRoverDrive } from "@/playgrounds/rover-rescue/systems/physics"
 import { CASTLE_CRASHERS_ID } from "@/playgrounds/castle-crashers"
-import { clampCastleMm } from "@/playgrounds/castle-crashers/systems/physics"
 import type { PlaygroundView } from "./program-types"
 
 export function isRoverRescuePlayground(id: string): boolean {
@@ -27,7 +26,8 @@ export function clampHostRobotMm(
   view: PlaygroundView,
 ): { xMm: number; yMm: number } {
   if (isRoverRescuePlayground(playgroundId)) return clampRoverMm(xMm, yMm)
-  if (isCastleCrashersPlayground(playgroundId)) return clampCastleMm(xMm, yMm)
+  // The island edge is a hazard, not a wall. Physics ends the run after a fall.
+  if (isCastleCrashersPlayground(playgroundId)) return { xMm, yMm }
   return clampRobotMm(xMm, yMm, view)
 }
 

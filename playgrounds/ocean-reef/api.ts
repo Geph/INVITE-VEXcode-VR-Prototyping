@@ -11,11 +11,12 @@ import {
   nearestTrashDistanceMm,
   nearestTrashInFrontMm,
   normalizeDegrees,
-  pixelsToDistance,
+  PIXELS_PER_MM,
   pointHitsCoral,
   raycastToBorder,
 } from "@/lib/robot-runtime"
 import type { PlaygroundApiDeps } from "../types"
+import { FIELD_MM, ROBOT_RADIUS_MM } from "./config"
 import { coralToPixelPieces, trashToPixelItems, type OceanReefState, type OceanReefView } from "./entities"
 
 export function poseToCanvas(xMm: number, yMm: number, view: OceanReefView): { x: number; y: number } {
@@ -24,14 +25,14 @@ export function poseToCanvas(xMm: number, yMm: number, view: OceanReefView): { x
 
 export function canvasToPoseUnrounded(x: number, y: number, view: OceanReefView): { xMm: number; yMm: number } {
   return {
-    xMm: pixelsToDistance(x - view.widthPx / 2, "mm"),
-    yMm: pixelsToDistance(y - view.heightPx / 2, "mm"),
+    xMm: (x - view.widthPx / 2) * FIELD_MM / view.widthPx,
+    yMm: (y - view.heightPx / 2) * FIELD_MM / view.heightPx,
   }
 }
 
 export function clampRobotMm(xMm: number, yMm: number, view: OceanReefView): { xMm: number; yMm: number } {
   const px = poseToCanvas(xMm, yMm, view)
-  const clamped = clampRobotPosition(px.x, px.y, view.widthPx, view.heightPx)
+  const clamped = clampRobotPosition(px.x, px.y, view.widthPx, view.heightPx, 0)
   return canvasToPoseUnrounded(clamped.x, clamped.y, view)
 }
 
@@ -74,7 +75,7 @@ function robotPixels(robot: RobotState, view: OceanReefView) {
 export function collectTrash(state: OceanReefState, robot: RobotState): OceanReefState {
   const scale = state.view.maximized ? 1.5 : 1
   const robotSize = 30 * scale
-  const magnetRange = state.magnetEnergized ? 40 : 0
+  const magnetRange = state.magnetEnergized ? 40 * scale : 0
   const robotPx = poseToCanvas(robot.xMm, robot.yMm, state.view)
 
   let collectedCount = 0
@@ -105,11 +106,8 @@ export function collectTrash(state: OceanReefState, robot: RobotState): OceanRee
 
 export function hitsCoral(state: OceanReefState, robot: RobotState): boolean {
   if (state.coral.length === 0) return false
-  const robotPx = poseToCanvas(robot.xMm, robot.yMm, state.view)
-  const coral = coralToPixelPieces(state.coral, state.view)
-  const robotRadius = 22
-  for (const piece of coral) {
-    if (Math.hypot(robotPx.x - piece.x, robotPx.y - piece.y) < robotRadius + piece.radius) {
+  for (const piece of state.coral) {
+    if (Math.hypot(robot.xMm - piece.xMm, robot.yMm - piece.yMm) < ROBOT_RADIUS_MM + piece.radiusMm) {
       return true
     }
   }
@@ -128,7 +126,10 @@ export function tickOceanReef(state: OceanReefState, dtMs: number, robot: RobotS
 
 export function createOceanReefApi(deps: PlaygroundApiDeps<OceanReefState>): Record<string, (...args: any[]) => unknown> {
   const readWorld = () => {
-    const state = deps.world.current
+    // Legacy ray/eye helpers use a fixed mm-per-pixel scale. Project into that
+    // virtual sensor canvas, independently of the user's window size.
+    const sensorSize = FIELD_MM * PIXELS_PER_MM
+    const state = { ...deps.world.current, view: { widthPx: sensorSize, heightPx: sensorSize, maximized: false } }
     const robot = deps.robot.current
     const px = robotPixels(robot, state.view)
     const { coral, trash } = worldPixels(state)

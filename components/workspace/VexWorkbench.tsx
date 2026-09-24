@@ -82,6 +82,7 @@ export function VexWorkbench() {
     runtimeRef: session.runtimeRef,
     reefStateRef: session.reefStateRef,
     roverStateRef: session.roverStateRef,
+    castleStateRef: session.castleStateRef,
     activePlayground: session.activePlayground,
     robotCapabilities,
     getView: () => reefViewFromMaximized(session.playgroundState.isMaximized),
@@ -98,10 +99,22 @@ export function VexWorkbench() {
   const day50 = useRoverDay50(session.roverStateRef, setRoverStatus)
   const onReset = useCallback(() => {
     day50.clearEnd()
+    if (isCastleCrashersPlayground(session.playgroundId)) {
+      const previous = session.castleStateRef.current
+      const next = createCastleCrashersState(previous.seed, previous.level)
+      session.castleStateRef.current = next
+      session.setCastleState(next)
+    }
     handleReset()
   }, [day50, handleReset])
   const onStart = useCallback(() => {
     day50.clearEnd()
+    if (!isRunningRef.current && isCastleCrashersPlayground(session.playgroundId)) {
+      const previous = session.castleStateRef.current
+      const next = createCastleCrashersState(previous.seed, previous.level)
+      session.castleStateRef.current = next
+      session.setCastleState(next)
+    }
     handleStart()
   }, [day50, handleStart])
 
@@ -164,6 +177,13 @@ export function VexWorkbench() {
         runError: survived ? null : flat ? "The rover ran out of power." : "The rover entered the river.",
       }))
       setRoverStatus(status)
+    },
+    onCastleState: (state) => {
+      if (!state.missionOver) return
+      stopRequestedRef.current = true
+      session.cancelRobotAnimation()
+      isRunningRef.current = false
+      setIsRunning(false)
     },
     onRoverStatus: (status) => {
       setRoverStatus(status)
@@ -303,6 +323,8 @@ export function VexWorkbench() {
           }
         />
         <AIAssistant
+          key={session.playgroundId}
+          isRunning={isRunning}
           ref={aiAssistantRef}
           workspace={workspace}
           surveyStep={aiStep}
@@ -394,7 +416,7 @@ export function VexWorkbench() {
                 </>
               ) : castleField ? (
                 <>
-                  <CastleCrashersHud stateRef={session.castleStateRef} />
+                  <CastleCrashersHud stateRef={session.castleStateRef} onRetry={onReset} />
                   <CastleLevelToggle
                     level={session.castleState.level}
                     onChange={(level) => {

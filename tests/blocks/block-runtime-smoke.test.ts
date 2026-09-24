@@ -7,6 +7,8 @@ import { oceanReefBlocks } from "@/playgrounds/ocean-reef/blocks"
 import { roverRescue } from "@/playgrounds/rover-rescue"
 import { roverRescueBlocks } from "@/playgrounds/rover-rescue/blocks"
 import { createRoverRescueState } from "@/playgrounds/rover-rescue/state"
+import { castleCrashers } from "@/playgrounds/castle-crashers"
+import { driveSpeedMmPerMs } from "@/engine/motion"
 
 const HAT_TYPES = new Set([
   "pg_events_when_started",
@@ -102,7 +104,7 @@ function installGenerators(playgroundBlocks: typeof oceanReefBlocks) {
   return JavaScript.forBlock
 }
 
-function mockCtx(playground: typeof oceanReef | typeof roverRescue): ProgramRobotApiContext {
+function mockCtx(playground: typeof oceanReef | typeof roverRescue | typeof castleCrashers): ProgramRobotApiContext {
   const robotStateRef = { current: { x: 0, y: 0, rotation: 0 } }
   return {
     runtimeRef: {
@@ -122,6 +124,7 @@ function mockCtx(playground: typeof oceanReef | typeof roverRescue): ProgramRobo
     },
     robotStateRef,
     reefStateRef: { current: oceanReef.createState(1) },
+    castleStateRef: { current: castleCrashers.createState(1) },
     roverStateRef: { current: createRoverRescueState(1) },
     setRobotState: () => {},
     setConsoleLines: () => {},
@@ -168,7 +171,7 @@ afterEach(() => {
 
 function expectEveryGeneratorRuns(
   playgroundBlocks: typeof oceanReefBlocks,
-  playground: typeof oceanReef | typeof roverRescue,
+  playground: typeof oceanReef | typeof roverRescue | typeof castleCrashers,
 ) {
   it("generates and executes every registered block against the robot API", async () => {
     const generators = installGenerators(playgroundBlocks)
@@ -209,6 +212,87 @@ function expectEveryGeneratorRuns(
 
 describe("Ocean Reef block runtime", () => {
   expectEveryGeneratorRuns(oceanReefBlocks, oceanReef)
+})
+
+describe("Castle Crasher block runtime", () => {
+  expectEveryGeneratorRuns(castleCrashers.blocks, castleCrashers)
+
+  it("drives the requested world distance left from the official start pose", async () => {
+    const ctx = mockCtx(castleCrashers)
+    ctx.robotStateRef.current = { x: 1014, y: 50, rotation: -90 }
+    const { robotAPI } = createProgramRobotApi(ctx)
+    await robotAPI.drive("forward", 200, "mm")
+    expect(ctx.robotStateRef.current.x).toBeCloseTo(814)
+    expect(ctx.robotStateRef.current.y).toBeCloseTo(50)
+    await robotAPI.drive("reverse", 200 / 25.4, "inches")
+    expect(ctx.robotStateRef.current.x).toBeCloseTo(1014)
+  })
+
+  it("marks Castle, rather than Ocean Reef, when stop project executes", () => {
+    const ctx = mockCtx(castleCrashers)
+    const { robotAPI } = createProgramRobotApi(ctx)
+    expect(() => robotAPI.stop()).toThrow(ProgramStopped)
+    expect(ctx.castleStateRef?.current.missionReason).toBe("stopped")
+    expect(ctx.reefStateRef.current.projectStoppedByUser).toBe(false)
+  })
+})
+
+// Regressions for the five independently reproduced audit failures.
+describe("repaired block behavior gaps (see docs/BLOCK-AUDIT.md)", () => {
+  it("0% velocity must keep the robot still", () => {
+    expect(driveSpeedMmPerMs(0)).toBe(0)
+  })
+
+  it("set heading must not physically rotate the robot", () => {
+    const ctx = mockCtx(oceanReef)
+    const { robotAPI } = createProgramRobotApi(ctx)
+    robotAPI.setDriveHeading(90)
+    expect(ctx.robotStateRef.current.rotation).toBe(0)
+  })
+
+  it("turn right 360 must animate one complete revolution", async () => {
+    const ctx = mockCtx(oceanReef)
+    let requestedRotation = 0
+    ctx.animateRobotFluid = async (target) => { requestedRotation = target.rotation ?? 0 }
+    await createProgramRobotApi(ctx).robotAPI.turn("right", 360)
+    expect(requestedRotation).toBe(360)
+  })
+
+  it("zeroes heading and rotation without moving, then turns relative to those references", async () => {
+    const ctx = mockCtx(castleCrashers)
+    ctx.robotStateRef.current.rotation = -90
+    const { robotAPI: robot } = createProgramRobotApi(ctx)
+    robot.setDriveHeading(0)
+    robot.setDriveRotation(0)
+    expect(ctx.robotStateRef.current.rotation).toBe(-90)
+    await robot.turnToHeading(90)
+    expect(ctx.robotStateRef.current.rotation).toBe(0)
+    await robot.turnToRotation(720)
+    expect(ctx.robotStateRef.current.rotation).toBe(630)
+    await robot.turn("left", 450)
+    expect(ctx.robotStateRef.current.rotation).toBe(180)
+  })
+
+  it("executes Switch movement and reports unsupported Python", async () => {
+    const ctx = mockCtx(castleCrashers)
+    const robot = createProgramRobotApi(ctx).robotAPI
+    await robot.runSwitchCode("drivetrain.drive_for(FORWARD, 100, MM)\ndrivetrain.turn_for(RIGHT, 270, DEGREES)")
+    expect(ctx.robotStateRef.current.y).toBeCloseTo(100)
+    expect(ctx.robotStateRef.current.rotation).toBe(270)
+    await expect(robot.runSwitchCode("import os")).rejects.toThrow("Switch Python line 1")
+  })
+
+  it("Castle position sensor must report its start coordinates", () => {
+    const ctx = mockCtx(castleCrashers)
+    ctx.robotStateRef.current = { x: 1014, y: 50, rotation: -90 }
+    expect(createProgramRobotApi(ctx).robotAPI.getPosition("X", "mm")).toBe(1014)
+  })
+
+  it("Switch Python must produce executable code instead of only a comment", () => {
+    const generators = installGenerators(oceanReefBlocks)
+    const code = generators.pg_control_switch({ getFieldValue: () => "drivetrain.drive(FORWARD)" }) as string
+    expect(code.trim().startsWith("//")).toBe(false)
+  })
 })
 
 describe("Rover Rescue block runtime", () => {

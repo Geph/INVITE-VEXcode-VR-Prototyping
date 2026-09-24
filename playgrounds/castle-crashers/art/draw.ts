@@ -3,15 +3,24 @@ import { worldToScreen } from "@/engine"
 import { PLOW_FRONT_MM, PLOW_HALF_WIDTH_MM, PLOW_START } from "../config"
 import type { CastlePiece } from "../state"
 import { paintPiece } from "./masonry"
+import { SPLASH_DURATION_MS } from "../config"
 export { drawCastleField } from "./scenery"
 
-export function drawCastlePieces(ctx: CanvasRenderingContext2D, pieces: CastlePiece[], cam: Camera, viewport: Viewport): void {
+export function drawCastlePieces(ctx: CanvasRenderingContext2D, pieces: CastlePiece[], cam: Camera, viewport: Viewport, elapsedMs = 0): void {
   // Foundations first; roofs and turrets cover their adjoining wall ends.
   const layer = (p: CastlePiece) => p.kind === "keep" || p.kind === "ramp" ? 0
     : p.kind === "wall" || p.kind === "castle-wall" ? 1 : 2
   for (const piece of [...pieces].sort((a, b) => layer(a) - layer(b))) {
-    if (piece.cleared) continue
     const p = worldToScreen({ x: piece.xMm, y: piece.yMm }, cam, viewport)
+    if (piece.cleared) {
+      const progress = (elapsedMs - (piece.clearedAtMs ?? -SPLASH_DURATION_MS)) / SPLASH_DURATION_MS
+      if (progress >= 0 && progress < 1) {
+        ctx.save(); ctx.strokeStyle = `rgba(220,252,255,${1 - progress})`; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.ellipse(p.x, p.y, (30 + progress * 150) * cam.zoom,
+          (15 + progress * 85) * cam.zoom, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore()
+      }
+      continue
+    }
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(piece.headingDeg * Math.PI / 180); ctx.scale(cam.zoom, cam.zoom)
     paintPiece(ctx, piece)
     ctx.restore()

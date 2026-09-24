@@ -1,5 +1,5 @@
 import type { Camera, RobotState } from "@/engine"
-import { distanceToPixels, drawFieldRulerOverlay, seededRandom } from "@/lib/robot-runtime"
+import { drawFieldRulerOverlay, seededRandom } from "@/lib/robot-runtime"
 import {
   coralToScreenPiece,
   drawCoralPiece,
@@ -163,7 +163,7 @@ export function renderDistanceRay(
   frontMm: number,
 ): void {
   const origin = reefWorldToScreen(robot.xMm, robot.yMm, cam, viewport)
-  const rayPx = distanceToPixels(frontMm, "mm")
+  const rayPx = frontMm * cam.zoom
   const angleRad = (robot.headingDeg * Math.PI) / 180
   ctx.strokeStyle = "rgba(0, 188, 212, 0.65)"
   ctx.lineWidth = 2

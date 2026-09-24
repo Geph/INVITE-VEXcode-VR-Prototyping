@@ -15,7 +15,7 @@ import { programPathMm, type PathPoint } from "./expected-path"
 const PREVIEW_W = 320
 const PREVIEW_H = 200
 
-type PreviewPlayground =
+export type PreviewPlayground =
   | PlaygroundDefinition<OceanReefState>
   | PlaygroundDefinition<RoverRescueState>
   | PlaygroundDefinition<CastleCrashersState>
@@ -117,7 +117,7 @@ export function PredictPreview({
   )
 }
 
-function paintPlayground(
+export function paintPlayground(
   ctx: CanvasRenderingContext2D,
   input: {
     playgroundId: string
@@ -141,13 +141,13 @@ function paintPlayground(
   }
   ;(input.playground as PlaygroundDefinition<OceanReefState>).render(
     ctx,
-    { ...input.reefState, view: { widthPx: PREVIEW_W, heightPx: PREVIEW_H, maximized: false } },
+    { ...input.reefState, view: { widthPx: input.viewport.widthPx, heightPx: input.viewport.heightPx, maximized: false } },
     engineRobot,
     input.cam,
   )
 }
 
-function project(playgroundId: string, point: PathPoint, cam: Camera, viewport: Viewport) {
+export function project(playgroundId: string, point: PathPoint, cam: Camera, viewport: Viewport) {
   if (isEngineNorthPlayground(playgroundId)) return worldToScreen(point, cam, viewport)
   return reefWorldToScreen(point.x, point.y, cam, viewport)
 }

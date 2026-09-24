@@ -1,4 +1,5 @@
 import type React from "react"
+import type { CastleCrashersState } from "@/playgrounds/castle-crashers/state"
 import type { PlaygroundDefinition } from "@/playgrounds/types"
 
 /**
@@ -87,6 +88,7 @@ export interface ProgramRunnerDeps {
   robotStateRef: React.MutableRefObject<HostRobotPose>
   setRobotState: React.Dispatch<React.SetStateAction<HostRobotState>>
   runtimeRef: React.MutableRefObject<ProgramRuntime>
+  castleStateRef?: { current: CastleCrashersState }
   reefStateRef: React.MutableRefObject<any>
   roverStateRef?: React.MutableRefObject<any>
   activePlayground: Pick<PlaygroundDefinition<any>, "id" | "createApi" | "world" | "markStoppedByUser">
