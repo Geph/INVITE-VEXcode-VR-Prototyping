@@ -12,5 +12,6 @@ in [ARCHITECTURE.md](ARCHITECTURE.md); unresolved block issues belong in
 | 2026-09-22 | [Planning cycle and five block repairs](changes/2026-09-22-plan-cycle-and-block-fixes.md) | Local implementation; supported Switch subset and remaining audit gaps documented |
 
 | 2026-09-22 | [Research checklist and release preparation](changes/2026-09-22-research-checklist-and-release.md) | Consolidated test plan, minimal README, verified local release checks |
+| 2026-09-24 | [Visible blank-project reset](changes/2026-09-24-blank-project-reset.md) | Local fix; browser, typecheck and lint verified |
 
 For subsequent changes, add an entry using [TEMPLATE.md](changes/TEMPLATE.md).

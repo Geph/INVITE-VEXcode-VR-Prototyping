@@ -301,6 +301,10 @@ export function VexWorkbench() {
         playgroundPickerOpen={session.playgroundPickerOpen}
         onOpenPlayground={session.handleOpenPlayground}
         onGetHelp={() => aiAssistantRef.current?.open()}
+        onNewProject={() => {
+          onReset()
+          setCodeView("blocks")
+        }}
         getSessionSnapshot={getSessionSnapshot}
       />
 

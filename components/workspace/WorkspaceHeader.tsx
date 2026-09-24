@@ -16,6 +16,7 @@ export function WorkspaceHeader({
   playgroundPickerOpen,
   onOpenPlayground,
   onGetHelp,
+  onNewProject,
   getSessionSnapshot,
 }: {
   workspace: any
@@ -26,6 +27,7 @@ export function WorkspaceHeader({
   playgroundPickerOpen: boolean
   onOpenPlayground: () => void
   onGetHelp: () => void
+  onNewProject: () => void
   getSessionSnapshot: () => SessionLogSnapshot
 }) {
   const [multiplayerOpen, setMultiplayerOpen] = useState(false)
@@ -41,7 +43,7 @@ export function WorkspaceHeader({
         >
           <Bot className="h-5 w-5 text-white" strokeWidth={2.25} aria-hidden />
         </div>
-        <FileMenu workspace={workspace} />
+        <FileMenu workspace={workspace} onNewProject={onNewProject} />
       </div>
       <div id="vex-header-project-info" className="flex items-center gap-2">
         <span className="text-sm font-semibold">VEXcode Project</span>

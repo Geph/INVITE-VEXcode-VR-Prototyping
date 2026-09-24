@@ -24,7 +24,7 @@ function migrateWhenStartedMouths(dom: Element): void {
   }
 }
 
-export function FileMenu({ workspace }: { workspace: any }) {
+export function FileMenu({ workspace, onNewProject }: { workspace: any; onNewProject?: () => void }) {
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
   const fileMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -113,6 +113,11 @@ export function FileMenu({ workspace }: { workspace: any }) {
     whenStartedBlock.moveBy(50, 50)
     whenStartedBlock.setDeletable(true)
     whenStartedBlock.setMovable(true)
+    workspace.setScale(1)
+    // Restore the initial top-left viewport. Centering the hat can place it
+    // beneath the floating playground window on desktop-sized screens.
+    workspace.scroll(0, 0)
+    onNewProject?.()
   }
 
   return (
